@@ -13,7 +13,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   maxGeneratedClips: 400
-  localModelsPath: C:/nvlab/models~
   generationTimeoutSeconds: 120
   floatingUiEnabled: 0
   alwaysKeepServerExperimental: 1
