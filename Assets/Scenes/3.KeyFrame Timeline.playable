@@ -1,5 +1,185 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!114 &-7968298621862472923
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 016fed14ec49f66418cf65fea1f325ab, type: 3}
+  m_Name: Kimodo Full Body Constraint Marker
+  m_EditorClassIdentifier: 
+  m_Time: 0
+  useOverride: 1
+  sampleData:
+    constraintType: fullbody
+    sampleTime: 0
+    rigType: 0
+    hasRootHeading: 0
+    kimodoRootPosition: {x: 0, y: 0.9884155, z: -0.076}
+    rootHeading: {x: 0.00027294125, y: 0.99999994}
+    unityRootPos: {x: 0, y: 0, z: 0}
+    unityRootRot: {x: -0, y: -0, z: -0, w: 1}
+    jointNames:
+    - Hips
+    - Spine1
+    - Spine2
+    - Chest
+    - Neck1
+    - Neck2
+    - Head
+    - HeadEnd
+    - Jaw
+    - LeftEye
+    - RightEye
+    - LeftShoulder
+    - LeftArm
+    - LeftForeArm
+    - LeftHand
+    - LeftHandThumb1
+    - LeftHandThumb2
+    - LeftHandThumb3
+    - LeftHandThumbEnd
+    - LeftHandIndex1
+    - LeftHandIndex2
+    - LeftHandIndex3
+    - LeftHandIndex4
+    - LeftHandIndexEnd
+    - LeftHandMiddle1
+    - LeftHandMiddle2
+    - LeftHandMiddle3
+    - LeftHandMiddle4
+    - LeftHandMiddleEnd
+    - LeftHandRing1
+    - LeftHandRing2
+    - LeftHandRing3
+    - LeftHandRing4
+    - LeftHandRingEnd
+    - LeftHandPinky1
+    - LeftHandPinky2
+    - LeftHandPinky3
+    - LeftHandPinky4
+    - LeftHandPinkyEnd
+    - RightShoulder
+    - RightArm
+    - RightForeArm
+    - RightHand
+    - RightHandThumb1
+    - RightHandThumb2
+    - RightHandThumb3
+    - RightHandThumbEnd
+    - RightHandIndex1
+    - RightHandIndex2
+    - RightHandIndex3
+    - RightHandIndex4
+    - RightHandIndexEnd
+    - RightHandMiddle1
+    - RightHandMiddle2
+    - RightHandMiddle3
+    - RightHandMiddle4
+    - RightHandMiddleEnd
+    - RightHandRing1
+    - RightHandRing2
+    - RightHandRing3
+    - RightHandRing4
+    - RightHandRingEnd
+    - RightHandPinky1
+    - RightHandPinky2
+    - RightHandPinky3
+    - RightHandPinky4
+    - RightHandPinkyEnd
+    - LeftLeg
+    - LeftShin
+    - LeftFoot
+    - LeftToeBase
+    - LeftToeEnd
+    - RightLeg
+    - RightShin
+    - RightFoot
+    - RightToeBase
+    - RightToeEnd
+    localAxisAngles:
+    - {x: -0.0048555336, y: 0.00011875259, z: -0.06356383}
+    - {x: -0.033725798, y: 0.0044258465, z: 0.056032754}
+    - {x: -0.08858287, y: 0.013196927, z: 0.018830596}
+    - {x: 0.16421975, y: 0.044913832, z: -0.014293853}
+    - {x: 0.071994886, y: -0.09672666, z: 0.11749623}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.16728263, y: -0.02833163, z: 0.002212617}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0.00010577753, y: 0.00096690084, z: 0.00008711026}
+    - {x: -0.18646337, y: 0.068557955, z: 0.00000004010391}
+    - {x: -0.18669951, y: -0.06537524, z: -0.00000015548954}
+    - {x: -0.06672537, y: 0.083286084, z: 0.18673848}
+    - {x: 0.3753906, y: -0.14436881, z: 1.1577361}
+    - {x: 0.0056565204, y: 0.63442177, z: 0.0133843105}
+    - {x: -0.018134274, y: 0.006602497, z: 0.082781196}
+    - {x: 0.031957515, y: -0.1657797, z: 0.10001103}
+    - {x: 0.050109316, y: -0.011894391, z: 0.2850264}
+    - {x: 0.00025565887, y: -0.14642875, z: -0.031538736}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.050958257, y: -0.04437668, z: 0.031247517}
+    - {x: -0.08695952, y: -0.020913176, z: 0.17137656}
+    - {x: -0.08891836, y: -0.01306053, z: 0.36571187}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0.00081086706, y: -0.03848508, z: 0.025927037}
+    - {x: -0.17367944, y: -0.10823369, z: 0.37585703}
+    - {x: -0.15675285, y: -0.031870153, z: 0.24162343}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0.014383133, y: -0.02919788, z: 0.005274711}
+    - {x: -0.17275913, y: -0.19695257, z: 0.26434928}
+    - {x: -0.16139567, y: -0.009084287, z: 0.59406173}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0.008878065, y: -0.013558703, z: 0.05994461}
+    - {x: -0.16758925, y: -0.3327034, z: 0.3238788}
+    - {x: -0.15314603, y: -0.043123286, z: 0.11211093}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.0843855, y: -0.16392678, z: -0.23732358}
+    - {x: 0.34680927, y: -0.012249168, z: -1.1250533}
+    - {x: 0.057422563, y: -0.6247249, z: -0.018715728}
+    - {x: -0.00024330379, y: -0.050619256, z: -0.13715102}
+    - {x: -0.06779413, y: 0.09924408, z: -0.041811194}
+    - {x: 0.051137265, y: 0.016562792, z: -0.28392622}
+    - {x: 0.00059826614, y: 0.21187969, z: 0.045586552}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.056100197, y: 0.034912556, z: -0.028250774}
+    - {x: -0.08763804, y: 0.025159888, z: -0.07748268}
+    - {x: -0.08906577, y: 0.020493286, z: -0.19272026}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.002840675, y: 0.03260451, z: -0.026138563}
+    - {x: -0.16906197, y: 0.11657163, z: -0.2678262}
+    - {x: -0.15862906, y: 0.031962957, z: -0.24534394}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0.010994694, y: 0.025237303, z: -0.008971598}
+    - {x: -0.18632513, y: 0.18873964, z: -0.38199487}
+    - {x: -0.15989706, y: 0.027346352, z: -0.32723168}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.0021584786, y: -0.007424848, z: -0.059898388}
+    - {x: -0.19294818, y: 0.32644078, z: -0.46567005}
+    - {x: -0.15560868, y: 0.04214515, z: -0.14370817}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.0072018337, y: -0.25999406, z: -0.009017524}
+    - {x: 0.20713232, y: -0.31137612, z: 0.012060539}
+    - {x: -0.17226744, y: -0.053362474, z: 0.031181397}
+    - {x: 0.00119604, y: 0.000000042508983, z: -0.000000007560293}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.10958141, y: 0.18121074, z: 0.12553814}
+    - {x: 0.39431775, y: 0.20170788, z: -0.0111361835}
+    - {x: -0.28521731, y: 0.05514243, z: -0.062414102}
+    - {x: 0.0037186397, y: 0.000000637853, z: 0.00000014596256}
+    - {x: 0, y: 0, z: 0}
+    sampledJointIndices: 000000000100000002000000030000000400000005000000060000000700000008000000090000000a0000000b0000000c0000000d0000000e0000000f000000100000001100000012000000130000001400000015000000160000001700000018000000190000001a0000001b0000001c0000001d0000001e0000001f000000200000002100000022000000230000002400000025000000260000002700000028000000290000002a0000002b0000002c0000002d0000002e0000002f000000300000003100000032000000330000003400000035000000360000003700000038000000390000003a0000003b0000003c0000003d0000003e0000003f000000400000004100000042000000430000004400000045000000460000004700000048000000490000004a0000004b0000004c000000
 --- !u!114 &-7506283076624867739
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -180,29 +360,7 @@ MonoBehaviour:
     - {x: -0.073894575, y: 0.000000038164814, z: -0.0000000025409936}
     - {x: 0, y: 0, z: 0}
     sampledJointIndices: 000000000100000002000000030000000400000005000000060000000700000008000000090000000a0000000b0000000c0000000d0000000e0000000f000000100000001100000012000000130000001400000015000000160000001700000018000000190000001a0000001b0000001c0000001d0000001e0000001f000000200000002100000022000000230000002400000025000000260000002700000028000000290000002a0000002b0000002c0000002d0000002e0000002f000000300000003100000032000000330000003400000035000000360000003700000038000000390000003a0000003b0000003c0000003d0000003e0000003f000000400000004100000042000000430000004400000045000000460000004700000048000000490000004a0000004b0000004c000000
---- !u!114 &-5169506949208925424
-MonoBehaviour:
-  m_ObjectHideFlags: 1
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 030f85c3f73729f4f976f66ffb23b875, type: 3}
-  m_Name: AnimationPlayableAsset
-  m_EditorClassIdentifier: 
-  m_Clip: {fileID: -203655887218126122, guid: f725eeacdb86d674cb4103f6d7c92ed1, type: 3}
-  m_Position: {x: 0, y: 0, z: 0}
-  m_EulerAngles: {x: 0, y: 0, z: 0}
-  m_UseTrackMatchFields: 1
-  m_MatchTargetFields: 63
-  m_RemoveStartOffset: 1
-  m_ApplyFootIK: 0
-  m_Loop: 0
-  m_Version: 1
-  m_Rotation: {x: 0, y: 0, z: 0, w: 1}
---- !u!114 &-2886600512971907510
+--- !u!114 &-1903077558138677463
 MonoBehaviour:
   m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
@@ -214,17 +372,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 016fed14ec49f66418cf65fea1f325ab, type: 3}
   m_Name: Kimodo Full Body Constraint Marker
   m_EditorClassIdentifier: 
-  m_Time: 0.3667
+  m_Time: 9.8333
   useOverride: 1
   sampleData:
     constraintType: fullbody
-    sampleTime: 0.3667
+    sampleTime: 9.8333
     rigType: 0
     hasRootHeading: 0
-    kimodoRootPosition: {x: 0.81294805, y: 0.9349054, z: 0.6144518}
-    rootHeading: {x: 0.56520766, y: 0.82494867}
-    unityRootPos: {x: 0.013377413, y: -0.015421105, z: 0.6425036}
-    unityRootRot: {x: -0, y: 0.023782024, z: -0, w: 0.99971724}
+    kimodoRootPosition: {x: 0, y: 0.9884155, z: -0.076}
+    rootHeading: {x: 0.00027294125, y: 0.99999994}
+    unityRootPos: {x: 0, y: 0, z: 0}
+    unityRootRot: {x: -0, y: -0, z: -0, w: 1}
     jointNames:
     - Hips
     - Spine1
@@ -304,82 +462,82 @@ MonoBehaviour:
     - RightToeBase
     - RightToeEnd
     localAxisAngles:
-    - {x: -0.04659414, y: 0.5993061, z: -0.11935735}
-    - {x: -0.22546767, y: -0.049446013, z: -0.16905123}
-    - {x: 0.022054678, y: -0.025258431, z: 0.03313976}
-    - {x: -0.05641291, y: -0.02636263, z: 0.04082239}
-    - {x: -0.0894822, y: -0.0027210568, z: 0.05331705}
+    - {x: -0.0048555336, y: 0.00011875259, z: -0.06356383}
+    - {x: -0.033725798, y: 0.0044258465, z: 0.056032754}
+    - {x: -0.08858287, y: 0.013196927, z: 0.018830596}
+    - {x: 0.16421975, y: 0.044913832, z: -0.014293853}
+    - {x: 0.071994886, y: -0.09672666, z: 0.11749623}
     - {x: 0, y: 0, z: 0}
-    - {x: -0.015301609, y: 0.034576483, z: 0.0040765386}
+    - {x: -0.16728263, y: -0.02833163, z: 0.002212617}
     - {x: 0, y: 0, z: 0}
-    - {x: 0.17951274, y: 0.000000029055455, z: -0.000000052987225}
+    - {x: 0.00010577753, y: 0.00096690084, z: 0.00008711026}
+    - {x: -0.18646337, y: 0.068557955, z: 0.00000004010391}
+    - {x: -0.18669951, y: -0.06537524, z: -0.00000015548954}
+    - {x: -0.06672537, y: 0.083286084, z: 0.18673848}
+    - {x: 0.3753906, y: -0.14436881, z: 1.1577361}
+    - {x: 0.0056565204, y: 0.63442177, z: 0.0133843105}
+    - {x: -0.018134274, y: 0.006602497, z: 0.082781196}
+    - {x: 0.031957515, y: -0.1657797, z: 0.10001103}
+    - {x: 0.050109316, y: -0.011894391, z: 0.2850264}
+    - {x: 0.00025565887, y: -0.14642875, z: -0.031538736}
     - {x: 0, y: 0, z: 0}
-    - {x: 0, y: 0, z: 0}
-    - {x: -0.049524374, y: 0.17507535, z: 0.13860019}
-    - {x: 0.32559037, y: -0.46342322, z: 1.2981781}
-    - {x: 0.15249741, y: 0.47225198, z: -0.12368027}
-    - {x: 0.33071753, y: 0.023512164, z: 0.3369246}
-    - {x: -0.4670031, y: 0.12350097, z: -0.2195282}
-    - {x: 0.042298272, y: 0.041744858, z: 0.29802012}
-    - {x: 0.00024538575, y: 0.21733978, z: 0.046947863}
-    - {x: 0, y: 0, z: 0}
-    - {x: -0.053137336, y: 0.049743295, z: 0.17407854}
-    - {x: -0.08824572, y: -0.016047975, z: 0.2923189}
-    - {x: -0.08570087, y: -0.025041362, z: 0.067467555}
-    - {x: 0, y: 0, z: 0}
-    - {x: 0, y: 0, z: 0}
-    - {x: -0.05354779, y: 0.16930284, z: 0.23550905}
-    - {x: -0.17869578, y: -0.101536445, z: 0.46382627}
-    - {x: -0.15700056, y: -0.030932274, z: 0.25517604}
+    - {x: -0.050958257, y: -0.04437668, z: 0.031247517}
+    - {x: -0.08695952, y: -0.020913176, z: 0.17137656}
+    - {x: -0.08891836, y: -0.01306053, z: 0.36571187}
     - {x: 0, y: 0, z: 0}
     - {x: 0, y: 0, z: 0}
-    - {x: -0.11225823, y: 0.250366, z: 0.48662174}
-    - {x: -0.17802784, y: -0.19322734, z: 0.31672657}
-    - {x: -0.1557297, y: -0.035844333, z: 0.19370258}
+    - {x: 0.00081086706, y: -0.03848508, z: 0.025927037}
+    - {x: -0.17367944, y: -0.10823369, z: 0.37585703}
+    - {x: -0.15675285, y: -0.031870153, z: 0.24162343}
     - {x: 0, y: 0, z: 0}
     - {x: 0, y: 0, z: 0}
-    - {x: -0.13519868, y: 0.23788051, z: 0.26938397}
-    - {x: -0.22405817, y: -0.3143037, z: 0.6684679}
-    - {x: -0.15283154, y: -0.04378031, z: 0.09714416}
+    - {x: 0.014383133, y: -0.02919788, z: 0.005274711}
+    - {x: -0.17275913, y: -0.19695257, z: 0.26434928}
+    - {x: -0.16139567, y: -0.009084287, z: 0.59406173}
     - {x: 0, y: 0, z: 0}
     - {x: 0, y: 0, z: 0}
-    - {x: 0.0053223902, y: -0.19690904, z: 0.014968451}
-    - {x: 0.18529502, y: -0.26194933, z: -1.2190322}
-    - {x: 0.112240866, y: -0.85872275, z: 0.07563966}
-    - {x: 0.14621128, y: -0.27245772, z: 0.21469226}
-    - {x: -0.2727649, y: -0.1683393, z: 0.024327857}
-    - {x: 0.025803976, y: -0.1568106, z: -0.3253896}
-    - {x: 0.0005671392, y: -0.2752612, z: -0.0595}
-    - {x: 0, y: 0, z: 0}
-    - {x: -0.074663505, y: -0.14346765, z: -0.21273628}
-    - {x: -0.09157566, y: 0.009463762, z: -0.45889765}
-    - {x: -0.090174235, y: 0.016214881, z: -0.29698676}
+    - {x: 0.008878065, y: -0.013558703, z: 0.05994461}
+    - {x: -0.16758925, y: -0.3327034, z: 0.3238788}
+    - {x: -0.15314603, y: -0.043123286, z: 0.11211093}
     - {x: 0, y: 0, z: 0}
     - {x: 0, y: 0, z: 0}
-    - {x: -0.079993255, y: -0.27194655, z: -0.38896602}
-    - {x: -0.19113159, y: 0.085849755, z: -0.6621181}
-    - {x: -0.1627142, y: 0.012003938, z: -0.5258692}
+    - {x: -0.0843855, y: -0.16392678, z: -0.23732358}
+    - {x: 0.34680927, y: -0.012249168, z: -1.1250533}
+    - {x: 0.057422563, y: -0.6247249, z: -0.018715728}
+    - {x: -0.00024330379, y: -0.050619256, z: -0.13715102}
+    - {x: -0.06779413, y: 0.09924408, z: -0.041811194}
+    - {x: 0.051137265, y: 0.016562792, z: -0.28392622}
+    - {x: 0.00059826614, y: 0.21187969, z: 0.045586552}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.056100197, y: 0.034912556, z: -0.028250774}
+    - {x: -0.08763804, y: 0.025159888, z: -0.07748268}
+    - {x: -0.08906577, y: 0.020493286, z: -0.19272026}
     - {x: 0, y: 0, z: 0}
     - {x: 0, y: 0, z: 0}
-    - {x: -0.1269369, y: -0.25512683, z: -0.6445931}
-    - {x: -0.19195487, y: 0.1843469, z: -0.43957978}
-    - {x: -0.1600245, y: 0.026835652, z: -0.33487332}
+    - {x: -0.002840675, y: 0.03260451, z: -0.026138563}
+    - {x: -0.16906197, y: 0.11657163, z: -0.2678262}
+    - {x: -0.15862906, y: 0.031962957, z: -0.24534394}
     - {x: 0, y: 0, z: 0}
     - {x: 0, y: 0, z: 0}
-    - {x: -0.2147249, y: -0.3083185, z: -0.56438714}
-    - {x: -0.27904317, y: 0.28915253, z: -1.0062238}
-    - {x: -0.16326377, y: 0.014543852, z: -0.7270067}
+    - {x: 0.010994694, y: 0.025237303, z: -0.008971598}
+    - {x: -0.18632513, y: 0.18873964, z: -0.38199487}
+    - {x: -0.15989706, y: 0.027346352, z: -0.32723168}
     - {x: 0, y: 0, z: 0}
     - {x: 0, y: 0, z: 0}
-    - {x: -0.29660097, y: 0.0054548243, z: 0.21343997}
-    - {x: 0.21874525, y: -0.08443773, z: -0.0031856417}
-    - {x: 0.0758825, y: -0.030432517, z: -0.10182211}
-    - {x: -0.029677171, y: 0.000000011543442, z: 0.000000048626752}
+    - {x: -0.0021584786, y: -0.007424848, z: -0.059898388}
+    - {x: -0.19294818, y: 0.32644078, z: -0.46567005}
+    - {x: -0.15560868, y: 0.04214515, z: -0.14370817}
     - {x: 0, y: 0, z: 0}
-    - {x: -0.03240334, y: 0.02966877, z: 0.13814537}
-    - {x: 1.061014, y: 0.017047372, z: 0.017342743}
-    - {x: 0.23807308, y: 0.03595223, z: -0.13578995}
-    - {x: -0.014826427, y: 0.000000066797476, z: -0.00000003011385}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.0072018337, y: -0.25999406, z: -0.009017524}
+    - {x: 0.20713232, y: -0.31137612, z: 0.012060539}
+    - {x: -0.17226744, y: -0.053362474, z: 0.031181397}
+    - {x: 0.00119604, y: 0.000000042508983, z: -0.000000007560293}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.10958141, y: 0.18121074, z: 0.12553814}
+    - {x: 0.39431775, y: 0.20170788, z: -0.0111361835}
+    - {x: -0.28521731, y: 0.05514243, z: -0.062414102}
+    - {x: 0.0037186397, y: 0.000000637853, z: 0.00000014596256}
     - {x: 0, y: 0, z: 0}
     sampledJointIndices: 000000000100000002000000030000000400000005000000060000000700000008000000090000000a0000000b0000000c0000000d0000000e0000000f000000100000001100000012000000130000001400000015000000160000001700000018000000190000001a0000001b0000001c0000001d0000001e0000001f000000200000002100000022000000230000002400000025000000260000002700000028000000290000002a0000002b0000002c0000002d0000002e0000002f000000300000003100000032000000330000003400000035000000360000003700000038000000390000003a0000003b0000003c0000003d0000003e0000003f000000400000004100000042000000430000004400000045000000460000004700000048000000490000004a0000004b0000004c000000
 --- !u!114 &-620307563089755545
@@ -576,7 +734,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Version: 0
   m_Tracks:
-  - {fileID: 4920200649922621575}
   - {fileID: 3483828814348025209}
   m_FixedDuration: 0
   m_EditorSettings:
@@ -594,9 +751,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260622_134535_411
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260622_230649_625
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: db8a4c63dfab7744bb29431addce8114, type: 2}
+  m_Clip: {fileID: 7400000, guid: a455ad5afbadb914791886501cd7bc3f, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: 0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -611,17 +768,17 @@ MonoBehaviour:
   comfyuiPort: 8188
   bridgeModelName: Kimodo-SOMA-RP-v1
   bridgeVramMode: 0
-  motionPrompt: a woman walk and turn left
+  motionPrompt: a woman sit on the desk
   generationFrames: 150
   diffusionSteps: 100
   randomSeed: 0
-  seed: 42
+  seed: 1400152582
   customRetargetAvatar: {fileID: 0}
   inOutConstraintMode: 0
   showConstraint: 1
   normalizeConstraintOrigin: 1
   isGenerated: 1
-  lastGeneratedPrompt: a woman walk and turn left
+  lastGeneratedPrompt: a woman sit on the desk
   autoRetargetOnBinding: 1
   curveFilterOptions:
     enabled: 1
@@ -812,7 +969,153 @@ MonoBehaviour:
     - {x: -0.048397712, y: 0.0000000034227092, z: 0.000000016601495}
     - {x: 0, y: 0, z: 0}
     sampledJointIndices: 000000000100000002000000030000000400000005000000060000000700000008000000090000000a0000000b0000000c0000000d0000000e0000000f000000100000001100000012000000130000001400000015000000160000001700000018000000190000001a0000001b0000001c0000001d0000001e0000001f000000200000002100000022000000230000002400000025000000260000002700000028000000290000002a0000002b0000002c0000002d0000002e0000002f000000300000003100000032000000330000003400000035000000360000003700000038000000390000003a0000003b0000003c0000003d0000003e0000003f000000400000004100000042000000430000004400000045000000460000004700000048000000490000004a0000004b0000004c000000
---- !u!114 &3170775466734564170
+--- !u!114 &3483828814348025209
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d21dcc2386d650c4597f3633c75a1f98, type: 3}
+  m_Name: Animation Track (1)
+  m_EditorClassIdentifier: 
+  m_Version: 3
+  m_AnimClip: {fileID: 0}
+  m_Locked: 0
+  m_Muted: 0
+  m_CustomPlayableFullTypename: 
+  m_Curves: {fileID: 0}
+  m_Parent: {fileID: 11400000}
+  m_Children: []
+  m_Clips:
+  - m_Version: 1
+    m_Start: 4.966666666666667
+    m_ClipIn: 0
+    m_Asset: {fileID: 7531505773548242044}
+    m_Duration: 5
+    m_TimeScale: 1
+    m_ParentTrack: {fileID: 3483828814348025209}
+    m_EaseInDuration: 0
+    m_EaseOutDuration: 0
+    m_BlendInDuration: -1
+    m_BlendOutDuration: -1
+    m_MixInCurve:
+      serializedVersion: 2
+      m_Curve: []
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    m_MixOutCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    m_BlendInCurveMode: 0
+    m_BlendOutCurveMode: 0
+    m_ExposedParameterNames: []
+    m_AnimationCurves: {fileID: 0}
+    m_Recordable: 0
+    m_PostExtrapolationMode: 1
+    m_PreExtrapolationMode: 1
+    m_PostExtrapolationTime: Infinity
+    m_PreExtrapolationTime: 0
+    m_DisplayName: Kimodo_Playable_20260621_131233_482
+  - m_Version: 1
+    m_Start: 0
+    m_ClipIn: 0
+    m_Asset: {fileID: 922912049602635594}
+    m_Duration: 4.966666666666667
+    m_TimeScale: 1
+    m_ParentTrack: {fileID: 3483828814348025209}
+    m_EaseInDuration: 0
+    m_EaseOutDuration: 0
+    m_BlendInDuration: -1
+    m_BlendOutDuration: -1
+    m_MixInCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    m_MixOutCurve:
+      serializedVersion: 2
+      m_Curve: []
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    m_BlendInCurveMode: 0
+    m_BlendOutCurveMode: 0
+    m_ExposedParameterNames: []
+    m_AnimationCurves: {fileID: 0}
+    m_Recordable: 0
+    m_PostExtrapolationMode: 1
+    m_PreExtrapolationMode: 1
+    m_PostExtrapolationTime: 0
+    m_PreExtrapolationTime: 0
+    m_DisplayName: Kimodo_Playable_20260621_131233_482
+  m_Markers:
+    m_Objects:
+    - {fileID: 4532238185154227398}
+    - {fileID: -7968298621862472923}
+    - {fileID: -1903077558138677463}
+  m_InfiniteClipPreExtrapolation: 0
+  m_InfiniteClipPostExtrapolation: 0
+  m_InfiniteClipOffsetPosition: {x: 0, y: 0, z: 0}
+  m_InfiniteClipOffsetEulerAngles: {x: 0, y: 0, z: 0}
+  m_InfiniteClipTimeOffset: 0
+  m_InfiniteClipRemoveOffset: 0
+  m_InfiniteClipApplyFootIK: 1
+  mInfiniteClipLoop: 0
+  m_MatchTargetFields: 63
+  m_Position: {x: 0, y: 0, z: 0}
+  m_EulerAngles: {x: 0, y: 0, z: 0}
+  m_AvatarMask: {fileID: 0}
+  m_ApplyAvatarMask: 1
+  m_TrackOffset: 0
+  m_InfiniteClip: {fileID: 0}
+  m_OpenClipOffsetRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_Rotation: {x: 0, y: 0, z: 0, w: 1}
+  m_ApplyOffsets: 0
+--- !u!114 &4532238185154227398
 MonoBehaviour:
   m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
@@ -824,17 +1127,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 016fed14ec49f66418cf65fea1f325ab, type: 3}
   m_Name: Kimodo Full Body Constraint Marker
   m_EditorClassIdentifier: 
-  m_Time: 3.1667
+  m_Time: 4.9167
   useOverride: 1
   sampleData:
     constraintType: fullbody
-    sampleTime: 3.1667
+    sampleTime: 4.9167
     rigType: 0
     hasRootHeading: 0
-    kimodoRootPosition: {x: -3.6884773, y: 0.9926326, z: 3.7199998}
-    rootHeading: {x: -0.9967835, y: 0.08014122}
-    unityRootPos: {x: -0.030914528, y: 0.025849003, z: 0.9662326}
-    unityRootRot: {x: -0, y: -0.0049717645, z: -0, w: 0.99998766}
+    kimodoRootPosition: {x: -0.42976624, y: 0.744, z: -0.3336384}
+    rootHeading: {x: -0.016765514, y: 0.99985945}
+    unityRootPos: {x: -0.42606708, y: 0, z: -0.08261586}
+    unityRootRot: {x: -0, y: 0.017325634, z: -0, w: 0.99985}
     jointNames:
     - Hips
     - Spine1
@@ -914,85 +1217,85 @@ MonoBehaviour:
     - RightToeBase
     - RightToeEnd
     localAxisAngles:
-    - {x: -0.12314207, y: -1.4916002, z: -0.22675848}
-    - {x: 0.059987355, y: -0.0045904587, z: 0.03401354}
-    - {x: -0.06444963, y: -0.025763197, z: 0.011800812}
-    - {x: 0.18448643, y: 0.019138698, z: 0.055789106}
-    - {x: 0.37916633, y: -0.049475424, z: -0.014295906}
+    - {x: -0.76711273, y: -0.042349633, z: -0.07182939}
+    - {x: 0.15439637, y: -0.0011996826, z: 0.02508565}
+    - {x: -0.003996788, y: 0.008429486, z: 0.01909289}
+    - {x: 0.25200614, y: 0.04798982, z: 0.036852624}
+    - {x: 0.15743802, y: -0.06348789, z: 0.04865652}
     - {x: 0, y: 0, z: 0}
-    - {x: -0.2696669, y: 0.06276363, z: 0.005529164}
-    - {x: 0, y: 0, z: 0}
-    - {x: 0, y: 0, z: 0}
-    - {x: -0.18219742, y: 0.06483387, z: 0.0000000013746544}
-    - {x: -0.18252096, y: -0.06771962, z: -0.0000002927513}
-    - {x: -0.033154715, y: 0.1190533, z: 0.092787005}
-    - {x: 0.18890074, y: 0.25337103, z: 1.09629}
-    - {x: -0.16139086, y: 0.32831848, z: 0.026951572}
-    - {x: -0.16306354, y: 0.00080027606, z: -0.12684703}
-    - {x: 0.031953707, y: -0.16575827, z: 0.099997625}
-    - {x: 0.05010558, y: -0.011893718, z: 0.2850078}
-    - {x: 0.0002532435, y: -0.14639293, z: -0.031530973}
-    - {x: 0, y: 0, z: 0}
-    - {x: -0.05092494, y: -0.044347223, z: 0.031229181}
-    - {x: -0.08694793, y: -0.020909177, z: 0.17135228}
-    - {x: -0.08891461, y: -0.0130622415, z: 0.3657022}
+    - {x: -0.086432435, y: 0.06799343, z: -0.026157148}
     - {x: 0, y: 0, z: 0}
     - {x: 0, y: 0, z: 0}
-    - {x: 0.00080940075, y: -0.03837465, z: 0.025851544}
-    - {x: -0.17367813, y: -0.108234644, z: 0.37585604}
-    - {x: -0.15674415, y: -0.031865813, z: 0.24161477}
+    - {x: -0.18747443, y: 0.06640066, z: 0.000000050575743}
+    - {x: -0.18629898, y: -0.066137135, z: -0.000000018318543}
+    - {x: -0.06396295, y: 0.03445625, z: 0.17900823}
+    - {x: 0.45456332, y: -0.16739531, z: 1.0462099}
+    - {x: 0.37507817, y: 1.4467821, z: -0.15866205}
+    - {x: 0.33151865, y: 0.3863947, z: -0.30247477}
+    - {x: 0.03195343, y: -0.16576172, z: 0.09999675}
+    - {x: 0.05010501, y: -0.0118878065, z: 0.28501567}
+    - {x: 0.00025456792, y: -0.1464141, z: -0.03153867}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.0509343, y: -0.04435633, z: 0.03123152}
+    - {x: -0.08694866, y: -0.020910766, z: 0.17136008}
+    - {x: -0.0889175, y: -0.0130603155, z: 0.3657016}
     - {x: 0, y: 0, z: 0}
     - {x: 0, y: 0, z: 0}
-    - {x: 0.0143359145, y: -0.029100673, z: 0.005262393}
-    - {x: -0.17275289, y: -0.19694784, z: 0.26433966}
-    - {x: -0.16139579, y: -0.009083406, z: 0.5940609}
+    - {x: 0.00080599077, y: -0.03839495, z: 0.025867619}
+    - {x: -0.17367767, y: -0.10823363, z: 0.3758559}
+    - {x: -0.1567451, y: -0.031868055, z: 0.2416109}
     - {x: 0, y: 0, z: 0}
     - {x: 0, y: 0, z: 0}
-    - {x: 0.008860387, y: -0.013538176, z: 0.05985235}
-    - {x: -0.16758224, y: -0.33269864, z: 0.3238636}
-    - {x: -0.15311478, y: -0.043112632, z: 0.11208951}
+    - {x: 0.014352757, y: -0.029140156, z: 0.005269847}
+    - {x: -0.17275424, y: -0.19694692, z: 0.26433858}
+    - {x: -0.1613963, y: -0.009084884, z: 0.5940575}
     - {x: 0, y: 0, z: 0}
     - {x: 0, y: 0, z: 0}
-    - {x: -0.014304085, y: -0.17777559, z: -0.040229023}
-    - {x: -0.23037212, y: -0.81170094, z: -0.83946544}
-    - {x: 0.06807376, y: -2.5022278, z: 0.54861}
-    - {x: 0.30295417, y: -0.10741867, z: 0.24554105}
-    - {x: -0.06775965, y: 0.099196196, z: -0.04179241}
-    - {x: 0.05113346, y: 0.01656194, z: -0.28390506}
-    - {x: 0.00059774535, y: 0.21185443, z: 0.0455782}
-    - {x: 0, y: 0, z: 0}
-    - {x: -0.056037348, y: 0.034872524, z: -0.028213898}
-    - {x: -0.08759957, y: 0.025151825, z: -0.077458}
-    - {x: -0.0890493, y: 0.020489965, z: -0.19267493}
+    - {x: 0.008871864, y: -0.013553525, z: 0.05991487}
+    - {x: -0.16758838, y: -0.33270118, z: 0.3238757}
+    - {x: -0.15312655, y: -0.04311973, z: 0.112098396}
     - {x: 0, y: 0, z: 0}
     - {x: 0, y: 0, z: 0}
-    - {x: -0.0028337855, y: 0.032531213, z: -0.026075494}
-    - {x: -0.16905405, y: 0.11656466, z: -0.2678145}
-    - {x: -0.15862106, y: 0.03196331, z: -0.24532762}
+    - {x: -0.10821646, y: 0.02374824, z: -0.3043448}
+    - {x: 0.45709988, y: -0.035219226, z: -0.9487569}
+    - {x: 0.40724677, y: -1.5405296, z: 0.06614776}
+    - {x: 0.297187, y: -0.25100574, z: 0.002573195}
+    - {x: -0.06777269, y: 0.09921214, z: -0.04180192}
+    - {x: 0.05113557, y: 0.016562464, z: -0.28391308}
+    - {x: 0.0005970908, y: 0.21186222, z: 0.04558385}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.056056835, y: 0.034886222, z: -0.028234316}
+    - {x: -0.087619916, y: 0.025153182, z: -0.07746533}
+    - {x: -0.08905346, y: 0.020494876, z: -0.19268367}
     - {x: 0, y: 0, z: 0}
     - {x: 0, y: 0, z: 0}
-    - {x: 0.01093073, y: 0.025087725, z: -0.008910985}
-    - {x: -0.18632561, y: 0.18873607, z: -0.38199326}
-    - {x: -0.15988818, y: 0.02734773, z: -0.32721612}
+    - {x: -0.0028388016, y: 0.032590363, z: -0.026129045}
+    - {x: -0.169061, y: 0.11657037, z: -0.2678219}
+    - {x: -0.15862326, y: 0.03196162, z: -0.24533227}
     - {x: 0, y: 0, z: 0}
     - {x: 0, y: 0, z: 0}
-    - {x: -0.0021536422, y: -0.00740756, z: -0.05975323}
-    - {x: -0.19294855, y: 0.32643947, z: -0.46566722}
-    - {x: -0.1555923, y: 0.042144075, z: -0.14369294}
+    - {x: 0.010975013, y: 0.02519507, z: -0.008954937}
+    - {x: -0.18632422, y: 0.18873784, z: -0.3819924}
+    - {x: -0.15989265, y: 0.02734439, z: -0.32722965}
     - {x: 0, y: 0, z: 0}
     - {x: 0, y: 0, z: 0}
-    - {x: 0.1497265, y: 0.028726108, z: 0.11662409}
-    - {x: 0.12451999, y: -0.022784, z: -0.0032938935}
-    - {x: -0.032777503, y: -0.023127459, z: 0.004490411}
-    - {x: -0.027378818, y: 0.0000008294503, z: 0.0000004305239}
+    - {x: -0.0021550094, y: -0.0074160188, z: -0.05983987}
+    - {x: -0.19294927, y: 0.32643938, z: -0.46567228}
+    - {x: -0.1555919, y: 0.04214068, z: -0.1436894}
     - {x: 0, y: 0, z: 0}
-    - {x: -0.15875323, y: 0.065332934, z: 0.14723301}
-    - {x: 1.0029138, y: 0.027765611, z: -0.012817293}
-    - {x: 0.05553286, y: -0.0012478862, z: 0.07684455}
-    - {x: -0.08663783, y: 0.0000017647039, z: -0.00000055939364}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.44617474, y: -0.20957352, z: -0.1824304}
+    - {x: 1.713274, y: -0.1747402, z: 0.059892967}
+    - {x: -0.31163973, y: -0.07858706, z: -0.06358944}
+    - {x: -0.048892777, y: -0.00000066142735, z: 0.00000060581516}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.500748, y: 0.15028043, z: 0.31153256}
+    - {x: 1.7694308, y: 0.054477673, z: -0.058524933}
+    - {x: -0.34691456, y: -0.010497986, z: 0.1665413}
+    - {x: -0.0277851, y: -0.00000011659594, z: -0.0000001156555}
     - {x: 0, y: 0, z: 0}
     sampledJointIndices: 000000000100000002000000030000000400000005000000060000000700000008000000090000000a0000000b0000000c0000000d0000000e0000000f000000100000001100000012000000130000001400000015000000160000001700000018000000190000001a0000001b0000001c0000001d0000001e0000001f000000200000002100000022000000230000002400000025000000260000002700000028000000290000002a0000002b0000002c0000002d0000002e0000002f000000300000003100000032000000330000003400000035000000360000003700000038000000390000003a0000003b0000003c0000003d0000003e0000003f000000400000004100000042000000430000004400000045000000460000004700000048000000490000004a0000004b0000004c000000
---- !u!114 &3483828814348025209
+--- !u!114 &7531505773548242044
 MonoBehaviour:
   m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
@@ -1001,224 +1304,45 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d21dcc2386d650c4597f3633c75a1f98, type: 3}
-  m_Name: Animation Track (1)
+  m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260622_230809_495
   m_EditorClassIdentifier: 
-  m_Version: 3
-  m_AnimClip: {fileID: 0}
-  m_Locked: 0
-  m_Muted: 0
-  m_CustomPlayableFullTypename: 
-  m_Curves: {fileID: 0}
-  m_Parent: {fileID: 11400000}
-  m_Children: []
-  m_Clips:
-  - m_Version: 1
-    m_Start: 0
-    m_ClipIn: 0
-    m_Asset: {fileID: 922912049602635594}
-    m_Duration: 4.966666666666667
-    m_TimeScale: 1
-    m_ParentTrack: {fileID: 3483828814348025209}
-    m_EaseInDuration: 0
-    m_EaseOutDuration: 0
-    m_BlendInDuration: -1
-    m_BlendOutDuration: -1
-    m_MixInCurve:
-      serializedVersion: 2
-      m_Curve:
-      - serializedVersion: 3
-        time: 0
-        value: 0
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      - serializedVersion: 3
-        time: 1
-        value: 1
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      m_PreInfinity: 2
-      m_PostInfinity: 2
-      m_RotationOrder: 4
-    m_MixOutCurve:
-      serializedVersion: 2
-      m_Curve:
-      - serializedVersion: 3
-        time: 0
-        value: 1
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      - serializedVersion: 3
-        time: 1
-        value: 0
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      m_PreInfinity: 2
-      m_PostInfinity: 2
-      m_RotationOrder: 4
-    m_BlendInCurveMode: 0
-    m_BlendOutCurveMode: 0
-    m_ExposedParameterNames: []
-    m_AnimationCurves: {fileID: 0}
-    m_Recordable: 0
-    m_PostExtrapolationMode: 1
-    m_PreExtrapolationMode: 1
-    m_PostExtrapolationTime: Infinity
-    m_PreExtrapolationTime: 0
-    m_DisplayName: Kimodo_Playable_20260621_131233_482
-  m_Markers:
-    m_Objects:
-    - {fileID: 8641905673165174906}
-    - {fileID: 3170775466734564170}
-    - {fileID: -2886600512971907510}
-  m_InfiniteClipPreExtrapolation: 0
-  m_InfiniteClipPostExtrapolation: 0
-  m_InfiniteClipOffsetPosition: {x: 0, y: 0, z: 0}
-  m_InfiniteClipOffsetEulerAngles: {x: 0, y: 0, z: 0}
-  m_InfiniteClipTimeOffset: 0
-  m_InfiniteClipRemoveOffset: 0
-  m_InfiniteClipApplyFootIK: 1
-  mInfiniteClipLoop: 0
+  m_Clip: {fileID: 7400000, guid: 1c93f943c3a35704f9d13da835a1b010, type: 2}
+  m_Position: {x: -0.40037343, y: 0, z: -0.20704913}
+  m_EulerAngles: {x: 0, y: 0.395, z: 0}
+  m_UseTrackMatchFields: 1
   m_MatchTargetFields: 63
-  m_Position: {x: 0, y: 0, z: 0}
-  m_EulerAngles: {x: 0, y: 0, z: 0}
-  m_AvatarMask: {fileID: 0}
-  m_ApplyAvatarMask: 1
-  m_TrackOffset: 1
-  m_InfiniteClip: {fileID: 0}
-  m_OpenClipOffsetRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_RemoveStartOffset: 1
+  m_ApplyFootIK: 1
+  m_Loop: 0
+  m_Version: 1
   m_Rotation: {x: 0, y: 0, z: 0, w: 1}
-  m_ApplyOffsets: 0
---- !u!114 &4920200649922621575
-MonoBehaviour:
-  m_ObjectHideFlags: 1
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d21dcc2386d650c4597f3633c75a1f98, type: 3}
-  m_Name: Animation Track
-  m_EditorClassIdentifier: 
-  m_Version: 3
-  m_AnimClip: {fileID: 0}
-  m_Locked: 0
-  m_Muted: 1
-  m_CustomPlayableFullTypename: 
-  m_Curves: {fileID: 0}
-  m_Parent: {fileID: 11400000}
-  m_Children: []
-  m_Clips:
-  - m_Version: 1
-    m_Start: 0
-    m_ClipIn: 0
-    m_Asset: {fileID: -5169506949208925424}
-    m_Duration: 0.9666666666666667
-    m_TimeScale: 1
-    m_ParentTrack: {fileID: 4920200649922621575}
-    m_EaseInDuration: 0
-    m_EaseOutDuration: 0
-    m_BlendInDuration: -1
-    m_BlendOutDuration: -1
-    m_MixInCurve:
-      serializedVersion: 2
-      m_Curve:
-      - serializedVersion: 3
-        time: 0
-        value: 0
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      - serializedVersion: 3
-        time: 1
-        value: 1
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      m_PreInfinity: 2
-      m_PostInfinity: 2
-      m_RotationOrder: 4
-    m_MixOutCurve:
-      serializedVersion: 2
-      m_Curve:
-      - serializedVersion: 3
-        time: 0
-        value: 1
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      - serializedVersion: 3
-        time: 1
-        value: 0
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      m_PreInfinity: 2
-      m_PostInfinity: 2
-      m_RotationOrder: 4
-    m_BlendInCurveMode: 0
-    m_BlendOutCurveMode: 0
-    m_ExposedParameterNames: []
-    m_AnimationCurves: {fileID: 0}
-    m_Recordable: 0
-    m_PostExtrapolationMode: 1
-    m_PreExtrapolationMode: 1
-    m_PostExtrapolationTime: Infinity
-    m_PreExtrapolationTime: 0
-    m_DisplayName: WalkBack
-  m_Markers:
-    m_Objects:
-    - {fileID: -7506283076624867739}
-    - {fileID: -620307563089755545}
-    - {fileID: 1237194040967625775}
-    - {fileID: 7992148704367507427}
-  m_InfiniteClipPreExtrapolation: 0
-  m_InfiniteClipPostExtrapolation: 0
-  m_InfiniteClipOffsetPosition: {x: 0, y: 0, z: 0}
-  m_InfiniteClipOffsetEulerAngles: {x: 0, y: 0, z: 0}
-  m_InfiniteClipTimeOffset: 0
-  m_InfiniteClipRemoveOffset: 0
-  m_InfiniteClipApplyFootIK: 1
-  mInfiniteClipLoop: 0
-  m_MatchTargetFields: 63
-  m_Position: {x: 0, y: 0, z: 0}
-  m_EulerAngles: {x: 0, y: 0, z: 0}
-  m_AvatarMask: {fileID: 0}
-  m_ApplyAvatarMask: 1
-  m_TrackOffset: 1
-  m_InfiniteClip: {fileID: 0}
-  m_OpenClipOffsetRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_Rotation: {x: 0, y: 0, z: 0, w: 1}
-  m_ApplyOffsets: 0
+  generationBackend: 1
+  comfyuiIP: 127.0.0.1
+  comfyuiPort: 8188
+  bridgeModelName: Kimodo-SOMA-RP-v1
+  bridgeVramMode: 0
+  motionPrompt: stand up
+  generationFrames: 150
+  diffusionSteps: 100
+  randomSeed: 0
+  seed: 961133262
+  customRetargetAvatar: {fileID: 0}
+  inOutConstraintMode: 2
+  showConstraint: 1
+  normalizeConstraintOrigin: 1
+  isGenerated: 1
+  lastGeneratedPrompt: stand up
+  autoRetargetOnBinding: 1
+  curveFilterOptions:
+    enabled: 1
+    positionError: 0.25
+    rotationError: 0.25
+    floatError: 0.25
+    ensureQuaternionContinuity: 1
+  frameCount: 150
+  jointCount: 77
+  fps: 30
 --- !u!114 &7992148704367507427
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -1397,185 +1521,5 @@ MonoBehaviour:
     - {x: 1.0610143, y: 0.017047357, z: 0.017342726}
     - {x: 0.2380745, y: 0.035952523, z: -0.13579088}
     - {x: -0.014858554, y: -1.0139523e-10, z: 0.000000003004106}
-    - {x: 0, y: 0, z: 0}
-    sampledJointIndices: 000000000100000002000000030000000400000005000000060000000700000008000000090000000a0000000b0000000c0000000d0000000e0000000f000000100000001100000012000000130000001400000015000000160000001700000018000000190000001a0000001b0000001c0000001d0000001e0000001f000000200000002100000022000000230000002400000025000000260000002700000028000000290000002a0000002b0000002c0000002d0000002e0000002f000000300000003100000032000000330000003400000035000000360000003700000038000000390000003a0000003b0000003c0000003d0000003e0000003f000000400000004100000042000000430000004400000045000000460000004700000048000000490000004a0000004b0000004c000000
---- !u!114 &8641905673165174906
-MonoBehaviour:
-  m_ObjectHideFlags: 1
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 016fed14ec49f66418cf65fea1f325ab, type: 3}
-  m_Name: Kimodo Full Body Constraint Marker
-  m_EditorClassIdentifier: 
-  m_Time: 0.9667
-  useOverride: 1
-  sampleData:
-    constraintType: fullbody
-    sampleTime: 0.9667
-    rigType: 0
-    hasRootHeading: 0
-    kimodoRootPosition: {x: -0.067333296, y: 0.9926326, z: 0.97849625}
-    rootHeading: {x: -0.34034967, y: 0.9402989}
-    unityRootPos: {x: -0.030914528, y: 0.025849003, z: 0.9662326}
-    unityRootRot: {x: -0, y: -0.0049717645, z: -0, w: 0.99998766}
-    jointNames:
-    - Hips
-    - Spine1
-    - Spine2
-    - Chest
-    - Neck1
-    - Neck2
-    - Head
-    - HeadEnd
-    - Jaw
-    - LeftEye
-    - RightEye
-    - LeftShoulder
-    - LeftArm
-    - LeftForeArm
-    - LeftHand
-    - LeftHandThumb1
-    - LeftHandThumb2
-    - LeftHandThumb3
-    - LeftHandThumbEnd
-    - LeftHandIndex1
-    - LeftHandIndex2
-    - LeftHandIndex3
-    - LeftHandIndex4
-    - LeftHandIndexEnd
-    - LeftHandMiddle1
-    - LeftHandMiddle2
-    - LeftHandMiddle3
-    - LeftHandMiddle4
-    - LeftHandMiddleEnd
-    - LeftHandRing1
-    - LeftHandRing2
-    - LeftHandRing3
-    - LeftHandRing4
-    - LeftHandRingEnd
-    - LeftHandPinky1
-    - LeftHandPinky2
-    - LeftHandPinky3
-    - LeftHandPinky4
-    - LeftHandPinkyEnd
-    - RightShoulder
-    - RightArm
-    - RightForeArm
-    - RightHand
-    - RightHandThumb1
-    - RightHandThumb2
-    - RightHandThumb3
-    - RightHandThumbEnd
-    - RightHandIndex1
-    - RightHandIndex2
-    - RightHandIndex3
-    - RightHandIndex4
-    - RightHandIndexEnd
-    - RightHandMiddle1
-    - RightHandMiddle2
-    - RightHandMiddle3
-    - RightHandMiddle4
-    - RightHandMiddleEnd
-    - RightHandRing1
-    - RightHandRing2
-    - RightHandRing3
-    - RightHandRing4
-    - RightHandRingEnd
-    - RightHandPinky1
-    - RightHandPinky2
-    - RightHandPinky3
-    - RightHandPinky4
-    - RightHandPinkyEnd
-    - LeftLeg
-    - LeftShin
-    - LeftFoot
-    - LeftToeBase
-    - LeftToeEnd
-    - RightLeg
-    - RightShin
-    - RightFoot
-    - RightToeBase
-    - RightToeEnd
-    localAxisAngles:
-    - {x: -0.20679912, y: -0.3541206, z: -0.11342304}
-    - {x: 0.0599394, y: -0.0045860684, z: 0.03398649}
-    - {x: -0.064430475, y: -0.025757026, z: 0.011797705}
-    - {x: 0.18448608, y: 0.01914239, z: 0.05578902}
-    - {x: 0.37916684, y: -0.049476746, z: -0.014295266}
-    - {x: 0, y: 0, z: 0}
-    - {x: -0.2696758, y: 0.06276753, z: 0.0055286745}
-    - {x: 0, y: 0, z: 0}
-    - {x: 0, y: 0, z: 0}
-    - {x: -0.18220235, y: 0.06483474, z: 0.00000008456291}
-    - {x: -0.18253364, y: -0.06772777, z: -0.00000004290692}
-    - {x: -0.033156622, y: 0.11905793, z: 0.09279322}
-    - {x: 0.18890202, y: 0.25337404, z: 1.0962899}
-    - {x: -0.16139619, y: 0.32832637, z: 0.02694823}
-    - {x: -0.16307129, y: 0.00079990225, z: -0.12684837}
-    - {x: 0.031956166, y: -0.16577423, z: 0.10000615}
-    - {x: 0.050106645, y: -0.011891813, z: 0.28501692}
-    - {x: 0.00025568518, y: -0.14641626, z: -0.03153624}
-    - {x: 0, y: 0, z: 0}
-    - {x: -0.050945092, y: -0.044365168, z: 0.031239532}
-    - {x: -0.08695268, y: -0.020910377, z: 0.17136645}
-    - {x: -0.08891627, y: -0.013060924, z: 0.36569923}
-    - {x: 0, y: 0, z: 0}
-    - {x: 0, y: 0, z: 0}
-    - {x: 0.0008086963, y: -0.0384168, z: 0.025881177}
-    - {x: -0.17367515, y: -0.10823168, z: 0.37585124}
-    - {x: -0.15675001, y: -0.031867877, z: 0.24162062}
-    - {x: 0, y: 0, z: 0}
-    - {x: 0, y: 0, z: 0}
-    - {x: 0.0143611515, y: -0.02915219, z: 0.005270885}
-    - {x: -0.17275573, y: -0.19694883, z: 0.2643416}
-    - {x: -0.16139422, y: -0.009086088, z: 0.5940547}
-    - {x: 0, y: 0, z: 0}
-    - {x: 0, y: 0, z: 0}
-    - {x: 0.008871305, y: -0.013550639, z: 0.059911624}
-    - {x: -0.16758876, y: -0.33270228, z: 0.3238765}
-    - {x: -0.15312502, y: -0.043116987, z: 0.11209302}
-    - {x: 0, y: 0, z: 0}
-    - {x: 0, y: 0, z: 0}
-    - {x: -0.014303191, y: -0.17776543, z: -0.040226795}
-    - {x: -0.23037045, y: -0.8117006, z: -0.8394692}
-    - {x: 0.06808073, y: -2.5022302, z: 0.5486107}
-    - {x: 0.3029526, y: -0.10741827, z: 0.24554516}
-    - {x: -0.06777042, y: 0.09920731, z: -0.041799907}
-    - {x: 0.05113565, y: 0.016562257, z: -0.28390798}
-    - {x: 0.00059793965, y: 0.2118601, z: 0.04558319}
-    - {x: 0, y: 0, z: 0}
-    - {x: -0.056073412, y: 0.034895707, z: -0.028240338}
-    - {x: -0.08762139, y: 0.025154496, z: -0.077466324}
-    - {x: -0.08905434, y: 0.02049251, z: -0.19269092}
-    - {x: 0, y: 0, z: 0}
-    - {x: 0, y: 0, z: 0}
-    - {x: -0.0028378477, y: 0.032573782, z: -0.02611332}
-    - {x: -0.16906048, y: 0.11656978, z: -0.26782247}
-    - {x: -0.15862712, y: 0.031964097, z: -0.24533628}
-    - {x: 0, y: 0, z: 0}
-    - {x: 0, y: 0, z: 0}
-    - {x: 0.010968247, y: 0.02518053, z: -0.008950864}
-    - {x: -0.18632214, y: 0.1887374, z: -0.38198802}
-    - {x: -0.15989369, y: 0.027345426, z: -0.32722753}
-    - {x: 0, y: 0, z: 0}
-    - {x: 0, y: 0, z: 0}
-    - {x: -0.002155324, y: -0.0074154604, z: -0.059819996}
-    - {x: -0.19294885, y: 0.3264396, z: -0.46567166}
-    - {x: -0.15559766, y: 0.042142175, z: -0.14369604}
-    - {x: 0, y: 0, z: 0}
-    - {x: 0, y: 0, z: 0}
-    - {x: 0.14972737, y: 0.028732497, z: 0.116625495}
-    - {x: 0.12452291, y: -0.022789016, z: -0.0032937666}
-    - {x: -0.03279668, y: -0.023140991, z: 0.0044930857}
-    - {x: -0.027526464, y: 0.0000001941831, z: 0.00000007384416}
-    - {x: 0, y: 0, z: 0}
-    - {x: -0.15874998, y: 0.0653323, z: 0.14723027}
-    - {x: 1.0029132, y: 0.027765747, z: -0.012816867}
-    - {x: 0.05551951, y: -0.0012469977, z: 0.076823175}
-    - {x: -0.086648844, y: -0.00000012015748, z: 0.000000038067824}
     - {x: 0, y: 0, z: 0}
     sampledJointIndices: 000000000100000002000000030000000400000005000000060000000700000008000000090000000a0000000b0000000c0000000d0000000e0000000f000000100000001100000012000000130000001400000015000000160000001700000018000000190000001a0000001b0000001c0000001d0000001e0000001f000000200000002100000022000000230000002400000025000000260000002700000028000000290000002a0000002b0000002c0000002d0000002e0000002f000000300000003100000032000000330000003400000035000000360000003700000038000000390000003a0000003b0000003c0000003d0000003e0000003f000000400000004100000042000000430000004400000045000000460000004700000048000000490000004a0000004b0000004c000000
