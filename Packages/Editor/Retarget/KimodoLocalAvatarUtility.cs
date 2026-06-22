@@ -1,0 +1,149 @@
+using System;
+using System.Linq;
+using UnityEditor;
+using UnityEngine;
+
+namespace KimodoBridge.Editor
+{
+    internal static class KimodoLocalAvatarUtility
+    {
+        public readonly struct AvatarResolveResult
+        {
+            public AvatarResolveResult(Avatar avatar, bool isHumanoid, string source, string error)
+            {
+                Avatar = avatar;
+                IsHumanoid = isHumanoid;
+                Source = source ?? string.Empty;
+                Error = error ?? string.Empty;
+            }
+
+            public Avatar Avatar { get; }
+            public bool IsHumanoid { get; }
+            public string Source { get; }
+            public string Error { get; }
+        }
+
+        public static AvatarResolveResult ResolveAvatarFromGameObject(GameObject avatarRoot)
+        {
+            if (TryEnsureHumanoidAvatar(avatarRoot, out Avatar avatar, out string source, out string error))
+            {
+                return new AvatarResolveResult(avatar, KimodoRetargetCoreUtility.IsValidHumanoid(avatar), source, string.Empty);
+            }
+
+            return new AvatarResolveResult(null, false, string.Empty, error);
+        }
+
+        public static bool TryEnsureHumanoidAvatar(
+            GameObject avatarRoot,
+            out Avatar avatar,
+            out string source,
+            out string error)
+        {
+            avatar = null;
+            source = string.Empty;
+            error = string.Empty;
+
+            if (avatarRoot == null)
+            {
+                error = "Avatar root is null.";
+                return false;
+            }
+
+            Animator animator = avatarRoot.GetComponentInChildren<Animator>(true);
+            if (animator != null && KimodoRetargetCoreUtility.IsValidHumanoid(animator.avatar) && CheckAvatarValid(animator.avatar, avatarRoot))
+            {
+                avatar = animator.avatar;
+                source = "Animator";
+                return true;
+            }
+
+            if (KimodoHumanoidAvatarBuilderUtility.TryLoadImporterAvatar(avatarRoot, out Avatar importerAvatar, out _) &&
+                KimodoRetargetCoreUtility.IsValidHumanoid(importerAvatar) &&
+                CheckAvatarValid(importerAvatar, avatarRoot))
+            {
+                avatar = importerAvatar;
+                source = "Importer";
+                return true;
+            }
+
+            if (KimodoEditorAvatarCacheUtility.TryLoadGeneratedAvatarCache(avatarRoot, out Avatar cached, out _))
+            {
+                if (KimodoRetargetCoreUtility.IsValidHumanoid(cached) && CheckAvatarValid(cached, avatarRoot))
+                {
+                    avatar = cached;
+                    source = "Cache";
+                    return true;
+                }
+            }
+
+            Avatar generated = KimodoHumanoidAvatarBuilderUtility.GenerateHumanoidAvatar(
+                avatarRoot,
+                out string generateError);
+            if (!KimodoRetargetCoreUtility.IsValidHumanoid(generated) || !CheckAvatarValid(generated, avatarRoot))
+            {
+                error = string.IsNullOrWhiteSpace(generateError)
+                    ? "Generated avatar is invalid."
+                    : generateError;
+                return false;
+            }
+
+            string generatedAssetPath = AssetDatabase.GetAssetPath(generated);
+            if (!string.IsNullOrEmpty(generatedAssetPath))
+            {
+                avatar = generated;
+                source = "GeneratedImporter";
+                return true;
+            }
+
+            if (KimodoEditorAvatarCacheUtility.TrySaveGeneratedAvatarCache(avatarRoot, generated, out Avatar saved, out string saveError))
+            {
+                if (KimodoRetargetCoreUtility.IsValidHumanoid(saved))
+                {
+                    avatar = saved;
+                    source = "GeneratedCache";
+                    return true;
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"[Kimodo][Avatar] Save generated avatar failed: {saveError}");
+            }
+
+            avatar = generated;
+            source = "GeneratedTemp";
+            return true;
+        }
+
+        public static bool CheckAvatarValid(Avatar avatar, GameObject gameObject)
+        {
+            if (!KimodoRetargetCoreUtility.IsValidHumanoid(avatar) || gameObject == null)
+            {
+                return false;
+            }
+
+            var allBones = gameObject.GetComponentsInChildren<Transform>(true).ToArray();
+            HumanBone[] humanBones = avatar.humanDescription.human;
+            for (int i = 0; i < humanBones.Length; i++)
+            {
+                string boneName = humanBones[i].boneName;
+                bool found = false;
+                for (int j = 0; j < allBones.Length; j++)
+                {
+                    if (string.Equals(allBones[j].name, boneName, StringComparison.Ordinal))
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
+}
+

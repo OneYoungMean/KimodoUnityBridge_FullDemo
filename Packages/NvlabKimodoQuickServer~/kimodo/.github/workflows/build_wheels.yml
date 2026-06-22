@@ -1,0 +1,41 @@
+name: Build Wheels
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build_wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.21.3
+        env:
+          CIBW_PROJECT_TEXT: "MotionCorrection"
+          # Target Python versions: 3.10 to 3.14
+          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
+          CIBW_ARCHS_LINUX: x86_64
+          CIBW_ARCHS_WINDOWS: AMD64
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          CIBW_BUILD_FRONTEND: "pip"
+          CIBW_SKIP: "*-musllinux_*"
+          CIBW_BEFORE_BUILD_WINDOWS: "pip install setuptools"
+          CIBW_ENVIRONMENT: >
+            CMAKE_BUILD_TYPE=Release
+        with:
+          package-dir: MotionCorrection
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          path: ./wheelhouse/*.whl

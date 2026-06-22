@@ -1,0 +1,521 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &-9198596875558902217
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260621_131233_482
+  m_EditorClassIdentifier: 
+  m_Clip: {fileID: 7400000, guid: 4ada954682fbd4c45a91c716cae89661, type: 2}
+  m_Position: {x: 0, y: 0, z: 0}
+  m_EulerAngles: {x: 0, y: 0, z: 0}
+  m_UseTrackMatchFields: 1
+  m_MatchTargetFields: 63
+  m_RemoveStartOffset: 1
+  m_ApplyFootIK: 1
+  m_Loop: 0
+  m_Version: 1
+  m_Rotation: {x: 0, y: 0, z: 0, w: 1}
+  generationBackend: 1
+  comfyuiIP: 127.0.0.1
+  comfyuiPort: 8188
+  bridgeModelName: Kimodo-SOMA-RP-v1
+  bridgeVramMode: 0
+  motionPrompt: walk and take phone call
+  generationFrames: 150
+  diffusionSteps: 100
+  randomSeed: 0
+  seed: 42
+  customRetargetAvatar: {fileID: 0}
+  inOutConstraintMode: 0
+  showConstraint: 1
+  normalizeConstraintOrigin: 1
+  isGenerated: 1
+  lastGeneratedPrompt: walk and take phone call
+  autoRetargetOnBinding: 1
+  curveFilterOptions:
+    enabled: 1
+    positionError: 0.25
+    rotationError: 0.25
+    floatError: 0.25
+    ensureQuaternionContinuity: 1
+  frameCount: 150
+  jointCount: 77
+  fps: 30
+--- !u!114 &-7750879865495967840
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260622_123340_722
+  m_EditorClassIdentifier: 
+  m_Clip: {fileID: 7400000, guid: cc3d9bff09ac38442a0ca272f384491a, type: 2}
+  m_Position: {x: 0, y: 0, z: 0}
+  m_EulerAngles: {x: 0, y: 0, z: 0}
+  m_UseTrackMatchFields: 1
+  m_MatchTargetFields: 63
+  m_RemoveStartOffset: 1
+  m_ApplyFootIK: 1
+  m_Loop: 0
+  m_Version: 1
+  m_Rotation: {x: 0, y: 0, z: 0, w: 1}
+  generationBackend: 1
+  comfyuiIP: 127.0.0.1
+  comfyuiPort: 8188
+  bridgeModelName: Kimodo-SOMA-RP-v1
+  bridgeVramMode: 0
+  motionPrompt: Place left hand in front of your head and look up to the side
+  generationFrames: 152
+  diffusionSteps: 100
+  randomSeed: 1
+  seed: 2056421563
+  customRetargetAvatar: {fileID: 0}
+  inOutConstraintMode: 0
+  showConstraint: 1
+  normalizeConstraintOrigin: 1
+  isGenerated: 1
+  lastGeneratedPrompt: Place left hand in front of your head and look up to the side
+  autoRetargetOnBinding: 1
+  curveFilterOptions:
+    enabled: 1
+    positionError: 0.25
+    rotationError: 0.25
+    floatError: 0.25
+    ensureQuaternionContinuity: 1
+  frameCount: 151
+  jointCount: 77
+  fps: 30
+--- !u!114 &-6165421442670788215
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 016fed14ec49f66418cf65fea1f325ab, type: 3}
+  m_Name: Kimodo Full Body Constraint Marker
+  m_EditorClassIdentifier: 
+  m_Time: 4.55
+  useOverride: 1
+  sampleData:
+    constraintType: fullbody
+    sampleTime: 4.55
+    rigType: 0
+    hasRootHeading: 0
+    kimodoRootPosition: {x: -0.013440273, y: 0.93708986, z: -0.011375624}
+    rootHeading: {x: 0.39128557, y: 0.9202693}
+    unityRootPos: {x: 0.0035574855, y: 0.021089869, z: 0.0038676711}
+    unityRootRot: {x: -0, y: 0.23583227, z: -0, w: 0.9717938}
+    jointNames:
+    - Hips
+    - Spine1
+    - Spine2
+    - Chest
+    - Neck1
+    - Neck2
+    - Head
+    - HeadEnd
+    - Jaw
+    - LeftEye
+    - RightEye
+    - LeftShoulder
+    - LeftArm
+    - LeftForeArm
+    - LeftHand
+    - LeftHandThumb1
+    - LeftHandThumb2
+    - LeftHandThumb3
+    - LeftHandThumbEnd
+    - LeftHandIndex1
+    - LeftHandIndex2
+    - LeftHandIndex3
+    - LeftHandIndex4
+    - LeftHandIndexEnd
+    - LeftHandMiddle1
+    - LeftHandMiddle2
+    - LeftHandMiddle3
+    - LeftHandMiddle4
+    - LeftHandMiddleEnd
+    - LeftHandRing1
+    - LeftHandRing2
+    - LeftHandRing3
+    - LeftHandRing4
+    - LeftHandRingEnd
+    - LeftHandPinky1
+    - LeftHandPinky2
+    - LeftHandPinky3
+    - LeftHandPinky4
+    - LeftHandPinkyEnd
+    - RightShoulder
+    - RightArm
+    - RightForeArm
+    - RightHand
+    - RightHandThumb1
+    - RightHandThumb2
+    - RightHandThumb3
+    - RightHandThumbEnd
+    - RightHandIndex1
+    - RightHandIndex2
+    - RightHandIndex3
+    - RightHandIndex4
+    - RightHandIndexEnd
+    - RightHandMiddle1
+    - RightHandMiddle2
+    - RightHandMiddle3
+    - RightHandMiddle4
+    - RightHandMiddleEnd
+    - RightHandRing1
+    - RightHandRing2
+    - RightHandRing3
+    - RightHandRing4
+    - RightHandRingEnd
+    - RightHandPinky1
+    - RightHandPinky2
+    - RightHandPinky3
+    - RightHandPinky4
+    - RightHandPinkyEnd
+    - LeftLeg
+    - LeftShin
+    - LeftFoot
+    - LeftToeBase
+    - LeftToeEnd
+    - RightLeg
+    - RightShin
+    - RightFoot
+    - RightToeBase
+    - RightToeEnd
+    localAxisAngles:
+    - {x: -0.08115284, y: 0.3997957, z: -0.04012106}
+    - {x: -0.15268886, y: 0.000585395, z: -0.12648278}
+    - {x: 0.035710722, y: 0.044719536, z: 0.0107673695}
+    - {x: -0.18880667, y: 0.040083602, z: -0.32847485}
+    - {x: 0.07595829, y: -0.03625727, z: -0.058004934}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.13390766, y: -0.24458852, z: 0.10559176}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.1815284, y: 0.0659713, z: 0.0000009046248}
+    - {x: -0.18120597, y: -0.067865774, z: 0.0000025319584}
+    - {x: 0.0135539435, y: 0.14313714, z: -0.03793625}
+    - {x: -0.70226854, y: 0.6166361, z: 0.12208372}
+    - {x: -0.7131967, y: 1.9955529, z: -0.27398515}
+    - {x: -0.36297476, y: -0.027357092, z: 0.11027898}
+    - {x: 0.031938825, y: -0.16569173, z: 0.09995262}
+    - {x: 0.050097574, y: -0.011890453, z: 0.28495896}
+    - {x: 0.00025495252, y: -0.14628737, z: -0.031513844}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.05078217, y: -0.044223156, z: 0.031133447}
+    - {x: -0.08691091, y: -0.020901244, z: 0.17128702}
+    - {x: -0.08890592, y: -0.013059589, z: 0.36565718}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0.0008029601, y: -0.038132045, z: 0.025684455}
+    - {x: -0.1736635, y: -0.108222455, z: 0.37582862}
+    - {x: -0.15671791, y: -0.031862024, z: 0.24156299}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0.01411559, y: -0.028655127, z: 0.005176005}
+    - {x: -0.17273423, y: -0.1969265, z: 0.2643079}
+    - {x: -0.16138983, y: -0.009086525, z: 0.5940449}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0.00883504, y: -0.013495231, z: 0.0596663}
+    - {x: -0.16757351, y: -0.33267862, z: 0.3238492}
+    - {x: -0.15306112, y: -0.04310077, z: 0.11205233}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0.2033825, y: -0.014216042, z: -0.058976114}
+    - {x: 0.43194392, y: 0.10664492, z: -0.8284922}
+    - {x: 0.13153833, y: -0.58380586, z: -0.06339918}
+    - {x: -0.040265296, y: -0.018789567, z: -0.08381115}
+    - {x: -0.067708455, y: 0.099116646, z: -0.04176153}
+    - {x: 0.051125634, y: 0.016559703, z: -0.28384507}
+    - {x: 0.000597748, y: 0.21178873, z: 0.04556899}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.055902705, y: 0.034786638, z: -0.028155904}
+    - {x: -0.08748797, y: 0.02511869, z: -0.07734533}
+    - {x: -0.089018844, y: 0.020484261, z: -0.19261892}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.0028079483, y: 0.0322739, z: -0.025876056}
+    - {x: -0.16904047, y: 0.11655654, z: -0.26778996}
+    - {x: -0.1585945, y: 0.031956766, z: -0.24528517}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0.010811601, y: 0.024810772, z: -0.008814465}
+    - {x: -0.1863069, y: 0.18872395, z: -0.38196048}
+    - {x: -0.15987471, y: 0.027341833, z: -0.32718512}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0, y: 0, z: 0}
+    - {x: -0.0021394305, y: -0.0073631504, z: -0.059423108}
+    - {x: -0.19293861, y: 0.32642704, z: -0.46565458}
+    - {x: -0.15553454, y: 0.042124145, z: -0.14363997}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0.27869096, y: -0.23593038, z: 0.1797058}
+    - {x: 0.15970592, y: -0.37968048, z: -0.0047130045}
+    - {x: -0.11091371, y: -0.12490595, z: 0.11614995}
+    - {x: -0.014534091, y: 0.0000007455418, z: 0.00000028390502}
+    - {x: 0, y: 0, z: 0}
+    - {x: 0.12954628, y: 0.044089712, z: 0.36542234}
+    - {x: 0.2034332, y: 0.028320964, z: -0.0016754153}
+    - {x: -0.08001686, y: 0.002785495, z: -0.107498184}
+    - {x: -0.010786499, y: 0.0000004418724, z: -0.0000021220123}
+    - {x: 0, y: 0, z: 0}
+    sampledJointIndices: 000000000100000002000000030000000400000005000000060000000700000008000000090000000a0000000b0000000c0000000d0000000e0000000f000000100000001100000012000000130000001400000015000000160000001700000018000000190000001a0000001b0000001c0000001d0000001e0000001f000000200000002100000022000000230000002400000025000000260000002700000028000000290000002a0000002b0000002c0000002d0000002e0000002f000000300000003100000032000000330000003400000035000000360000003700000038000000390000003a0000003b0000003c0000003d0000003e0000003f000000400000004100000042000000430000004400000045000000460000004700000048000000490000004a0000004b0000004c000000
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bfda56da833e2384a9677cd3c976a436, type: 3}
+  m_Name: ex1.Intro Photo Timeline
+  m_EditorClassIdentifier: 
+  m_Version: 0
+  m_Tracks:
+  - {fileID: 4920200649922621575}
+  - {fileID: 3483828814348025209}
+  m_FixedDuration: 0
+  m_EditorSettings:
+    m_Framerate: 60
+    m_ScenePreview: 1
+  m_DurationMode: 0
+  m_MarkerTrack: {fileID: 0}
+--- !u!114 &3483828814348025209
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d21dcc2386d650c4597f3633c75a1f98, type: 3}
+  m_Name: Animation Track (1)
+  m_EditorClassIdentifier: 
+  m_Version: 3
+  m_AnimClip: {fileID: 0}
+  m_Locked: 0
+  m_Muted: 0
+  m_CustomPlayableFullTypename: 
+  m_Curves: {fileID: 0}
+  m_Parent: {fileID: 11400000}
+  m_Children: []
+  m_Clips:
+  - m_Version: 1
+    m_Start: 0
+    m_ClipIn: 0
+    m_Asset: {fileID: -7750879865495967840}
+    m_Duration: 5.066666603088379
+    m_TimeScale: 1
+    m_ParentTrack: {fileID: 3483828814348025209}
+    m_EaseInDuration: 0
+    m_EaseOutDuration: 0
+    m_BlendInDuration: -1
+    m_BlendOutDuration: -1
+    m_MixInCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    m_MixOutCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    m_BlendInCurveMode: 0
+    m_BlendOutCurveMode: 0
+    m_ExposedParameterNames: []
+    m_AnimationCurves: {fileID: 0}
+    m_Recordable: 0
+    m_PostExtrapolationMode: 1
+    m_PreExtrapolationMode: 1
+    m_PostExtrapolationTime: Infinity
+    m_PreExtrapolationTime: 0
+    m_DisplayName: mixamo.com
+  m_Markers:
+    m_Objects:
+    - {fileID: -6165421442670788215}
+  m_InfiniteClipPreExtrapolation: 0
+  m_InfiniteClipPostExtrapolation: 0
+  m_InfiniteClipOffsetPosition: {x: 0, y: 0, z: 0}
+  m_InfiniteClipOffsetEulerAngles: {x: 0, y: 0, z: 0}
+  m_InfiniteClipTimeOffset: 0
+  m_InfiniteClipRemoveOffset: 0
+  m_InfiniteClipApplyFootIK: 1
+  mInfiniteClipLoop: 0
+  m_MatchTargetFields: 63
+  m_Position: {x: 0, y: 0, z: 0}
+  m_EulerAngles: {x: 0, y: 0, z: 0}
+  m_AvatarMask: {fileID: 0}
+  m_ApplyAvatarMask: 1
+  m_TrackOffset: 1
+  m_InfiniteClip: {fileID: 0}
+  m_OpenClipOffsetRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_Rotation: {x: 0, y: 0, z: 0, w: 1}
+  m_ApplyOffsets: 0
+--- !u!114 &4920200649922621575
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d21dcc2386d650c4597f3633c75a1f98, type: 3}
+  m_Name: Animation Track
+  m_EditorClassIdentifier: 
+  m_Version: 3
+  m_AnimClip: {fileID: 0}
+  m_Locked: 0
+  m_Muted: 0
+  m_CustomPlayableFullTypename: 
+  m_Curves: {fileID: 0}
+  m_Parent: {fileID: 11400000}
+  m_Children: []
+  m_Clips:
+  - m_Version: 1
+    m_Start: 0
+    m_ClipIn: 0
+    m_Asset: {fileID: -9198596875558902217}
+    m_Duration: 5
+    m_TimeScale: 1
+    m_ParentTrack: {fileID: 4920200649922621575}
+    m_EaseInDuration: 0
+    m_EaseOutDuration: 0
+    m_BlendInDuration: -1
+    m_BlendOutDuration: -1
+    m_MixInCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    m_MixOutCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    m_BlendInCurveMode: 0
+    m_BlendOutCurveMode: 0
+    m_ExposedParameterNames: []
+    m_AnimationCurves: {fileID: 0}
+    m_Recordable: 0
+    m_PostExtrapolationMode: 1
+    m_PreExtrapolationMode: 1
+    m_PostExtrapolationTime: Infinity
+    m_PreExtrapolationTime: 0
+    m_DisplayName: mixamo.com
+  m_Markers:
+    m_Objects: []
+  m_InfiniteClipPreExtrapolation: 0
+  m_InfiniteClipPostExtrapolation: 0
+  m_InfiniteClipOffsetPosition: {x: 0, y: 0, z: 0}
+  m_InfiniteClipOffsetEulerAngles: {x: 0, y: 0, z: 0}
+  m_InfiniteClipTimeOffset: 0
+  m_InfiniteClipRemoveOffset: 0
+  m_InfiniteClipApplyFootIK: 1
+  mInfiniteClipLoop: 0
+  m_MatchTargetFields: 63
+  m_Position: {x: 0, y: 0, z: 0}
+  m_EulerAngles: {x: 0, y: 0, z: 0}
+  m_AvatarMask: {fileID: 0}
+  m_ApplyAvatarMask: 1
+  m_TrackOffset: 1
+  m_InfiniteClip: {fileID: 0}
+  m_OpenClipOffsetRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_Rotation: {x: 0, y: 0, z: 0, w: 1}
+  m_ApplyOffsets: 0
