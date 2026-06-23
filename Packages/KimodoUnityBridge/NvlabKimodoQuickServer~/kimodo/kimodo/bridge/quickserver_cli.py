@@ -25,6 +25,7 @@ def _build_parser() -> argparse.ArgumentParser:
     def add_common(run_parser: argparse.ArgumentParser) -> None:
         run_parser.add_argument("--model", default=assets.DEFAULT_MODEL_NAME)
         run_parser.add_argument("--highvram", action="store_true")
+        run_parser.add_argument("--force-hf-download", action="store_true")
         run_parser.add_argument("--output", choices=("console", "file"), default="console")
         run_parser.add_argument("--log")
         run_parser.add_argument("--models-root")
@@ -39,7 +40,13 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _build_bridge_command(paths: ProjectPaths, resolved_model: assets.ResolvedModel, device: str | None) -> list[str]:
+def _build_bridge_command(
+    paths: ProjectPaths,
+    resolved_model: assets.ResolvedModel,
+    device: str | None,
+    *,
+    force_hf_download: bool,
+) -> list[str]:
     command = [
         sys.executable,
         "-u",
@@ -52,6 +59,8 @@ def _build_bridge_command(paths: ProjectPaths, resolved_model: assets.ResolvedMo
     ]
     if device:
         command.extend(["--device", device])
+    if force_hf_download:
+        command.append("--force-hf-download")
     return command
 
 
@@ -121,7 +130,12 @@ def _launch_bridge(paths: ProjectPaths, args: argparse.Namespace, logger: SetupL
     bridge_log_path.parent.mkdir(parents=True, exist_ok=True)
     bridge_log_path.touch(exist_ok=True)
 
-    command = _build_bridge_command(paths, resolved_model, runtime_hints.normalized_device)
+    command = _build_bridge_command(
+        paths,
+        resolved_model,
+        runtime_hints.normalized_device,
+        force_hf_download=bool(args.force_hf_download),
+    )
 
     logger.log("[STEP] Launching bridge...")
     popen_kwargs = {
@@ -141,6 +155,7 @@ def _launch_bridge(paths: ProjectPaths, args: argparse.Namespace, logger: SetupL
             logger.log(f"[INFO] Models root: {models_root}")
             logger.log(f"[INFO] Runtime device: {runtime_hints.normalized_device or '<auto>'}")
             logger.log(f"[INFO] Text encoder route: {encoder_route}")
+            logger.log(f"[INFO] Force HF download: {bool(args.force_hf_download)}")
             logger.log(f"[INFO] Text encoder dir: {runtime_env['KIMODO_LLM2VEC_DIR']}")
             logger.log(f"[INFO] Bridge PID: {launch_proc.pid}")
             watchdog_rc = _run_watchdog(paths, launch_proc.pid, port_file, bridge_log_path, launch_env, args.watchpid)
@@ -152,6 +167,7 @@ def _launch_bridge(paths: ProjectPaths, args: argparse.Namespace, logger: SetupL
         logger.log(f"[INFO] Models root: {models_root}")
         logger.log(f"[INFO] Runtime device: {runtime_hints.normalized_device or '<auto>'}")
         logger.log(f"[INFO] Text encoder route: {encoder_route}")
+        logger.log(f"[INFO] Force HF download: {bool(args.force_hf_download)}")
         logger.log(f"[INFO] Text encoder dir: {runtime_env['KIMODO_LLM2VEC_DIR']}")
         logger.log(f"[INFO] Bridge PID: {launch_proc.pid}")
         watchdog_rc = _run_watchdog(paths, launch_proc.pid, port_file, bridge_log_path, launch_env, args.watchpid)

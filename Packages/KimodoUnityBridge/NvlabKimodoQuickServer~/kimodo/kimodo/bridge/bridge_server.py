@@ -133,6 +133,7 @@ def _ensure_asset_ready(
     recovery_flag_dir: Path,
     download_counter: list[int],
     *,
+    force_site: assets.DownloadSite | None,
     allow_download: bool,
 ) -> None:
     if assets.asset_is_ready(asset, target_dir):
@@ -146,6 +147,7 @@ def _ensure_asset_ready(
         logger,
         recovery_flag_dir,
         download_counter,
+        force_site=force_site,
         allow_download=allow_download,
     )
 
@@ -202,6 +204,7 @@ def _provision_bridge_assets(
     *,
     run_device: str | None,
     total_vram_gb: float,
+    force_download_site: assets.DownloadSite | None = None,
 ) -> _BridgeProvisionPlan:
     plan = _build_bridge_provision_plan(
         kimodo_root,
@@ -238,6 +241,7 @@ def _provision_bridge_assets(
         logger,
         recovery_flag_dir,
         download_counter,
+        force_site=force_download_site,
         allow_download=allow_download,
     )
 
@@ -255,6 +259,7 @@ def _provision_bridge_assets(
             logger,
             recovery_flag_dir,
             download_counter,
+            force_site=force_download_site,
             allow_download=allow_download,
         )
 
@@ -501,10 +506,11 @@ def main():
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--kimodo-root", default=None)
+    parser.add_argument("--force-hf-download", action="store_true")
     args = parser.parse_args()
     _log(
         f"[bridge] bootstrap start pid={os.getpid()} model={args.model} "
-        f"kimodo_root={args.kimodo_root or ''}"
+        f"kimodo_root={args.kimodo_root or ''} force_hf_download={bool(args.force_hf_download)}"
     )
 
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -583,11 +589,13 @@ def main():
         _set_loading_message("Checking local models...")
         _out({"status": "loading", "message": "Checking local models..."})
         try:
+            force_download_site = assets.DownloadSite.HUGGINGFACE if args.force_hf_download else None
             provision_plan = _provision_bridge_assets(
                 kimodo_root,
                 args.model,
                 run_device=device,
                 total_vram_gb=total_vram_gb,
+                force_download_site=force_download_site,
             )
         except Exception as exc:
             with state_lock:

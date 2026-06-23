@@ -57,6 +57,7 @@ def _outer_parser() -> argparse.ArgumentParser:
     parser.add_argument("--venv")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--force-setup", action="store_true")
+    parser.add_argument("--force-hf-download", action="store_true")
     parser.add_argument("--output")
     parser.add_argument("--log")
     return parser

@@ -12,6 +12,7 @@
 ## 2. `run_server.bat` / `run_server.sh`
 - `--model <name|alias>`: 默认 `Kimodo-SOMA-RP-v1`。
 - `--highvram`: 启用 high-vram 模式。
+- `--force-hf-download`: 对允许竞速的资产强制使用 Hugging Face 下载；`highvram/full` 资产仍固定走 ModelScope。
 - `--models-root <path>`: 指定外部模型根目录（存在即跳过下载流程）。
 - `--output <console|file>`: 输出模式，默认 `console`。
 - `--log <path>`: `file` 模式下主日志路径，默认 `log\bridge_server.log`。
@@ -21,6 +22,7 @@
 关键运行变量：
 - `KIMODO_MODELS_ROOT`: 默认 models 根目录（可被 `--models-root` 覆盖）。
 - `KIMODO_IDLE_TIMEOUT_SEC`: 服务空闲退出秒数（当前设定 `600`）。
+- 下载站点默认是自动探测 HF / ModelScope 后择优；`--force-hf-download` 会跳过探测并强制走 HF，但不影响 `highvram/full` 路径的 ModelScope 固定策略。
 
 INT8 资产说明：
 - 默认低显存文本编码器目录为 `models\KIMODO-Meta3_llm2vec_INT8`。
@@ -55,6 +57,7 @@ INT8 资产说明：
 - `KIMODO_TEST_WAIT_TIMEOUT_SEC`（默认 `600`）
 - `KIMODO_TEST_MODEL`
 - `KIMODO_TEST_HIGHVRAM=0|1`
+- `KIMODO_TEST_FORCE_HF_DOWNLOAD=0|1`
 - `KIMODO_TEST_MODELS_ROOT=<path>`
 - `KIMODO_TEST_SERVER_WINDOW_STYLE=Normal|Hidden|Minimized|Maximized`
 

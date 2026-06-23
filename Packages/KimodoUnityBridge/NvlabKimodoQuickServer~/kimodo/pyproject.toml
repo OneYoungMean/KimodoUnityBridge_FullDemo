@@ -15,6 +15,7 @@ dependencies = [
   "numpy>=1.23",
   "scipy>=1.10",
   "transformers==5.1.0",
+  "huggingface_hub>=0.30",
   "urllib3>=2.6.3",
   "boto3",
   "modelscope==1.37.1",

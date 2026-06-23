@@ -24,6 +24,8 @@ if not defined RUNSERVER_EXIT_GRACE_SEC set "RUNSERVER_EXIT_GRACE_SEC=15"
 
 set "MODEL=Kimodo-SOMA-RP-v1"
 if defined KIMODO_TEST_MODEL set "MODEL=%KIMODO_TEST_MODEL%"
+set "FORCE_HF_DOWNLOAD=0"
+if /I "%KIMODO_TEST_FORCE_HF_DOWNLOAD%"=="1" set "FORCE_HF_DOWNLOAD=1"
 rem Device policy: only an explicit CPU request is forwarded as --device cpu (it is
 rem a mode switch that drives setup to install the cpu torch build and pins the
 rem local INT8 text encoder to CPU). Otherwise DEVICE stays empty and we do NOT pass --device at
@@ -62,6 +64,7 @@ if defined MODELS_ROOT (
 ) else (
   echo [TEST] MODELS_ROOT=^<default^>
 )
+echo [TEST] FORCE_HF_DOWNLOAD=!FORCE_HF_DOWNLOAD!
 if defined KIMODO_VENV_PATH (
   echo [TEST] VENV_PATH=!KIMODO_VENV_PATH!
 ) else (
@@ -77,6 +80,7 @@ set "OWNER_PID_CMD=$ownerPidValue = $PID; try { $parentPidValue = (Get-CimInstan
 set "LAUNCH_PS_CMD=$ErrorActionPreference='Stop'; %OWNER_PID_CMD%; $args=@('/d','/c','!LAUNCHER!','--model','%MODEL%','--watchpid',[string]$ownerPidValue);"
 if defined DEVICE call set "LAUNCH_PS_CMD=%%LAUNCH_PS_CMD%% $args += @('--device','%DEVICE%');"
 if defined MODELS_ROOT call set "LAUNCH_PS_CMD=%%LAUNCH_PS_CMD%% $args += @('--models-root','%MODELS_ROOT%');"
+if "%FORCE_HF_DOWNLOAD%"=="1" call set "LAUNCH_PS_CMD=%%LAUNCH_PS_CMD%% $args += @('--force-hf-download');"
 call set "LAUNCH_PS_CMD=%%LAUNCH_PS_CMD%% $args += @('--output','file','--log','%BRIDGE_SERVER_LOG%');"
 set "LAUNCH_PS_CMD=!LAUNCH_PS_CMD! $p=Start-Process -FilePath 'cmd.exe' -ArgumentList $args -WorkingDirectory '%ROOT_DIR%' -WindowStyle Normal -PassThru; Set-Content -LiteralPath '%PID_FILE%' -Value $p.Id -Encoding ASCII"
 

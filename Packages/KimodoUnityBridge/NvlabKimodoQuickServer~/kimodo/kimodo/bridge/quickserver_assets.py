@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+from enum import Enum
 import os
 from pathlib import Path
 import shutil
+import urllib.error
+import urllib.request
 import threading
 import time
 from typing import Protocol
@@ -15,6 +18,7 @@ INT8_LOCAL_DIR = "KIMODO-Meta3_llm2vec_INT8"
 NF4_LOCAL_DIR = "KIMODO-Meta3_llm2vec_NF4"
 FULL_BASE_LOCAL_DIR = "Meta-Llama-3-8B-Instruct"
 FULL_PEFT_LOCAL_DIR = "LLM2Vec-Meta-Llama-3-8B-Instruct-mntp-supervised"
+DOWNLOAD_PROBE_TIMEOUT_SECONDS = 1.0
 LEGACY_GGUF_ENV_VARS = (
     "KIMODO_GGUF_MODEL_PATH",
     "KIMODO_GGUF_CTX",
@@ -55,6 +59,33 @@ class ResolvedModel:
 @dataclass(frozen=True)
 class RuntimeHints:
     normalized_device: str | None
+
+
+class DownloadSite(str, Enum):
+    MODELSCOPE = "modelscope"
+    HUGGINGFACE = "huggingface"
+
+
+@dataclass(frozen=True)
+class SiteProbeResult:
+    site: DownloadSite
+    repo_id: str
+    url: str
+    ok: bool
+    elapsed_ms: int
+    status_code: int | None
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class DownloadSiteSelection:
+    selected_site: DownloadSite
+    huggingface_ok: bool
+    modelscope_ok: bool
+    huggingface_elapsed_ms: int
+    modelscope_elapsed_ms: int
+    huggingface_error: str = ""
+    modelscope_error: str = ""
 
 
 REMOVED_QUICKSERVER_ENV_VARS: dict[str, str] = {
@@ -363,6 +394,120 @@ def _format_bytes(value: int) -> str:
     return f"{int(value)} B"
 
 
+def _is_modelscope_pinned_asset(asset: AssetSpec) -> bool:
+    return asset.local_dir_name in (FULL_BASE_LOCAL_DIR, FULL_PEFT_LOCAL_DIR)
+
+
+def _download_site_repo_id(asset: AssetSpec, site: DownloadSite) -> str:
+    if site == DownloadSite.MODELSCOPE:
+        return str(asset.modelscope_repo or "").strip()
+    return str(asset.huggingface_repo or "").strip()
+
+
+def _download_site_url(site: DownloadSite, repo_id: str) -> str:
+    if site == DownloadSite.MODELSCOPE:
+        return f"https://www.modelscope.cn/models/{repo_id}"
+    return f"https://huggingface.co/{repo_id}"
+
+
+def _status_allows_probe_success(status_code: int | None) -> bool:
+    return status_code is not None and 200 <= int(status_code) < 400
+
+
+def _probe_repo_request(url: str, timeout_seconds: float, method: str) -> tuple[bool, int | None, str]:
+    request = urllib.request.Request(url, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            status_code = getattr(response, "status", None) or response.getcode()
+            if _status_allows_probe_success(status_code):
+                return True, int(status_code), ""
+            return False, int(status_code), f"HTTP {status_code}"
+    except urllib.error.HTTPError as exc:
+        if method == "HEAD" and int(exc.code) in (405, 501):
+            return _probe_repo_request(url, timeout_seconds, "GET")
+        return False, int(exc.code), f"HTTP {exc.code}"
+    except urllib.error.URLError as exc:
+        reason = getattr(exc, "reason", exc)
+        return False, None, f"{type(reason).__name__}: {reason}"
+    except Exception as exc:
+        return False, None, f"{type(exc).__name__}: {exc}"
+
+
+def probe_download_site(asset: AssetSpec, site: DownloadSite, timeout_seconds: float = DOWNLOAD_PROBE_TIMEOUT_SECONDS) -> SiteProbeResult:
+    repo_id = _download_site_repo_id(asset, site)
+    if not repo_id:
+        return SiteProbeResult(
+            site=site,
+            repo_id="",
+            url="",
+            ok=False,
+            elapsed_ms=0,
+            status_code=None,
+            error="missing repo id",
+        )
+
+    url = _download_site_url(site, repo_id)
+    started = time.monotonic()
+    ok, status_code, error = _probe_repo_request(url, timeout_seconds, "HEAD")
+    elapsed_ms = max(0, int((time.monotonic() - started) * 1000))
+    return SiteProbeResult(
+        site=site,
+        repo_id=repo_id,
+        url=url,
+        ok=ok,
+        elapsed_ms=elapsed_ms,
+        status_code=status_code,
+        error=error,
+    )
+
+
+def _probe_summary(result: SiteProbeResult) -> str:
+    status_text = f"status={result.status_code}" if result.status_code is not None else "status=<none>"
+    error_text = f" error={result.error}" if result.error else ""
+    return (
+        f"site={result.site.value} repo={result.repo_id or '<missing>'} "
+        f"ok={str(result.ok).lower()} elapsed_ms={result.elapsed_ms} {status_text}{error_text}"
+    )
+
+
+def _select_download_site_from_probe_results(
+    huggingface_result: SiteProbeResult,
+    modelscope_result: SiteProbeResult,
+) -> DownloadSiteSelection:
+    if huggingface_result.ok and modelscope_result.ok:
+        selected_site = (
+            DownloadSite.HUGGINGFACE
+            if huggingface_result.elapsed_ms <= modelscope_result.elapsed_ms
+            else DownloadSite.MODELSCOPE
+        )
+    elif huggingface_result.ok:
+        selected_site = DownloadSite.HUGGINGFACE
+    elif modelscope_result.ok:
+        selected_site = DownloadSite.MODELSCOPE
+    else:
+        raise RuntimeError(
+            "Download site probe failed: "
+            f"huggingface=({_probe_summary(huggingface_result)}); "
+            f"modelscope=({_probe_summary(modelscope_result)})"
+        )
+
+    return DownloadSiteSelection(
+        selected_site=selected_site,
+        huggingface_ok=huggingface_result.ok,
+        modelscope_ok=modelscope_result.ok,
+        huggingface_elapsed_ms=huggingface_result.elapsed_ms,
+        modelscope_elapsed_ms=modelscope_result.elapsed_ms,
+        huggingface_error=huggingface_result.error,
+        modelscope_error=modelscope_result.error,
+    )
+
+
+def select_download_site(asset: AssetSpec, timeout_seconds: float = DOWNLOAD_PROBE_TIMEOUT_SECONDS) -> DownloadSiteSelection:
+    huggingface_result = probe_download_site(asset, DownloadSite.HUGGINGFACE, timeout_seconds)
+    modelscope_result = probe_download_site(asset, DownloadSite.MODELSCOPE, timeout_seconds)
+    return _select_download_site_from_probe_results(huggingface_result, modelscope_result)
+
+
 @contextmanager
 def _suppress_modelscope_tqdm():
     try:
@@ -430,6 +575,21 @@ def _suppress_modelscope_tqdm():
             file_download.TqdmCallback = original_tqdm_callback
 
 
+@contextmanager
+def _suppress_huggingface_progress():
+    try:
+        from huggingface_hub.utils import disable_progress_bars, enable_progress_bars
+    except Exception:
+        yield
+        return
+
+    disable_progress_bars()
+    try:
+        yield
+    finally:
+        enable_progress_bars()
+
+
 def _make_logged_progress_callback(logger: LoggerLike, label: str):
     log_lock = threading.Lock()
 
@@ -485,6 +645,42 @@ def _make_logged_progress_callback(logger: LoggerLike, label: str):
     return _LoggedProgressCallback
 
 
+def download_via_modelscope(asset: AssetSpec, target_dir: Path, logger: LoggerLike) -> None:
+    repo_id = _download_site_repo_id(asset, DownloadSite.MODELSCOPE)
+    if not repo_id:
+        raise RuntimeError(f"Missing ModelScope repo id for {asset.label}.")
+
+    from modelscope import snapshot_download as ms_snapshot_download
+
+    try:
+        progress_callbacks = [_make_logged_progress_callback(logger, asset.label)]
+        with _suppress_modelscope_tqdm():
+            ms_snapshot_download(
+                model_id=repo_id,
+                local_dir=str(target_dir),
+                progress_callbacks=progress_callbacks,
+            )
+    except Exception as exc:
+        raise RuntimeError(f"Failed to download {asset.label} via ModelScope: {exc}") from exc
+
+
+def download_via_huggingface(asset: AssetSpec, target_dir: Path) -> None:
+    repo_id = _download_site_repo_id(asset, DownloadSite.HUGGINGFACE)
+    if not repo_id:
+        raise RuntimeError(f"Missing Hugging Face repo id for {asset.label}.")
+
+    from huggingface_hub import snapshot_download as hf_snapshot_download
+
+    try:
+        with _suppress_huggingface_progress():
+            hf_snapshot_download(
+                repo_id=repo_id,
+                local_dir=str(target_dir),
+            )
+    except Exception as exc:
+        raise RuntimeError(f"Failed to download {asset.label} via HuggingFace: {exc}") from exc
+
+
 def ensure_asset_present(
     asset: AssetSpec,
     target_dir: Path,
@@ -492,6 +688,7 @@ def ensure_asset_present(
     recovery_flag_dir: Path,
     download_counter: list[int],
     *,
+    force_site: DownloadSite | None = None,
     allow_download: bool = True,
 ) -> None:
     if asset_is_ready(asset, target_dir):
@@ -506,26 +703,61 @@ def ensure_asset_present(
 
     logger.log(f"[STEP] Downloading {asset.label}: {asset.local_dir_name}")
     target_dir.mkdir(parents=True, exist_ok=True)
-    if not asset.modelscope_repo:
-        raise RuntimeError(f"Missing ModelScope repo id for {asset.label}.")
+    selected_site: DownloadSite
+    selected_repo_id: str
 
-    from modelscope import snapshot_download as ms_snapshot_download
-
-    try:
-        progress_callbacks = [_make_logged_progress_callback(logger, asset.label)]
-        with _suppress_modelscope_tqdm():
-            ms_snapshot_download(
-                model_id=asset.modelscope_repo,
-                local_dir=str(target_dir),
-                progress_callbacks=progress_callbacks,
+    if _is_modelscope_pinned_asset(asset):
+        selected_site = DownloadSite.MODELSCOPE
+        selected_repo_id = _download_site_repo_id(asset, selected_site)
+        logger.log(
+            f"[INFO] {asset.label}: highvram/full route pinned to ModelScope "
+            f"repo={selected_repo_id or '<missing>'}"
+        )
+        download_via_modelscope(asset, target_dir, logger)
+    elif force_site is not None:
+        selected_site = force_site
+        selected_repo_id = _download_site_repo_id(asset, selected_site)
+        if not selected_repo_id:
+            raise RuntimeError(
+                f"Forced download site '{selected_site.value}' is unavailable for {asset.label}: missing repo id."
             )
-    except Exception as exc:
-        raise RuntimeError(f"Failed to download {asset.label} via ModelScope: {exc}") from exc
+        logger.log(
+            f"[INFO] {asset.label}: forced download site={selected_site.value} "
+            f"repo={selected_repo_id}"
+        )
+        if selected_site == DownloadSite.HUGGINGFACE:
+            download_via_huggingface(asset, target_dir)
+        else:
+            download_via_modelscope(asset, target_dir, logger)
+    else:
+        logger.log(
+            f"[INFO] {asset.label}: probing download sites before transfer "
+            f"(timeout={DOWNLOAD_PROBE_TIMEOUT_SECONDS:.1f}s)"
+        )
+        huggingface_result = probe_download_site(asset, DownloadSite.HUGGINGFACE, DOWNLOAD_PROBE_TIMEOUT_SECONDS)
+        modelscope_result = probe_download_site(asset, DownloadSite.MODELSCOPE, DOWNLOAD_PROBE_TIMEOUT_SECONDS)
+        logger.log(f"[PROBE] {asset.label}: {_probe_summary(huggingface_result)}")
+        logger.log(f"[PROBE] {asset.label}: {_probe_summary(modelscope_result)}")
+        try:
+            selection = _select_download_site_from_probe_results(huggingface_result, modelscope_result)
+        except RuntimeError as exc:
+            raise RuntimeError(f"Download site probe failed for {asset.label}: {exc}") from exc
+
+        selected_site = selection.selected_site
+        selected_repo_id = _download_site_repo_id(asset, selected_site)
+        logger.log(
+            f"[INFO] {asset.label}: selected download site={selected_site.value} "
+            f"repo={selected_repo_id or '<missing>'}"
+        )
+        if selected_site == DownloadSite.HUGGINGFACE:
+            download_via_huggingface(asset, target_dir)
+        else:
+            download_via_modelscope(asset, target_dir, logger)
 
     if not asset_is_ready(asset, target_dir):
         raise RuntimeError(f"Downloaded asset is incomplete: {target_dir}")
 
-    logger.log(f"[OK] {asset.label} ready via ModelScope: {asset.modelscope_repo}")
+    logger.log(f"[OK] {asset.label} ready via {selected_site.value}: {selected_repo_id}")
     download_counter[0] += 1
     if should_inject_once(recovery_flag_dir, "download_abort", "KIMODO_TEST_INJECT_DOWNLOAD_ABORT_ONCE"):
         raise RuntimeError("Injected download interrupt once.")
