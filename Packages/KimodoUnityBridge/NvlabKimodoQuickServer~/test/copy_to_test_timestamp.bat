@@ -8,8 +8,10 @@ for %%I in ("%SOURCE_DIR%") do set "SOURCE_DIR=%%~fI"
 set "TARGET_ROOT=%SOURCE_DIR%\recycle\test"
 set "TEST_BAT_REL=%~1"
 if not defined TEST_BAT_REL set "TEST_BAT_REL=%KIMODO_COPY_TEST_BAT_REL%"
-set "SHARED_MODELS_SRC=C:\nvlab\models"
-set "SHARED_MODELS_ALT=C:\nvlab\models~"
+set "DEFAULT_SHARED_MODELS_SRC=C:\nvlab\models"
+set "DEFAULT_SHARED_MODELS_ALT=C:\nvlab\models~"
+set "REQUESTED_TEST_MODELS_ROOT=%KIMODO_COPY_TEST_MODELS_ROOT%"
+set "USE_SHARED_MODELS=%KIMODO_COPY_USE_SHARED_MODELS%"
 set "TEST_MODELS_ROOT="
 set "COPY_ONLY=%KIMODO_COPY_ONLY%"
 if not defined COPY_ONLY set "COPY_ONLY=0"
@@ -22,6 +24,7 @@ if not exist "%SOURCE_DIR%" (
 if not defined TEST_BAT_REL (
   set "TEST_BAT_REL=example\example_run_server_tpose.bat"
 )
+if not defined USE_SHARED_MODELS call :infer_shared_models_mode "%TEST_BAT_REL%"
 if not exist "%TARGET_ROOT%" (
   mkdir "%TARGET_ROOT%" >nul 2>nul
   if errorlevel 1 (
@@ -103,17 +106,13 @@ if exist "%SOURCE_DIR%\program\exe\llama" (
 )
 
 echo [OK] Copy complete: %DEST_DIR%
-if not exist "%SHARED_MODELS_SRC%" (
-  if exist "%SHARED_MODELS_ALT%" (
-    set "SHARED_MODELS_SRC=%SHARED_MODELS_ALT%"
-  )
+if /I "%USE_SHARED_MODELS%"=="1" (
+  call :resolve_test_models_root
+  if errorlevel 1 exit /b 1
+  echo [INFO] Test models root: !TEST_MODELS_ROOT!
+) else (
+  echo [INFO] Test models root: ^<unset^>
 )
-if not exist "%SHARED_MODELS_SRC%" (
-  echo [ERROR] Shared models source not found: C:\nvlab\models or C:\nvlab\models~
-  exit /b 1
-)
-set "TEST_MODELS_ROOT=%SHARED_MODELS_SRC%"
-echo [INFO] Test models root: %TEST_MODELS_ROOT%
 
 if /I "%COPY_ONLY%"=="1" (
   echo [RESULT] DEST_DIR=%DEST_DIR%
@@ -136,7 +135,11 @@ if not exist "%DEST_TEST_BAT%" (
 )
 
 echo [STEP] Running test: %DEST_TEST_BAT%
-set "KIMODO_TEST_MODELS_ROOT=%TEST_MODELS_ROOT%"
+if defined TEST_MODELS_ROOT (
+  set "KIMODO_TEST_MODELS_ROOT=%TEST_MODELS_ROOT%"
+) else (
+  set "KIMODO_TEST_MODELS_ROOT="
+)
 set "KIMODO_TEST_SERVER_WINDOW_STYLE=Normal"
 rem Default 1200s: the first run downloads the ~2.6GiB cu128 torch wheel from the
 rem PyTorch official index (no mirror, by design), which can exceed the old 300s on
@@ -158,4 +161,37 @@ for %%P in ("%DEST_DIR%\%REL%") do (
 )
 copy /Y "%REL%" "%DEST_DIR%\%REL%" >nul
 if errorlevel 1 exit /b 1
+exit /b 0
+
+:resolve_test_models_root
+set "TEST_MODELS_ROOT="
+if defined REQUESTED_TEST_MODELS_ROOT (
+  if exist "%REQUESTED_TEST_MODELS_ROOT%" (
+    set "TEST_MODELS_ROOT=%REQUESTED_TEST_MODELS_ROOT%"
+    exit /b 0
+  )
+  echo [ERROR] Requested shared models source not found: %REQUESTED_TEST_MODELS_ROOT%
+  exit /b 1
+)
+if exist "%DEFAULT_SHARED_MODELS_SRC%" (
+  set "TEST_MODELS_ROOT=%DEFAULT_SHARED_MODELS_SRC%"
+  exit /b 0
+)
+if exist "%DEFAULT_SHARED_MODELS_ALT%" (
+  set "TEST_MODELS_ROOT=%DEFAULT_SHARED_MODELS_ALT%"
+  exit /b 0
+)
+echo [ERROR] Shared models source not found: %DEFAULT_SHARED_MODELS_SRC% or %DEFAULT_SHARED_MODELS_ALT%
+exit /b 1
+
+:infer_shared_models_mode
+set "USE_SHARED_MODELS=0"
+set "INFER_TEST_BAT_REL=%~1"
+if /I "%INFER_TEST_BAT_REL%"=="example\example_run_server_tpose.bat" set "USE_SHARED_MODELS=1"
+if /I "%INFER_TEST_BAT_REL%"=="test\test_run_server_multi_start.bat" set "USE_SHARED_MODELS=1"
+if /I "%INFER_TEST_BAT_REL%"=="test\test_run_server_watchdog_params.bat" set "USE_SHARED_MODELS=1"
+if /I "%INFER_TEST_BAT_REL%"=="test\test_stress_10_generates_menu.bat" set "USE_SHARED_MODELS=1"
+if /I "%INFER_TEST_BAT_REL%"=="test\cases\case_cpu_prepared_models.bat" set "USE_SHARED_MODELS=1"
+if /I "%INFER_TEST_BAT_REL%"=="test\cases\case_cpu_setup_and_run.bat" set "USE_SHARED_MODELS=1"
+if /I "%INFER_TEST_BAT_REL%"=="test\cases\case_highvram_soma.bat" set "USE_SHARED_MODELS=1"
 exit /b 0

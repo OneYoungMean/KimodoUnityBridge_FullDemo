@@ -36,10 +36,12 @@ if exist "%DEST_INFO_FILE%" move "%DEST_INFO_FILE%" "%DEST_INFO_FILE%.old.%RANDO
 
 set "KIMODO_COPY_ONLY=1"
 set "KIMODO_COPY_DEST_FILE=%DEST_INFO_FILE%"
+set "KIMODO_COPY_USE_SHARED_MODELS=%USE_SHARED%"
 call "%COPY_BAT%"
 set "COPY_RC=%ERRORLEVEL%"
 set "KIMODO_COPY_ONLY="
 set "KIMODO_COPY_DEST_FILE="
+set "KIMODO_COPY_USE_SHARED_MODELS="
 if not "%COPY_RC%"=="0" (
   call :write_result FAIL "copy_failed_rc_%COPY_RC%"
   exit /b 1
@@ -57,6 +59,10 @@ for /f "usebackq tokens=1,* delims==" %%A in ("%DEST_INFO_FILE%") do (
 )
 if not defined RUN_ROOT (
   call :write_result FAIL "run_root_missing"
+  exit /b 1
+)
+if "%USE_SHARED%"=="1" if not defined TEST_MODELS_ROOT (
+  call :write_result FAIL "shared_models_root_missing"
   exit /b 1
 )
 
@@ -234,10 +240,12 @@ echo [WARN] setup start/complete validation failed, archived to: %CASE_ARC%
 if exist "%DEST_INFO_FILE%" move "%DEST_INFO_FILE%" "%DEST_INFO_FILE%.old.%RANDOM%" >nul 2>nul
 set "KIMODO_COPY_ONLY=1"
 set "KIMODO_COPY_DEST_FILE=%DEST_INFO_FILE%"
+set "KIMODO_COPY_USE_SHARED_MODELS=%USE_SHARED%"
 call "%COPY_BAT%"
 set "COPY_RC=%ERRORLEVEL%"
 set "KIMODO_COPY_ONLY="
 set "KIMODO_COPY_DEST_FILE="
+set "KIMODO_COPY_USE_SHARED_MODELS="
 if not "%COPY_RC%"=="0" exit /b 1
 if not exist "%DEST_INFO_FILE%" exit /b 1
 set "RUN_ROOT="
@@ -247,6 +255,7 @@ for /f "usebackq tokens=1,* delims==" %%A in ("%DEST_INFO_FILE%") do (
   if /I "%%A"=="TEST_MODELS_ROOT" set "TEST_MODELS_ROOT=%%B"
 )
 if not defined RUN_ROOT exit /b 1
+if "%USE_SHARED%"=="1" if not defined TEST_MODELS_ROOT exit /b 1
 set "TEST_BAT=%RUN_ROOT%\example\example_run_server_tpose.bat"
 if not exist "%TEST_BAT%" exit /b 1
 if not exist "%RUN_ROOT%\log" mkdir "%RUN_ROOT%\log" >nul 2>nul
@@ -269,4 +278,3 @@ set "DETAIL=%~2"
   echo RUN_ROOT=%RUN_ROOT%
 )
 exit /b 0
-
