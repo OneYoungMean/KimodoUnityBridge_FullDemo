@@ -1,0 +1,68 @@
+name: sync-bridge-package
+
+on:
+  workflow_dispatch:
+    inputs:
+      bridge_ref:
+        description: Ref/branch/tag of OneYoungMean/KimodoUnityBridge
+        required: false
+        default: main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-bridge-package
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout KimodoUnityBridge_FullDemo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout KimodoUnityBridge
+        uses: actions/checkout@v4
+        with:
+          repository: OneYoungMean/KimodoUnityBridge
+          ref: ${{ github.event.inputs.bridge_ref || 'main' }}
+          path: __bridge_source
+
+      - name: Mirror package into Packages/KimodoUnityBridge
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:GITHUB_WORKSPACE "__bridge_source"
+          $target = Join-Path $env:GITHUB_WORKSPACE "Packages\KimodoUnityBridge"
+
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+          robocopy $source $target /MIR /XD .git .github | Out-Null
+          if ($LASTEXITCODE -ge 8) {
+            throw "robocopy failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Commit synced package
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Packages/KimodoUnityBridge
+
+          if (git diff --cached --quiet) {
+            exit 0
+          }
+
+          $ref = "${{ github.event.inputs.bridge_ref || 'main' }}"
+          git commit -m "chore: sync KimodoUnityBridge package from $ref"
+          git push origin HEAD:${{ github.ref_name }}
+
+      - name: Summary
+        shell: pwsh
+        run: |
+          @(
+            "Synced bridge ref: ${{ github.event.inputs.bridge_ref || 'main' }}"
+            "Target path: Packages/KimodoUnityBridge"
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
