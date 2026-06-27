@@ -12,7 +12,7 @@
 ## 2. `run_server.bat` / `run_server.sh`
 - `--model <name|alias>`: 默认 `Kimodo-SOMA-RP-v1`。
 - `--highvram`: 启用 high-vram 模式。
-- `--force-hf-download`: 对允许竞速的资产强制使用 Hugging Face 下载；`highvram/full` 资产仍固定走 ModelScope。
+- `--force-hf-download`: 对允许竞速的资产强制使用 Hugging Face 下载；包括 `highvram/fp16` 的 FP16 文本编码器；若命中 legacy 本地兼容布局，则不会触发下载。
 - `--models-root <path>`: 指定外部模型根目录（存在即跳过下载流程）。
 - `--output <console|file>`: 输出模式，默认 `console`。
 - `--log <path>`: `file` 模式下主日志路径，默认 `log\bridge_server.log`。
@@ -21,14 +21,24 @@
 
 关键运行变量：
 - `KIMODO_MODELS_ROOT`: 默认 models 根目录（可被 `--models-root` 覆盖）。
+- `KIMODO_ALLOW_MULTI_SERVER=0|1`: 默认 `0`，同一份 QuickServer 根目录只允许一个 `run server` 实例；设为 `1` 时跳过运行单例锁。兼容别名 `ALLOWMULTISERVER` / `allowmultiserver`。
 - `KIMODO_IDLE_TIMEOUT_SEC`: 服务空闲退出秒数（当前设定 `600`）。
-- 下载站点默认是自动探测 HF / ModelScope 后择优；`--force-hf-download` 会跳过探测并强制走 HF，但不影响 `highvram/full` 路径的 ModelScope 固定策略。
+- `KIMODO_BRIDGE_OUTPUT_FORMAT=json_compact|bvh`: bridge TCP `generate` 返回格式。默认 `json_compact`；设为 `bvh` 时，仅返回 `motion_bvh`，不再返回 `motion_json_compact`。
+- `KIMODO_BRIDGE_BVH_STANDARD_TPOSE=0|1`: 仅在 `KIMODO_BRIDGE_OUTPUT_FORMAT=bvh` 时生效。设为 `1` 时，BVH 以标准 T-pose 作为 rest pose 导出。
+- 下载站点默认是自动探测 HF / ModelScope 后择优；`--force-hf-download` 会跳过探测并强制走 HF。
 
 INT8 资产说明：
 - 默认低显存文本编码器目录为 `models\KIMODO-Meta3_llm2vec_INT8`。
 - 若本地已有 `C:\nvlab\LLMVec-GGUF\KIMODO-Meta3_llm2vec_FP16`，可先执行 `tools\build_llm2vec_int8.py` 生成 INT8 资产。
 - 对默认 `models\` 目录：若缺少 INT8 资产，会尝试从 `oneyoungmean/KIMODO-Meta3_llm2vec_INT8` 下载。
 - 对外部 `--models-root`：不会自动下载，缺失时直接报错。
+
+文本编码器路由说明：
+- CPU 或显存 `< 6GB`：使用 `models\KIMODO-Meta3_llm2vec_INT8`
+- GPU 且显存 `>= 6GB`，未开启 `--highvram`：使用 `models\KIMODO-Meta3_llm2vec_NF4`
+- GPU 且显存 `>= 6GB`，开启 `--highvram`：
+  - 若同时存在且有效：`models\Meta-Llama-3-8B-Instruct` + `models\LLM2Vec-Meta-Llama-3-8B-Instruct-mntp-supervised`，优先走 legacy 本地兼容加载
+  - 否则使用 `models\KIMODO-Meta3_llm2vec_FP16`
 
 ### 启动与 watchdog
 - `KIMODO_WATCHDOG_STARTUP_INTERVAL_SEC`: 启动阶段等待 `serverport` 的轮询间隔（默认 `1` 秒）。
@@ -40,6 +50,7 @@ INT8 资产说明：
 - 默认启动等待窗口约 `180s`（`1s * 180`）。
 - 不做 `serverport` 回填、不做 TCP 探活；`serverport` 仅由 bridge server 写入。
 - `run_server.bat setup` / `run_server.sh setup` 都是同一条 Python 入口的子命令，用于单独执行 setup。
+- `KIMODO_BRIDGE_OUTPUT_FORMAT=bvh` 是给直接消费 QuickServer TCP 返回值的外部客户端使用的。现有 Unity 客户端仍然依赖 `motion_json_compact`，不应在 Unity 这条链路上开启。
 
 已移除变量：
 - `CHECKPOINT_DIR`: 改用 `KIMODO_MODELS_ROOT`。

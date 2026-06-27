@@ -117,6 +117,7 @@ class _BridgeProvisionPlan:
     using_external_models: bool
     highvram: bool
     encoder_route: str
+    text_encoder_layout: assets.TextEncoderLayoutSpec
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -172,12 +173,14 @@ def _build_bridge_provision_plan(
         hints,
         total_vram_gb=total_vram_gb,
     )
+    text_encoder_layout = assets.select_text_encoder_layout_for_route(encoder_route, models_root)
     return _BridgeProvisionPlan(
         resolved_model=resolved_model,
         models_root=models_root,
         using_external_models=using_external_models,
         highvram=highvram,
         encoder_route=encoder_route,
+        text_encoder_layout=text_encoder_layout,
     )
 
 
@@ -193,6 +196,7 @@ def _apply_bridge_runtime_env(kimodo_root: str, plan: _BridgeProvisionPlan) -> N
         highvram=plan.highvram,
         hints=assets.normalize_runtime_hints("cpu" if plan.encoder_route == "int8" else None),
         encoder_route=plan.encoder_route,
+        encoder_layout_id=plan.text_encoder_layout.layout_id,
     )
     assets.scrub_removed_runtime_env(os.environ)
     os.environ.update(runtime_env)
@@ -225,7 +229,17 @@ def _provision_bridge_assets(
     logger.log(
         f"[bridge] asset plan: model={plan.resolved_model.local_name} "
         f"models_root={plan.models_root} encoder_route={plan.encoder_route} "
+        f"encoder_layout={plan.text_encoder_layout.layout_id} "
         f"external_models_root={plan.using_external_models}"
+    )
+    encoder_primary_dir, encoder_peft_dir = assets.resolve_text_encoder_layout_paths(
+        plan.text_encoder_layout,
+        plan.models_root,
+    )
+    logger.log(
+        f"[INFO] Text encoder layout selected: {plan.text_encoder_layout.layout_id} "
+        f"label={plan.text_encoder_layout.label} primary={encoder_primary_dir}"
+        + (f" peft={encoder_peft_dir}" if encoder_peft_dir is not None else "")
     )
 
     main_asset = assets.AssetSpec(
@@ -245,12 +259,7 @@ def _provision_bridge_assets(
         allow_download=allow_download,
     )
 
-    if plan.encoder_route == "int8":
-        encoder_assets = [assets.INT8_ASSET]
-    elif plan.encoder_route == "full":
-        encoder_assets = [assets.FULL_BASE_ASSET, assets.FULL_PEFT_ASSET]
-    else:
-        encoder_assets = [assets.NF4_ASSET]
+    encoder_assets = list(plan.text_encoder_layout.download_assets)
 
     for encoder_asset in encoder_assets:
         _ensure_asset_ready(
@@ -273,7 +282,8 @@ def _provision_bridge_assets(
 
     logger.log(
         f"[bridge] asset plan complete: model={plan.resolved_model.local_name} "
-        f"encoder_route={plan.encoder_route} downloads={download_counter[0]}"
+        f"encoder_route={plan.encoder_route} encoder_layout={plan.text_encoder_layout.layout_id} "
+        f"downloads={download_counter[0]}"
     )
     return plan
 
@@ -331,7 +341,7 @@ def _resolve_skeleton_for_joint_count(skeleton, num_joints: int):
     return skeleton
 
 
-def _extract_flat_local_rot_quats(model, output, sample_index: int):
+def _extract_local_rot_mats(model, output, sample_index: int):
     local_rot = None
 
     if output.get("local_rot_mats") is not None:
@@ -356,11 +366,25 @@ def _extract_flat_local_rot_quats(model, output, sample_index: int):
         except Exception as exc:
             _out({"status": "progress", "message": f"rotation fallback failed: {exc}"})
 
+    return local_rot
+
+
+def _extract_flat_local_rot_quats(model, output, sample_index: int):
+    local_rot = _extract_local_rot_mats(model, output, sample_index)
     if local_rot is None:
         return None
 
     q_wxyz = _rotation_mats_to_quat_wxyz(local_rot)
     return q_wxyz.reshape(-1).tolist()
+
+
+def _extract_local_rot_quats_array(model, output, sample_index: int):
+    local_rot = _extract_local_rot_mats(model, output, sample_index)
+    if local_rot is None:
+        return None
+
+    q_wxyz = _rotation_mats_to_quat_wxyz(local_rot).astype(np.float32, copy=False)
+    return q_wxyz.reshape(-1)
 
 
 def _parents_and_names(model, num_joints: int):
@@ -464,6 +488,130 @@ class UnityMotionJsonResult:
         return json.dumps(payload, separators=(",", ":"))
 
 
+def _resolve_bridge_output_format() -> str:
+    raw = os.environ.get("KIMODO_BRIDGE_OUTPUT_FORMAT", "json_compact").strip().lower()
+    return raw if raw in ("json_compact", "bvh", "flatbuf_motion_v1") else "json_compact"
+
+
+def _resolve_requested_output_format(req: dict | None = None) -> str:
+    if isinstance(req, dict):
+        raw = str(req.get("output_format", "") or "").strip().lower()
+        if raw in ("json_compact", "bvh", "flatbuf_motion_v1"):
+            return raw
+    return _resolve_bridge_output_format()
+
+
+def _resolve_bridge_bvh_standard_tpose() -> bool:
+    return _env_flag("KIMODO_BRIDGE_BVH_STANDARD_TPOSE", False)
+
+
+def _build_generate_response(model: Any, output: dict, prompt: str, sample_index: int = 0) -> dict:
+    output_format = _resolve_bridge_output_format()
+    motion_data = UnityMotionJsonResult.from_model_output(model, output, prompt, sample_index=sample_index)
+    if output_format != "bvh":
+        return {
+            "status": "done",
+            "output_format": "json_compact",
+            "motion_json_compact": motion_data.to_compact_json(),
+        }
+
+    from kimodo.exports.bvh import motion_to_bvh
+
+    sample_joints = np.asarray(output["posed_joints"][sample_index], dtype=np.float32)
+    num_joints = int(sample_joints.shape[1])
+    skeleton = _resolve_skeleton_for_joint_count(getattr(model, "skeleton", None), num_joints)
+    if skeleton is None:
+        raise ValueError(f"Cannot resolve skeleton for BVH export with joint_count={num_joints}.")
+
+    local_rot_mats = _extract_local_rot_mats(model, output, sample_index)
+    if local_rot_mats is None:
+        raise ValueError("BVH export requires local rotations, but none were available in model output.")
+
+    import torch
+
+    root_idx = int(getattr(skeleton, "root_idx", 0))
+    local_rot_mats_t = torch.as_tensor(local_rot_mats, dtype=torch.float32)
+    root_positions = torch.as_tensor(sample_joints[:, root_idx, :], dtype=torch.float32)
+    bvh_text = motion_to_bvh(
+        local_rot_mats_t,
+        root_positions,
+        skeleton=skeleton,
+        fps=float(model.fps),
+        standard_tpose=_resolve_bridge_bvh_standard_tpose(),
+    )
+    return {
+        "status": "done",
+        "output_format": "bvh",
+        "motion_bvh": bvh_text,
+    }
+
+
+def _build_generate_flatbuffer_payload(model: Any, output: dict, sample_index: int = 0) -> bytes:
+    import flatbuffers
+
+    from kimodo.bridge.protocol.generated import MotionPacket
+
+    sample_joints = np.asarray(output["posed_joints"][sample_index], dtype=np.float32)
+    if sample_joints.ndim != 3 or sample_joints.shape[2] < 3:
+        raise ValueError(f"Unexpected posed_joints shape for flatbuffer export: {sample_joints.shape!r}")
+
+    num_frames = int(sample_joints.shape[0])
+    num_joints = int(sample_joints.shape[1])
+    joint_parents, joint_names = _parents_and_names(model, num_joints)
+    root_joint_index = 0
+    for index, parent in enumerate(joint_parents):
+        if int(parent) < 0:
+            root_joint_index = index
+            break
+
+    root_positions = np.asarray(sample_joints[:, root_joint_index, :], dtype=np.float32).reshape(-1)
+    local_rot_quats = _extract_local_rot_quats_array(model, output, sample_index)
+    if local_rot_quats is None or int(local_rot_quats.size) == 0:
+        raise ValueError("FlatBuffer export requires local_rot_quats, but none were available in model output.")
+
+    builder = flatbuffers.Builder(max(1024, int(local_rot_quats.size * 4 + root_positions.size * 4 + 512)))
+
+    model_name_offset = builder.CreateString(str(getattr(model, "name", "") or ""))
+    joint_name_offsets = [builder.CreateString(str(name or "")) for name in joint_names]
+    MotionPacket.StartJointNamesVector(builder, len(joint_name_offsets))
+    for joint_name_offset in reversed(joint_name_offsets):
+        builder.PrependUOffsetTRelative(joint_name_offset)
+    joint_names_offset = builder.EndVector()
+    joint_parents_offset = builder.CreateNumpyVector(np.asarray(joint_parents, dtype=np.int32))
+    root_positions_offset = builder.CreateNumpyVector(root_positions)
+    local_rot_quats_offset = builder.CreateNumpyVector(local_rot_quats)
+
+    MotionPacket.Start(builder)
+    MotionPacket.AddVersion(builder, 1)
+    MotionPacket.AddFps(builder, float(model.fps))
+    MotionPacket.AddNumFrames(builder, num_frames)
+    MotionPacket.AddNumJoints(builder, num_joints)
+    MotionPacket.AddJointNames(builder, joint_names_offset)
+    MotionPacket.AddJointParents(builder, joint_parents_offset)
+    MotionPacket.AddRootPositions(builder, root_positions_offset)
+    MotionPacket.AddLocalRotQuats(builder, local_rot_quats_offset)
+    MotionPacket.AddModelName(builder, model_name_offset)
+    packet = MotionPacket.End(builder)
+    builder.Finish(packet, file_identifier=b"KMB1")
+    return bytes(builder.Output())
+
+
+def _write_json_line(file, payload: dict) -> None:
+    file.write((json.dumps(payload) + "\n").encode("utf-8"))
+    file.flush()
+
+
+def _write_flatbuffer_generate_response(file, payload: bytes) -> None:
+    header = {
+        "status": "done",
+        "output_format": "flatbuf_motion_v1",
+        "byte_length": len(payload),
+    }
+    file.write((json.dumps(header) + "\n").encode("utf-8"))
+    file.write(payload)
+    file.flush()
+
+
 def _generate(req: dict, model):
     from kimodo.tools import seed_everything
 
@@ -495,8 +643,7 @@ def _generate(req: dict, model):
         return_numpy=True,
     )
 
-    motion_data = UnityMotionJsonResult.from_model_output(model, output, prompt, sample_index=0)
-    _out({"status": "done", "motion_json_compact": motion_data.to_compact_json()})
+    _out(_build_generate_response(model, output, prompt, sample_index=0))
 
 
 def main():
@@ -605,10 +752,16 @@ def main():
             return
 
         use_int8_encoder = provision_plan.encoder_route == "int8"
-        _log(f"[bridge] tier decision: vram={total_vram_gb:.2f}GB device={device} encoder_route={provision_plan.encoder_route}")
+        _log(
+            f"[bridge] tier decision: vram={total_vram_gb:.2f}GB device={device} "
+            f"encoder_route={provision_plan.encoder_route} "
+            f"encoder_layout={provision_plan.text_encoder_layout.layout_id}"
+        )
 
         if use_int8_encoder:
             _log("[bridge] local INT8 text encoder selected (tier: vram<6G).")
+        elif provision_plan.text_encoder_layout.layout_id == "legacy_base_peft":
+            _log("[bridge] local legacy Meta-Llama-3-8B + LLM2Vec PEFT layout selected (compatibility hit).")
         else:
             _log("[bridge] local LLM2Vec text encoder selected (tier: vram>=6G).")
 
@@ -782,8 +935,13 @@ def main():
                                 return_numpy=True,
                             )
 
-                            motion_data = UnityMotionJsonResult.from_model_output(model, output, prompt, sample_index=0)
-                            resp = {"status": "done", "motion_json_compact": motion_data.to_compact_json()}
+                            requested_output_format = _resolve_requested_output_format(req)
+                            if requested_output_format == "flatbuf_motion_v1":
+                                payload = _build_generate_flatbuffer_payload(model, output, sample_index=0)
+                                _write_flatbuffer_generate_response(file, payload)
+                                continue
+
+                            resp = _build_generate_response(model, output, prompt, sample_index=0)
                         elif cmd == "quit":
                             resp = {"status": "bye"}
                             _set_quitting()
@@ -807,8 +965,7 @@ def main():
                         _command_finished()
 
                     try:
-                        file.write((json.dumps(resp) + "\n").encode("utf-8"))
-                        file.flush()
+                        _write_json_line(file, resp)
                     except (ConnectionResetError, BrokenPipeError, OSError):
                         break
     finally:

@@ -10,9 +10,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260622_130734_294
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260627_152049_220
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: 976b7fd0b78d8644b9ea91298283d197, type: 2}
+  m_Clip: {fileID: 7400000, guid: 74cf3b17bcf4b154dbb46991ef0bb427, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: 0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -22,16 +22,13 @@ MonoBehaviour:
   m_Loop: 0
   m_Version: 1
   m_Rotation: {x: 0, y: 0, z: 0, w: 1}
-  generationBackend: 1
-  comfyuiIP: 127.0.0.1
-  comfyuiPort: 8188
   bridgeModelName: Kimodo-SOMA-RP-v1
   bridgeVramMode: 0
   motionPrompt: Walk And Say Hello
   generationFrames: 150
   diffusionSteps: 100
-  randomSeed: 0
-  seed: 42
+  randomSeed: 1
+  seed: 420639934
   customRetargetAvatar: {fileID: 0}
   inOutConstraintMode: 0
   showConstraint: 1
@@ -58,9 +55,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260622_131211_247
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260627_151745_769
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: 73fcaf9f5598363458cbfced124bd9b6, type: 2}
+  m_Clip: {fileID: 7400000, guid: dd49cf63c66e9cd42bd020a8579713d6, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: 0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -70,16 +67,13 @@ MonoBehaviour:
   m_Loop: 0
   m_Version: 1
   m_Rotation: {x: 0, y: 0, z: 0, w: 1}
-  generationBackend: 1
-  comfyuiIP: 127.0.0.1
-  comfyuiPort: 8188
   bridgeModelName: Kimodo-SOMA-RP-v1
   bridgeVramMode: 0
   motionPrompt: Walk And Say Hello
   generationFrames: 152
   diffusionSteps: 100
   randomSeed: 1
-  seed: 727456749
+  seed: 928187343
   customRetargetAvatar: {fileID: 0}
   inOutConstraintMode: 0
   showConstraint: 1

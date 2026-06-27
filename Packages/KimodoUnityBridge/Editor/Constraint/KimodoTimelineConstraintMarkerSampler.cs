@@ -73,6 +73,46 @@ namespace KimodoBridge.Editor
             return true;
         }
 
+        internal static bool TryBuildOverrideMarkerSamplesWithoutTimelineSampling(
+            TimelineClip clipRange,
+            out List<KimodoMarkerSampleResult> samples,
+            out bool requiresTimelineSampling,
+            out string error)
+        {
+            samples = new List<KimodoMarkerSampleResult>();
+            requiresTimelineSampling = false;
+            error = string.Empty;
+
+            TrackAsset track = clipRange != null ? clipRange.GetParentTrack() : null;
+            if (track == null)
+            {
+                error = "Cannot resolve parent animation track.";
+                return false;
+            }
+
+            List<KimodoConstraintMarkerBase> markers = GatherKimodoMarkers(track, clipRange);
+            for (int i = 0; i < markers.Count; i++)
+            {
+                KimodoConstraintMarkerBase marker = markers[i];
+                if (!CanUseOverrideWithoutTimelineSampling(marker))
+                {
+                    requiresTimelineSampling = true;
+                    return true;
+                }
+
+                KimodoMarkerSampleResult sample = KimodoMarkerSamplingUtility.NormalizeConstraintMarkerSample(marker, marker.SampleData);
+                if (sample == null)
+                {
+                    error = "failed to read override marker data";
+                    return false;
+                }
+
+                samples.Add(sample);
+            }
+
+            return true;
+        }
+
         internal static bool TrySamplePoseFromClipAsset(
             KimodoTimelineInOutConstraintContext context,
             double timelineTime,
@@ -146,9 +186,7 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            bool isCustomEndEffector = marker is KimodoEndEffectorConstraintMarker ee &&
-                                       string.Equals(ee.ConstraintType, "end-effector", StringComparison.OrdinalIgnoreCase);
-            if (marker.useOverride && !isCustomEndEffector)
+            if (CanUseOverrideWithoutTimelineSampling(marker))
             {
                 sample = KimodoMarkerSamplingUtility.NormalizeConstraintMarkerSample(marker, marker.SampleData);
                 if (sample == null)
@@ -183,6 +221,17 @@ namespace KimodoBridge.Editor
             }
 
             return true;
+        }
+
+        private static bool CanUseOverrideWithoutTimelineSampling(KimodoConstraintMarkerBase marker)
+        {
+            if (marker == null || !marker.useOverride)
+            {
+                return false;
+            }
+
+            return marker is not KimodoEndEffectorConstraintMarker ee ||
+                !string.Equals(ee.ConstraintType, "end-effector", StringComparison.OrdinalIgnoreCase);
         }
 
         private static List<KimodoConstraintMarkerBase> GatherKimodoMarkers(TrackAsset track, TimelineClip clipRange)

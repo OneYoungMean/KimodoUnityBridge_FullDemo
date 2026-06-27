@@ -75,6 +75,51 @@ namespace KimodoBridge
             return false;
         }
 
+        public static KimodoMarkerSampleResult CreateDefaultMarkerSample(
+            string modelName,
+            Transform profileSkeletonRoot,
+            string constraintType = "fullbody")
+        {
+            KimodoConstraintRigType resolvedRigType = KimodoRigProfileDatabase.ResolveRigTypeFromModelName(modelName);
+            string[] resolvedJointNames = KimodoRigProfileDatabase.GetJointNamesForModel(modelName);
+            int jointCount = resolvedJointNames != null ? resolvedJointNames.Length : 0;
+
+            var localAxes = new List<Vector3>(jointCount);
+            var sampledIndices = new List<int>(jointCount);
+            for (int i = 0; i < jointCount; i++)
+            {
+                localAxes.Add(Vector3.zero);
+                sampledIndices.Add(i);
+            }
+
+            Vector3 kimodoRootPosition = Vector3.zero;
+            Vector3 unityRootPosition = profileSkeletonRoot != null ? profileSkeletonRoot.position : Vector3.zero;
+            if (profileSkeletonRoot != null)
+            {
+                string rootJointName = KimodoRigProfileDatabase.GetProfileRootJointNameForModel(modelName);
+                Transform rootJoint = KimodoRetargetAvatarUtility.FindTransformByName(profileSkeletonRoot, rootJointName);
+                if (rootJoint != null)
+                {
+                    kimodoRootPosition = rootJoint.position;
+                }
+            }
+
+            return new KimodoMarkerSampleResult
+            {
+                constraintType = string.IsNullOrWhiteSpace(constraintType) ? "fullbody" : constraintType,
+                sampleTime = 0d,
+                rigType = resolvedRigType,
+                hasRootHeading = true,
+                kimodoRootPosition = kimodoRootPosition,
+                rootHeading = Vector2.right,
+                unityRootPos = unityRootPosition,
+                unityRootRot = Quaternion.identity,
+                jointNames = resolvedJointNames != null ? new List<string>(resolvedJointNames) : new List<string>(),
+                localAxisAngles = localAxes,
+                sampledJointIndices = sampledIndices
+            };
+        }
+
         public static List<string> BuildHighlightJointsForConstraint(
             string constraintType,
             List<string> jointNames,

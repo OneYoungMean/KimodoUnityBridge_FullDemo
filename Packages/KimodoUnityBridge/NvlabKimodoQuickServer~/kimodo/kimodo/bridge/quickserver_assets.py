@@ -16,8 +16,12 @@ from typing import Protocol
 DEFAULT_MODEL_NAME = "Kimodo-SOMA-RP-v1"
 INT8_LOCAL_DIR = "KIMODO-Meta3_llm2vec_INT8"
 NF4_LOCAL_DIR = "KIMODO-Meta3_llm2vec_NF4"
-FULL_BASE_LOCAL_DIR = "Meta-Llama-3-8B-Instruct"
-FULL_PEFT_LOCAL_DIR = "LLM2Vec-Meta-Llama-3-8B-Instruct-mntp-supervised"
+FP16_LOCAL_DIR = "KIMODO-Meta3_llm2vec_FP16"
+LEGACY_FP16_BASE_LOCAL_DIR = "Meta-Llama-3-8B-Instruct"
+LEGACY_FP16_PEFT_LOCAL_DIR = "LLM2Vec-Meta-Llama-3-8B-Instruct-mntp-supervised"
+ENCODER_ROUTE_INT8 = "int8"
+ENCODER_ROUTE_NF4 = "nf4"
+ENCODER_ROUTE_FP16 = "fp16"
 DOWNLOAD_PROBE_TIMEOUT_SECONDS = 1.0
 LEGACY_GGUF_ENV_VARS = (
     "KIMODO_GGUF_MODEL_PATH",
@@ -46,6 +50,18 @@ class AssetSpec:
     local_dir_name: str
     modelscope_repo: str
     huggingface_repo: str | None
+
+
+@dataclass(frozen=True)
+class TextEncoderLayoutSpec:
+    layout_id: str
+    route: str
+    label: str
+    primary_local_dir_name: str
+    peft_local_dir_name: str | None = None
+    download_assets: tuple[AssetSpec, ...] = ()
+    preferred_if_ready: bool = False
+    text_encoder_device: str = "auto"
 
 
 @dataclass(frozen=True)
@@ -144,6 +160,17 @@ MAIN_MODELS: tuple[MainModelSpec, ...] = (
     ),
 )
 
+
+def _build_main_model_registry() -> dict[str, MainModelSpec]:
+    registry: dict[str, MainModelSpec] = {}
+    for spec in MAIN_MODELS:
+        for key in (spec.local_name, *spec.aliases):
+            registry[str(key).lower()] = spec
+    return registry
+
+
+MAIN_MODEL_REGISTRY = _build_main_model_registry()
+
 INT8_ASSET = AssetSpec(
     label="INT8 text encoder",
     local_dir_name=INT8_LOCAL_DIR,
@@ -156,18 +183,58 @@ NF4_ASSET = AssetSpec(
     modelscope_repo="oneyoungmean/KIMODO-Meta3_llm2vec_NF4",
     huggingface_repo="Aero-Ex/KIMODO-Meta3_llm2vec_NF4",
 )
-FULL_BASE_ASSET = AssetSpec(
-    label="full text encoder base",
-    local_dir_name=FULL_BASE_LOCAL_DIR,
-    modelscope_repo="LLM-Research/Meta-Llama-3-8B-Instruct",
-    huggingface_repo="meta-llama/Meta-Llama-3-8B-Instruct",
+FP16_ASSET = AssetSpec(
+    label="FP16 text encoder",
+    local_dir_name=FP16_LOCAL_DIR,
+    modelscope_repo="oneyoungmean/KIMODO-Meta3_llm2vec_FP16",
+    huggingface_repo="Aero-Ex/KIMODO-Meta3_llm2vec_FP16",
 )
-FULL_PEFT_ASSET = AssetSpec(
-    label="full text encoder peft",
-    local_dir_name=FULL_PEFT_LOCAL_DIR,
-    modelscope_repo="oneyoungmean/LLM2Vec-Meta-Llama-3-8B-Instruct-mntp-supervised",
-    huggingface_repo="McGill-NLP/LLM2Vec-Meta-Llama-3-8B-Instruct-mntp-supervised",
+
+INT8_LAYOUT = TextEncoderLayoutSpec(
+    layout_id="int8_single",
+    route=ENCODER_ROUTE_INT8,
+    label="INT8 single-dir local layout",
+    primary_local_dir_name=INT8_LOCAL_DIR,
+    download_assets=(INT8_ASSET,),
+    text_encoder_device="cpu",
 )
+NF4_LAYOUT = TextEncoderLayoutSpec(
+    layout_id="nf4_single",
+    route=ENCODER_ROUTE_NF4,
+    label="NF4 single-dir local layout",
+    primary_local_dir_name=NF4_LOCAL_DIR,
+    download_assets=(NF4_ASSET,),
+)
+LEGACY_FP16_LAYOUT = TextEncoderLayoutSpec(
+    layout_id="legacy_base_peft",
+    route=ENCODER_ROUTE_FP16,
+    label="Legacy Meta-Llama-3-8B + LLM2Vec PEFT local layout",
+    primary_local_dir_name=LEGACY_FP16_BASE_LOCAL_DIR,
+    peft_local_dir_name=LEGACY_FP16_PEFT_LOCAL_DIR,
+    preferred_if_ready=True,
+)
+FP16_SINGLE_LAYOUT = TextEncoderLayoutSpec(
+    layout_id="fp16_single",
+    route=ENCODER_ROUTE_FP16,
+    label="KIMODO Meta3 FP16 single-dir local layout",
+    primary_local_dir_name=FP16_LOCAL_DIR,
+    download_assets=(FP16_ASSET,),
+)
+
+TEXT_ENCODER_LAYOUTS: tuple[TextEncoderLayoutSpec, ...] = (
+    INT8_LAYOUT,
+    NF4_LAYOUT,
+    LEGACY_FP16_LAYOUT,
+    FP16_SINGLE_LAYOUT,
+)
+TEXT_ENCODER_LAYOUT_REGISTRY: dict[str, TextEncoderLayoutSpec] = {
+    layout.layout_id: layout for layout in TEXT_ENCODER_LAYOUTS
+}
+TEXT_ENCODER_LAYOUTS_BY_ROUTE: dict[str, tuple[TextEncoderLayoutSpec, ...]] = {
+    ENCODER_ROUTE_INT8: (INT8_LAYOUT,),
+    ENCODER_ROUTE_NF4: (NF4_LAYOUT,),
+    ENCODER_ROUTE_FP16: (LEGACY_FP16_LAYOUT, FP16_SINGLE_LAYOUT),
+}
 
 
 def resolve_main_model(requested_name: str | None) -> ResolvedModel:
@@ -175,14 +242,14 @@ def resolve_main_model(requested_name: str | None) -> ResolvedModel:
     if not raw_name:
         raise ValueError("Empty model name.")
     lookup = raw_name.lower()
-    for spec in MAIN_MODELS:
-        if lookup == spec.local_name.lower() or lookup in spec.aliases:
-            return ResolvedModel(
-                requested_name=raw_name,
-                local_name=spec.local_name,
-                modelscope_repo=spec.modelscope_repo,
-                huggingface_repo=spec.huggingface_repo,
-            )
+    spec = MAIN_MODEL_REGISTRY.get(lookup)
+    if spec is not None:
+        return ResolvedModel(
+            requested_name=raw_name,
+            local_name=spec.local_name,
+            modelscope_repo=spec.modelscope_repo,
+            huggingface_repo=spec.huggingface_repo,
+        )
     if lookup.startswith("kimodo-"):
         return ResolvedModel(
             requested_name=raw_name,
@@ -253,12 +320,12 @@ def should_use_int8(total_vram_gb: float) -> bool:
 
 def choose_prepare_encoder_route(highvram: bool, hints: RuntimeHints, total_vram_gb: float | None = None) -> str:
     if hints.normalized_device == "cpu":
-        return "int8"
+        return ENCODER_ROUTE_INT8
     if total_vram_gb is None:
         total_vram_gb = detect_total_vram_gb()
     if should_use_int8(total_vram_gb):
-        return "int8"
-    return "full" if highvram else "nf4"
+        return ENCODER_ROUTE_INT8
+    return ENCODER_ROUTE_FP16 if highvram else ENCODER_ROUTE_NF4
 
 
 def default_models_root(root_dir: str | os.PathLike[str]) -> Path:
@@ -361,25 +428,86 @@ def _int8_ready(model_dir: Path) -> bool:
     )
 
 
-def _full_peft_ready(model_dir: Path) -> bool:
+def _legacy_peft_ready(model_dir: Path) -> bool:
     return (
         (model_dir / "adapter_config.json").is_file()
-        and _has_any_file(model_dir, ("adapter_model.safetensors", "adapter_model.bin", "model.safetensors", "pytorch_model.bin"))
+        and _has_any_file(
+            model_dir,
+            ("adapter_model.safetensors", "adapter_model.bin", "model.safetensors", "pytorch_model.bin"),
+        )
     )
+
+
+ASSET_READY_CHECKERS_BY_LOCAL_DIR = {
+    INT8_LOCAL_DIR: _int8_ready,
+    NF4_LOCAL_DIR: _llm2vec_ready,
+    FP16_LOCAL_DIR: _llm2vec_ready,
+}
 
 
 def asset_is_ready(asset: AssetSpec, target_dir: Path) -> bool:
     if asset.label == "main model":
         return _main_model_ready(target_dir)
-    if asset.local_dir_name == INT8_LOCAL_DIR:
-        return _int8_ready(target_dir)
-    if asset.local_dir_name == NF4_LOCAL_DIR:
-        return _llm2vec_ready(target_dir)
-    if asset.local_dir_name == FULL_BASE_LOCAL_DIR:
-        return _llm2vec_ready(target_dir)
-    if asset.local_dir_name == FULL_PEFT_LOCAL_DIR:
-        return _full_peft_ready(target_dir)
+    checker = ASSET_READY_CHECKERS_BY_LOCAL_DIR.get(asset.local_dir_name)
+    if checker is not None:
+        return checker(target_dir)
     return target_dir.exists()
+
+
+def resolve_text_encoder_layout(layout_id: str) -> TextEncoderLayoutSpec:
+    layout = TEXT_ENCODER_LAYOUT_REGISTRY.get(str(layout_id or "").strip())
+    if layout is None:
+        raise ValueError(f"Unsupported text encoder layout: {layout_id}")
+    return layout
+
+
+def resolve_text_encoder_layout_paths(
+    layout: TextEncoderLayoutSpec,
+    models_root: str | os.PathLike[str],
+) -> tuple[Path, Path | None]:
+    models_path = Path(models_root).resolve()
+    primary_dir = models_path / layout.primary_local_dir_name
+    peft_dir = models_path / layout.peft_local_dir_name if layout.peft_local_dir_name else None
+    return primary_dir, peft_dir
+
+
+def text_encoder_layout_ready(layout: TextEncoderLayoutSpec, models_root: str | os.PathLike[str]) -> bool:
+    primary_dir, peft_dir = resolve_text_encoder_layout_paths(layout, models_root)
+    if layout.route == ENCODER_ROUTE_INT8:
+        primary_ready = _int8_ready(primary_dir)
+    else:
+        primary_ready = _llm2vec_ready(primary_dir)
+    if not primary_ready:
+        return False
+    if peft_dir is not None:
+        return _legacy_peft_ready(peft_dir)
+    return True
+
+
+def select_text_encoder_layout_for_route(
+    route: str,
+    models_root: str | os.PathLike[str],
+) -> TextEncoderLayoutSpec:
+    layouts = TEXT_ENCODER_LAYOUTS_BY_ROUTE.get(str(route or "").strip())
+    if not layouts:
+        raise ValueError(f"Unsupported text encoder route: {route}")
+    for layout in layouts:
+        if layout.preferred_if_ready and text_encoder_layout_ready(layout, models_root):
+            return layout
+    for layout in layouts:
+        if not layout.preferred_if_ready:
+            return layout
+    return layouts[0]
+
+
+def select_text_encoder_layout(
+    highvram: bool,
+    hints: RuntimeHints,
+    models_root: str | os.PathLike[str],
+    total_vram_gb: float | None = None,
+) -> TextEncoderLayoutSpec:
+    route = choose_prepare_encoder_route(highvram, hints, total_vram_gb=total_vram_gb)
+    return select_text_encoder_layout_for_route(route, models_root)
 
 
 def _format_bytes(value: int) -> str:
@@ -392,10 +520,6 @@ def _format_bytes(value: int) -> str:
             return f"{size:.1f} {unit}"
         size /= 1024.0
     return f"{int(value)} B"
-
-
-def _is_modelscope_pinned_asset(asset: AssetSpec) -> bool:
-    return asset.local_dir_name in (FULL_BASE_LOCAL_DIR, FULL_PEFT_LOCAL_DIR)
 
 
 def _download_site_repo_id(asset: AssetSpec, site: DownloadSite) -> str:
@@ -706,15 +830,7 @@ def ensure_asset_present(
     selected_site: DownloadSite
     selected_repo_id: str
 
-    if _is_modelscope_pinned_asset(asset):
-        selected_site = DownloadSite.MODELSCOPE
-        selected_repo_id = _download_site_repo_id(asset, selected_site)
-        logger.log(
-            f"[INFO] {asset.label}: highvram/full route pinned to ModelScope "
-            f"repo={selected_repo_id or '<missing>'}"
-        )
-        download_via_modelscope(asset, target_dir, logger)
-    elif force_site is not None:
+    if force_site is not None:
         selected_site = force_site
         selected_repo_id = _download_site_repo_id(asset, selected_site)
         if not selected_repo_id:
@@ -770,10 +886,22 @@ def build_runtime_env(
     highvram: bool,
     hints: RuntimeHints,
     encoder_route: str | None = None,
+    encoder_layout_id: str | None = None,
 ) -> dict[str, str]:
     root = Path(root_dir).resolve()
     models_path = Path(models_root).resolve()
     selected_encoder_route = encoder_route or choose_prepare_encoder_route(highvram, hints)
+    selected_layout = (
+        resolve_text_encoder_layout(encoder_layout_id)
+        if encoder_layout_id
+        else select_text_encoder_layout_for_route(selected_encoder_route, models_path)
+    )
+    if selected_layout.route != selected_encoder_route:
+        raise ValueError(
+            "Encoder route/layout mismatch: "
+            f"route={selected_encoder_route} layout={selected_layout.layout_id}"
+        )
+    primary_dir, peft_dir = resolve_text_encoder_layout_paths(selected_layout, models_path)
 
     env: dict[str, str] = {
         "PYTHONPATH": str(Path(source_root).resolve()),
@@ -781,23 +909,15 @@ def build_runtime_env(
         "KIMODO_MODELS_ROOT": str(models_path),
         "KIMODO_HIGHVRAM": "1" if highvram else "0",
         "LOCAL_CACHE": "true",
-        "TEXT_ENCODER": "llm2vec_int8" if selected_encoder_route == "int8" else "llm2vec",
+        "TEXT_ENCODER": "llm2vec_int8" if selected_layout.route == ENCODER_ROUTE_INT8 else "llm2vec",
         "TEXT_ENCODER_MODE": "local",
     }
-
-    if selected_encoder_route == "full" and highvram:
-        env["TEXT_ENCODER_DEVICE"] = "auto"
-        env["KIMODO_LLM2VEC_DIR"] = str(models_path / FULL_BASE_LOCAL_DIR)
+    env["TEXT_ENCODER_DEVICE"] = selected_layout.text_encoder_device
+    env["KIMODO_LLM2VEC_DIR"] = str(primary_dir)
+    if peft_dir is not None:
         env["TEXT_ENCODERS_DIR"] = str(models_path)
-        env["KIMODO_LLM2VEC_PEFT_DIR"] = str(models_path / FULL_PEFT_LOCAL_DIR)
-    elif selected_encoder_route == "nf4":
-        env["TEXT_ENCODER_DEVICE"] = "auto"
-        env["KIMODO_LLM2VEC_DIR"] = str(models_path / NF4_LOCAL_DIR)
-        env["TEXT_ENCODERS_DIR"] = ""
-        env["KIMODO_LLM2VEC_PEFT_DIR"] = ""
+        env["KIMODO_LLM2VEC_PEFT_DIR"] = str(peft_dir)
     else:
-        env["TEXT_ENCODER_DEVICE"] = "cpu"
-        env["KIMODO_LLM2VEC_DIR"] = str(models_path / INT8_LOCAL_DIR)
         env["TEXT_ENCODERS_DIR"] = ""
         env["KIMODO_LLM2VEC_PEFT_DIR"] = ""
     return env

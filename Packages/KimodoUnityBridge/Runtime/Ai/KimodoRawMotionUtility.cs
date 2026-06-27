@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using TimelineInject;
 using UnityEngine;
+using Google.FlatBuffers;
 
 namespace KimodoBridge
 {
@@ -185,6 +186,151 @@ namespace KimodoBridge
             return true;
         }
 
+        public static string ToCompactJson(KimodoRawMotionData motion)
+        {
+            if (motion == null)
+            {
+                return string.Empty;
+            }
+
+            int frameCount = Mathf.Max(0, motion.FrameCount);
+            int jointCount = Mathf.Max(0, motion.JointCount);
+            if (frameCount <= 0 || jointCount <= 0)
+            {
+                return string.Empty;
+            }
+
+            var joints = new List<float>(frameCount * jointCount * 3);
+            for (int frameIndex = 0; frameIndex < frameCount; frameIndex++)
+            {
+                motion.TryReadUnityRootPosition(frameIndex, out Vector3 unityRootPosition);
+                float srcX = -unityRootPosition.x;
+                float srcY = unityRootPosition.y;
+                float srcZ = unityRootPosition.z;
+
+                for (int jointIndex = 0; jointIndex < jointCount; jointIndex++)
+                {
+                    if (jointIndex == motion.rootJointIndex)
+                    {
+                        joints.Add(srcX);
+                        joints.Add(srcY);
+                        joints.Add(srcZ);
+                    }
+                    else
+                    {
+                        joints.Add(0f);
+                        joints.Add(0f);
+                        joints.Add(0f);
+                    }
+                }
+            }
+
+            var payload = new MotionJsonData
+            {
+                num_frames = frameCount,
+                num_joints = jointCount,
+                fps = Mathf.RoundToInt(motion.FrameRate > 0f ? motion.FrameRate : KimodoPlayableClip.FIXED_FRAME_RATE),
+                joint_names = (string[])motion.jointNames.Clone(),
+                joint_parents = (int[])motion.jointParents.Clone(),
+                joints = joints,
+                local_rot_quats = motion.localRotQuats != null ? new List<float>(motion.localRotQuats) : new List<float>()
+            };
+            return JsonUtility.ToJson(payload);
+        }
+
+        public static bool TryParseFlatBuffer(byte[] motionBytes, out KimodoRawMotionData motion, out string error)
+        {
+            motion = null;
+            error = string.Empty;
+
+            if (motionBytes == null || motionBytes.Length == 0)
+            {
+                error = "FlatBuffer motion payload is empty.";
+                return false;
+            }
+
+            MotionPacket.ValidateVersion();
+            var buffer = new ByteBuffer(motionBytes);
+            if (!MotionPacket.MotionPacketBufferHasIdentifier(buffer) || !MotionPacket.VerifyMotionPacket(buffer))
+            {
+                error = "FlatBuffer motion payload failed identifier or schema verification.";
+                return false;
+            }
+
+            MotionPacket packet = MotionPacket.GetRootAsMotionPacket(buffer);
+            if (packet.Version != 1)
+            {
+                error = $"Unsupported FlatBuffer motion version: {packet.Version}.";
+                return false;
+            }
+
+            int frameCount = Mathf.Max(0, (int)packet.NumFrames);
+            int jointCount = Mathf.Max(0, (int)packet.NumJoints);
+            if (frameCount <= 0 || jointCount <= 0)
+            {
+                error = $"FlatBuffer motion has invalid frame/joint counts: frames={frameCount}, joints={jointCount}.";
+                return false;
+            }
+
+            string[] jointNames = new string[jointCount];
+            for (int i = 0; i < jointCount; i++)
+            {
+                string name = i < packet.JointNamesLength ? packet.JointNames(i) : null;
+                jointNames[i] = string.IsNullOrWhiteSpace(name) ? $"joint_{i}" : name;
+            }
+
+            int[] jointParents = new int[jointCount];
+            for (int i = 0; i < jointCount; i++)
+            {
+                jointParents[i] = i < packet.JointParentsLength ? packet.JointParents(i) : (i == 0 ? -1 : i - 1);
+            }
+
+            float[] rootPositionScalars = packet.GetRootPositionsArray();
+            if (rootPositionScalars == null || rootPositionScalars.Length < frameCount * 3)
+            {
+                error = $"FlatBuffer root_positions is too small. Expected at least {frameCount * 3}, got {rootPositionScalars?.Length ?? 0}.";
+                return false;
+            }
+
+            Vector3[] rootPositions = new Vector3[frameCount];
+            for (int frameIndex = 0; frameIndex < frameCount; frameIndex++)
+            {
+                int baseIndex = frameIndex * 3;
+                rootPositions[frameIndex] = new Vector3(
+                    -rootPositionScalars[baseIndex + 0],
+                    rootPositionScalars[baseIndex + 1],
+                    rootPositionScalars[baseIndex + 2]);
+            }
+
+            float[] localRotQuatArray = packet.GetLocalRotQuatsArray();
+            if (localRotQuatArray == null || localRotQuatArray.Length < frameCount * jointCount * 4)
+            {
+                error = $"FlatBuffer local_rot_quats is too small. Expected at least {frameCount * jointCount * 4}, got {localRotQuatArray?.Length ?? 0}.";
+                return false;
+            }
+
+            int rootJoint = 0;
+            for (int i = 0; i < jointParents.Length; i++)
+            {
+                if (jointParents[i] < 0)
+                {
+                    rootJoint = i;
+                    break;
+                }
+            }
+
+            motion = new KimodoRawMotionData(
+                frameCount,
+                jointCount,
+                packet.Fps > 0f ? packet.Fps : KimodoPlayableClip.FIXED_FRAME_RATE,
+                jointNames,
+                jointParents,
+                rootPositions,
+                new List<float>(localRotQuatArray),
+                rootJoint);
+            return true;
+        }
+
         public static bool TryParseAndAnalyze(
             string motionJson,
             string modelName,
@@ -257,6 +403,51 @@ namespace KimodoBridge
                 lastRootPosition,
                 tailPose);
             return true;
+        }
+
+        public static bool TryAnalyzeGenerationResult(
+            KimodoGenerationResultDto result,
+            string modelName,
+            out KimodoRawMotionMetadata metadata,
+            out string error,
+            string constraintType = FullBodyConstraintType,
+            double sampleTime = 0.0,
+            bool allowPartialJoints = false)
+        {
+            metadata = null;
+            error = string.Empty;
+            if (result == null)
+            {
+                error = "Generation result is null.";
+                return false;
+            }
+
+            if (result.motionData != null)
+            {
+                return TryAnalyze(
+                    result.motionData,
+                    modelName,
+                    out metadata,
+                    out error,
+                    constraintType,
+                    sampleTime,
+                    allowPartialJoints);
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.motionJsonCompact))
+            {
+                return TryParseAndAnalyze(
+                    result.motionJsonCompact,
+                    modelName,
+                    out metadata,
+                    out error,
+                    constraintType,
+                    sampleTime,
+                    allowPartialJoints);
+            }
+
+            error = "Generation result does not contain motion data.";
+            return false;
         }
 
         public static bool TryApplyFrame(

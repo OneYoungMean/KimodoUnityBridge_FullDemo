@@ -25,7 +25,7 @@ namespace KimodoBridge.Editor
 
             UpdateConstraintReferences(sourceClip);
 
-            bool ok = KimodoTimelineInOutConstraintAdapter.TryBuildConstraintsJson(
+            bool ok = KimodoInOutConstraintAdapter.TryBuildConstraintsJson(
                 sourceClip,
                 clip.inOutConstraintMode,
                 clip.normalizeConstraintOrigin,
@@ -60,8 +60,11 @@ namespace KimodoBridge.Editor
                 return null;
             }
 
-            PlayableDirector director = TimelineEditor.inspectedDirector;
-            if (director == null)
+            if (!KimodoInOutConstraintAdapter.TryResolveDirector(
+                    sourceClip,
+                    track,
+                    out PlayableDirector director,
+                    out _))
             {
                 return null;
             }

@@ -23,7 +23,7 @@ class ProjectPaths:
     wheels_dir: Path
     models_dir: Path
     setup_sentinel: Path
-    setup_lock: Path
+    run_lock: Path
     run_marker: Path
 
     @property
@@ -105,7 +105,7 @@ def discover_project_paths(root_dir: str | os.PathLike[str] | None = None) -> Pr
         wheels_dir=root_path / "wheels",
         models_dir=root_path / "models",
         setup_sentinel=root_path / ".setup.complete",
-        setup_lock=root_path / ".setup.lock",
+        run_lock=root_path / ".run.lock",
         run_marker=root_path / "run",
     )
 
@@ -622,16 +622,7 @@ def run_setup_cli(root_dir: str | os.PathLike[str], options: SetupCliOptions) ->
     if paths.setup_sentinel.exists():
         archive_path(paths.setup_sentinel, paths.recycle_dir)
 
-    if paths.setup_lock.exists():
-        return SetupCliResult(ok=False, exit_code=1, venv_python="")
-
     log_path = Path(options.log_path).resolve() if options.log_path else paths.default_setup_log_path
-    paths.setup_lock.parent.mkdir(parents=True, exist_ok=True)
-    paths.setup_lock.write_text(
-        "\n".join([f"started={time.strftime('%Y-%m-%d %H:%M:%S')}", f'root="{paths.root_dir}"', ""]),
-        encoding="utf-8",
-        newline="\n",
-    )
     try:
         with SetupLogger(options.output_mode or "console", log_path) as logger:
             _setup_buildenv(paths, requested_mode, logger)
@@ -641,13 +632,9 @@ def run_setup_cli(root_dir: str | os.PathLike[str], options: SetupCliOptions) ->
     except SetupError as exc:
         with SetupLogger(options.output_mode or "console", log_path) as logger:
             logger.log(f"[ERROR] {exc}")
-        archive_path(paths.setup_lock, paths.recycle_dir)
         return SetupCliResult(ok=False, exit_code=1, venv_python="")
     except Exception as exc:
         with SetupLogger(options.output_mode or "console", log_path) as logger:
             logger.log(f"[ERROR] Unexpected setup failure: {exc}")
-        archive_path(paths.setup_lock, paths.recycle_dir)
         return SetupCliResult(ok=False, exit_code=1, venv_python="")
-
-    archive_path(paths.setup_lock, paths.recycle_dir)
     return SetupCliResult(ok=True, exit_code=0, venv_python=str(paths.venv_python))

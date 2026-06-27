@@ -59,5 +59,14 @@ example\example_run_server_tpose.bat
 example\example_run_server_tpose_console_live.bat
 ```
 
+Bridge TCP 返回格式：
+- 默认 `generate` 返回 `motion_json_compact`。
+- 如需让 QuickServer 直接返回 BVH 文本，可设置：
+```bat
+set KIMODO_BRIDGE_OUTPUT_FORMAT=bvh
+set KIMODO_BRIDGE_BVH_STANDARD_TPOSE=1
+```
+- 开启后响应中将返回 `motion_bvh`，不再返回 `motion_json_compact`。这个模式适合直接接 QuickServer TCP 协议的外部客户端，不适用于当前 Unity 客户端链路。
+
 ## 参数文档
 - 见 `PARAMETERS.md`

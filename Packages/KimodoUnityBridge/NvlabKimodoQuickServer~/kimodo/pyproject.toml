@@ -14,6 +14,7 @@ dependencies = [
   "omegaconf>=2.3",
   "numpy>=1.23",
   "scipy>=1.10",
+  "flatbuffers==25.12.19",
   "transformers==5.1.0",
   "huggingface_hub>=0.30",
   "urllib3>=2.6.3",

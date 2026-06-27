@@ -8,7 +8,7 @@ import os
 import numpy as np
 import torch
 from torch import nn
-from kimodo.bridge.quickserver_assets import FULL_PEFT_LOCAL_DIR, NF4_LOCAL_DIR
+from kimodo.bridge.quickserver_assets import NF4_LOCAL_DIR
 from .llm2vec import LLM2Vec
 
 class LLM2VecEncoder(nn.Module):
@@ -117,14 +117,6 @@ class LLM2VecEncoder(nn.Module):
         if text_encoders_dir:
             peft_name = self.peft_model_name_or_path.replace("/", os.sep)
             candidates.append(os.path.abspath(os.path.join(text_encoders_dir, peft_name)))
-
-        kimodo_root = os.environ.get("KIMODO_ROOT_PATH", "").strip()
-        if kimodo_root:
-            candidates.append(
-                os.path.abspath(
-                    os.path.join(kimodo_root, "models", FULL_PEFT_LOCAL_DIR)
-                )
-            )
 
         seen = set()
         ordered_candidates = []

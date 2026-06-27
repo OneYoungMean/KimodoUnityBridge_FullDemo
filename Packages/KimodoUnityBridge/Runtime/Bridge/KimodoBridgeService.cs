@@ -8,21 +8,27 @@ using UnityEngine;
 
 namespace KimodoBridge
 {
+    internal sealed class KimodoBridgeGenerationResult
+    {
+        public string MotionJsonCompact { get; set; }
+        public KimodoRawMotionData MotionData { get; set; }
+        public string MotionFormat { get; set; }
+        public string RawStatus { get; set; }
+        public string Message { get; set; }
+    }
+
     public sealed class KimodoBridgeService : IDisposable
     {
-        private const int BridgeMessageLogPumpWaitFileTimeoutMs = 60000;
-        private const int BridgeMessageLogPumpMissingFilePollMs = 90;
         private readonly BridgeRuntimeSettings settings;
         private readonly BridgeProtocolClient protocolClient;
         private readonly BridgeProcessManager processManager;
-        private readonly BridgeLogPump logPump;
-        private readonly List<BridgeLogPump> sideLogPumps = new List<BridgeLogPump>(2);
         private readonly SemaphoreSlim lifecycleGate = new SemaphoreSlim(1, 1);
         private readonly SynchronizationContext creationContext;
 
         private string currentHost;
         private int currentPort = -1;
         private string currentPortFilePath = string.Empty;
+        private IDisposable logSubscription;
         private bool disposed;
 
         public KimodoBridgeService(BridgeRuntimeSettings settings)
@@ -37,7 +43,6 @@ namespace KimodoBridge
                 this.settings.modelLoadingTimeoutMs,
                 this.settings.modelLoadingPollIntervalMs);
             processManager = new BridgeProcessManager(platform);
-            logPump = new BridgeLogPump();
             creationContext = SynchronizationContext.Current;
             currentHost = string.IsNullOrWhiteSpace(this.settings.hostFallback) ? "127.0.0.1" : this.settings.hostFallback;
         }
@@ -103,8 +108,7 @@ namespace KimodoBridge
 
             currentHost = host;
             currentPort = port;
-            string attachLogPath = BridgeEndpointResolver.ResolveAttachLogPath(settings.runtimeRoot);
-            StartLogPump(attachLogPath, progress);
+            StartLogPump(progress);
             return true;
         }
 
@@ -128,20 +132,33 @@ namespace KimodoBridge
             EnsureLauncherExists();
 
             currentPortFilePath = BridgeEndpointResolver.GetServerPortFilePath(settings.runtimeRoot);
+            bool canReuseExistingEndpoint = false;
             if (File.Exists(currentPortFilePath))
             {
-                if (BridgeEndpointResolver.TryReadServerEndpoint(settings.runtimeRoot, settings.hostFallback, out string host, out int port, out _))
+                if (!BridgeEndpointResolver.TryReadServerEndpoint(settings.runtimeRoot, settings.hostFallback, out string host, out int port, out string endpointError))
                 {
-                    currentHost = host;
-                    currentPort = port;
-                    StartLogPump(BridgeEndpointResolver.ResolveAttachLogPath(settings.runtimeRoot), progress);
-                    return $"Ready - {settings.modelName} on {host}:{port}";
+                    EmitProgress(progress, $"Bridge endpoint file is invalid, starting server to recover. {endpointError}");
                 }
+                else
+                {
+                    bool reachable = await protocolClient.PingAsync(host, port, token, acceptLoading: true).ConfigureAwait(false);
+                    if (reachable)
+                    {
+                        currentHost = host;
+                        currentPort = port;
+                        canReuseExistingEndpoint = true;
+                    }
+                    else
+                    {
+                        EmitProgress(progress, $"Bridge endpoint is unreachable, starting server to recover: {host}:{port}");
+                    }
+                }
+            }
 
-                currentHost = settings.hostFallback;
-                currentPort = -1;
-                StartLogPump(BridgeEndpointResolver.ResolveAttachLogPath(settings.runtimeRoot), progress);
-                return $"Ready - {settings.modelName} (serverport detected)";
+            if (canReuseExistingEndpoint)
+            {
+                StartLogPump(progress);
+                return $"Ready - {settings.modelName} on {currentHost}:{currentPort}";
             }
 
             await InvalidateCurrentEndpointAsync().ConfigureAwait(false);
@@ -160,7 +177,7 @@ namespace KimodoBridge
                 EmitProgress(progress, "Bridge process launched.");
             }
 
-            StartLogPump(BridgeEndpointResolver.ResolveAttachLogPath(settings.runtimeRoot), progress);
+            StartLogPump(progress);
 
             try
             {
@@ -190,49 +207,35 @@ namespace KimodoBridge
             catch
             {
                 await InvalidateCurrentEndpointAsync().ConfigureAwait(false);
-                await StopCoreAsync(CancellationToken.None).ConfigureAwait(false);
+                await DetachCoreAsync().ConfigureAwait(false);
                 throw;
             }
         }
 
-        public async Task<string> GenerateAsync(
-            string prompt,
-            float durationSeconds,
-            int? seed,
-            int diffusionSteps,
-            string constraintsJson,
-            string boundaryPoseJson,
-            bool loopHint,
-            int segmentIndex,
-            float transitionDurationSeconds,
+        internal async Task<KimodoBridgeGenerationResult> GenerateAsync(
+            KimodoGenerationRequestDto request,
             Action<string> progress,
             CancellationToken token)
         {
+            if (request == null)
+            {
+                throw new ArgumentNullException(nameof(request));
+            }
+
             ThrowIfDisposed();
-            await EnsureHealthyOrStartAsync(progress, token).ConfigureAwait(false);
+            await EnsureHealthyOrThrowAsync(token).ConfigureAwait(false);
             EmitDebugLog(
                 $"[KimodoBridge] Generate request: host={currentHost}:{currentPort}, " +
-                $"promptLen={(prompt ?? string.Empty).Length}, duration={durationSeconds:F3}, " +
-                $"steps={diffusionSteps}, seed={(seed.HasValue ? seed.Value.ToString() : "null")}, " +
-                $"constraintsPath='{constraintsJson ?? string.Empty}', " +
-                $"loopHint={loopHint}, segmentIndex={segmentIndex}, transition={transitionDurationSeconds:F3}, " +
-                $"boundaryPoseLen={(boundaryPoseJson ?? string.Empty).Length}");
+                $"promptLen={(request.prompt ?? string.Empty).Length}, duration={request.duration:F3}, " +
+                $"steps={request.steps}, seed={(request.seed.HasValue ? request.seed.Value.ToString() : "null")}, " +
+                $"constraintsPath='{request.constraints_json ?? string.Empty}', " +
+                $"loopHint={request.loop_hint}, segmentIndex={request.segment_index}, transition={request.transition_duration:F3}, " +
+                $"boundaryPoseLen={(request.boundary_pose_json ?? string.Empty).Length}");
 
-            JObject response;
+            BridgeProtocolResponse response;
             try
             {
-                response = await SendGenerateRequestAsync(
-                    prompt,
-                    durationSeconds,
-                    seed,
-                    diffusionSteps,
-                    constraintsJson,
-                    boundaryPoseJson,
-                    loopHint,
-                    segmentIndex,
-                    transitionDurationSeconds,
-                    progress,
-                    token).ConfigureAwait(false);
+                response = await SendGenerateRequestAsync(request, progress, token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -240,15 +243,40 @@ namespace KimodoBridge
                 throw;
             }
 
-            string status = response?.Value<string>("status") ?? string.Empty;
-            string responseMessage = response?.Value<string>("message") ?? string.Empty;
-            string motionJson = response?.Value<string>("motion_json_compact");
+            JObject header = response?.Header;
+            string status = header?.Value<string>("status") ?? string.Empty;
+            string responseMessage = header?.Value<string>("message") ?? string.Empty;
+            string outputFormat = header?.Value<string>("output_format") ?? string.Empty;
+            string motionJson = header?.Value<string>("motion_json_compact");
             EmitDebugLog(
-                $"[KimodoBridge] Generate response: status='{status}', hasMotion={!string.IsNullOrWhiteSpace(motionJson)}, " +
-                $"message='{responseMessage}'");
+                $"[KimodoBridge] Generate response: status='{status}', format='{outputFormat}', hasJson={!string.IsNullOrWhiteSpace(motionJson)}, " +
+                $"hasBinary={(response?.BinaryPayload != null && response.BinaryPayload.Length > 0)}, message='{responseMessage}'");
             if (!string.Equals(status, "done", StringComparison.OrdinalIgnoreCase))
             {
                 throw new Exception($"Unexpected bridge response status: {status}. message={responseMessage}");
+            }
+
+            if (string.Equals(outputFormat, "flatbuf_motion_v1", StringComparison.OrdinalIgnoreCase))
+            {
+                byte[] payload = response.BinaryPayload;
+                if (payload == null || payload.Length == 0)
+                {
+                    throw new Exception("Bridge completed without FlatBuffer payload bytes.");
+                }
+
+                if (!KimodoRawMotionUtility.TryParseFlatBuffer(payload, out KimodoRawMotionData motionData, out string parseError))
+                {
+                    throw new Exception($"Failed to parse bridge FlatBuffer motion: {parseError}");
+                }
+
+                EmitProgress(progress, "Bridge generation complete.");
+                return new KimodoBridgeGenerationResult
+                {
+                    MotionData = motionData,
+                    MotionFormat = outputFormat,
+                    RawStatus = status,
+                    Message = string.IsNullOrWhiteSpace(responseMessage) ? "Bridge generation complete." : responseMessage
+                };
             }
 
             if (string.IsNullOrWhiteSpace(motionJson))
@@ -257,19 +285,17 @@ namespace KimodoBridge
             }
 
             EmitProgress(progress, "Bridge generation complete.");
-            return motionJson;
+            return new KimodoBridgeGenerationResult
+            {
+                MotionJsonCompact = motionJson,
+                MotionFormat = string.IsNullOrWhiteSpace(outputFormat) ? "json_compact" : outputFormat,
+                RawStatus = status,
+                Message = string.IsNullOrWhiteSpace(responseMessage) ? "Bridge generation complete." : responseMessage
+            };
         }
 
-        private Task<JObject> SendGenerateRequestAsync(
-            string prompt,
-            float durationSeconds,
-            int? seed,
-            int diffusionSteps,
-            string constraintsJson,
-            string boundaryPoseJson,
-            bool loopHint,
-            int segmentIndex,
-            float transitionDurationSeconds,
+        private Task<BridgeProtocolResponse> SendGenerateRequestAsync(
+            KimodoGenerationRequestDto request,
             Action<string> progress,
             CancellationToken token)
         {
@@ -277,15 +303,7 @@ namespace KimodoBridge
             return protocolClient.GenerateAsync(
                 currentHost,
                 currentPort,
-                prompt,
-                durationSeconds,
-                seed,
-                diffusionSteps,
-                constraintsJson,
-                boundaryPoseJson,
-                loopHint,
-                segmentIndex,
-                transitionDurationSeconds,
+                request,
                 marshaledProgress,
                 token);
         }
@@ -398,20 +416,6 @@ namespace KimodoBridge
             }
         }
 
-        private async Task EnsureHealthyOrStartAsync(Action<string> progress, CancellationToken token)
-        {
-            bool ok = await PingAsync(token, acceptLoading: true).ConfigureAwait(false);
-            if (ok)
-            {
-                return;
-            }
-
-            EmitProgress(progress, "Bridge endpoint is unreachable, restarting bridge...");
-            TryDeleteServerPortFile();
-            _ = await StartAsync(progress, token).ConfigureAwait(false);
-            await EnsureHealthyOrThrowAsync(token).ConfigureAwait(false);
-        }
-
         private async Task StopCoreAsync(CancellationToken token)
         {
             StopLogPump();
@@ -420,7 +424,11 @@ namespace KimodoBridge
             bool endpointResolved = TryResolveCurrentEndpoint(out string host, out int port);
             if (endpointResolved)
             {
-                _ = await protocolClient.TrySendQuitAsync(host, port, token).ConfigureAwait(false);
+                bool quitSent = await protocolClient.TrySendQuitAsync(host, port, token).ConfigureAwait(false);
+                if (!quitSent)
+                {
+                    throw new InvalidOperationException($"Bridge quit command failed: {host}:{port}");
+                }
             }
 
             processManager.DetachProcess();
@@ -441,25 +449,6 @@ namespace KimodoBridge
         {
             await protocolClient.DetachAsync().ConfigureAwait(false);
         }
-
-        private void TryDeleteServerPortFile()
-        {
-            string path = string.IsNullOrWhiteSpace(currentPortFilePath)
-                ? BridgeEndpointResolver.GetServerPortFilePath(settings.runtimeRoot)
-                : currentPortFilePath;
-            try
-            {
-                if (File.Exists(path))
-                {
-                    File.Delete(path);
-                }
-            }
-            catch
-            {
-                // ignore cleanup failure
-            }
-        }
-
 
         private bool TryResolveCurrentEndpoint(out string host, out int port)
         {
@@ -490,134 +479,22 @@ namespace KimodoBridge
             await protocolClient.DetachAsync().ConfigureAwait(false);
         }
 
-        private void StartLogPump(string logPath, Action<string> progress)
+        private void StartLogPump(Action<string> progress)
         {
-            if (string.IsNullOrWhiteSpace(logPath))
+            logSubscription?.Dispose();
+            logSubscription = null;
+            if (progress == null)
             {
                 return;
             }
 
-            StopSideLogPumps();
-            string mainLogFullPath = GetNormalizedPathOrEmpty(logPath);
-            logPump.Start(logPath, line =>
-            {
-                string msg = $"[Bridge] {line}";
-                progress?.Invoke(msg);
-                Debug.Log(msg);
-            }, settings);
-            StartSideLogPumpIfDifferent(
-                Path.Combine(settings.runtimeRoot, "log", "bridge_server.log"),
-                "[BridgeServer]",
-                mainLogFullPath,
-                progress);
-            StartSideLogPumpIfDifferent(
-                Path.Combine(settings.runtimeRoot, "log", "bridge_message.log"),
-                "[BridgeMessage]",
-                mainLogFullPath,
-                progress,
-                BridgeMessageLogPumpWaitFileTimeoutMs,
-                BridgeMessageLogPumpMissingFilePollMs,
-                BridgeMessageLogPumpMissingFilePollMs);
-            StartSideLogPumpIfDifferent(
-                Path.Combine(settings.runtimeRoot, "log", "run_server.log"),
-                "[RunServer]",
-                mainLogFullPath,
-                progress);
-            StartSideLogPumpIfDifferent(
-                Path.Combine(settings.runtimeRoot, "log", "setup.log"),
-                "[Setup]",
-                mainLogFullPath,
-                progress);
+            logSubscription = BridgeLogPump.SubscribeShared(settings.runtimeRoot, settings, progress);
         }
 
         private void StopLogPump()
         {
-            logPump.Stop();
-            StopSideLogPumps();
-        }
-
-        private void StartSideLogPump(
-            string logPath,
-            string tag,
-            Action<string> progress,
-            int? waitFileTimeoutMsOverride = null,
-            int? missingFilePollMinMsOverride = null,
-            int? missingFilePollMaxMsOverride = null,
-            bool? readFromStartOverride = null)
-        {
-            if (string.IsNullOrWhiteSpace(logPath))
-            {
-                return;
-            }
-
-            var pump = new BridgeLogPump();
-            sideLogPumps.Add(pump);
-            pump.Start(logPath, line =>
-            {
-                string msg = $"{tag} {line}";
-                progress?.Invoke(msg);
-                Debug.Log(msg);
-            }, settings, waitFileTimeoutMsOverride, missingFilePollMinMsOverride, missingFilePollMaxMsOverride, readFromStartOverride);
-        }
-
-        private void StartSideLogPumpIfDifferent(
-            string logPath,
-            string tag,
-            string mainLogFullPath,
-            Action<string> progress,
-            int? waitFileTimeoutMsOverride = null,
-            int? missingFilePollMinMsOverride = null,
-            int? missingFilePollMaxMsOverride = null,
-            bool? readFromStartOverride = null)
-        {
-            string sideLogFullPath = GetNormalizedPathOrEmpty(logPath);
-            if (!string.IsNullOrWhiteSpace(mainLogFullPath) &&
-                !string.IsNullOrWhiteSpace(sideLogFullPath) &&
-                string.Equals(mainLogFullPath, sideLogFullPath, StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            StartSideLogPump(logPath, tag, progress, waitFileTimeoutMsOverride, missingFilePollMinMsOverride, missingFilePollMaxMsOverride, readFromStartOverride);
-        }
-
-        private static string GetNormalizedPathOrEmpty(string path)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                return string.Empty;
-            }
-
-            try
-            {
-                return Path.GetFullPath(path.Trim());
-            }
-            catch
-            {
-                return string.Empty;
-            }
-        }
-
-        private void StopSideLogPumps()
-        {
-            if (sideLogPumps.Count == 0)
-            {
-                return;
-            }
-
-            for (int i = 0; i < sideLogPumps.Count; i++)
-            {
-                try
-                {
-                    sideLogPumps[i]?.Stop();
-                    sideLogPumps[i]?.Dispose();
-                }
-                catch
-                {
-                    // ignore
-                }
-            }
-            sideLogPumps.Clear();
+            logSubscription?.Dispose();
+            logSubscription = null;
         }
 
         private static IBridgePlatformProcess CreatePlatformProcess(BridgeRuntimeSettings settings)
