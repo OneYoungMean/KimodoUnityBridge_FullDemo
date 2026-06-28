@@ -76,12 +76,20 @@ jobs:
         shell: pwsh
         run: |
           git add Packages/KimodoUnityBridge
-          if (git diff --cached --quiet) {
+          git diff --cached --quiet
+          $diffExitCode = $LASTEXITCODE
+
+          if ($diffExitCode -eq 0) {
             "changed=false" >> $env:GITHUB_OUTPUT
           }
-          else {
+          elseif ($diffExitCode -eq 1) {
             "changed=true" >> $env:GITHUB_OUTPUT
           }
+          else {
+            throw "git diff --cached --quiet failed with exit code $diffExitCode"
+          }
+
+          $global:LASTEXITCODE = 0
 
       - name: Create sync pull request
         if: steps.package_changes.outputs.changed == 'true'
