@@ -30,11 +30,31 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Resolve workflow inputs
+        id: resolved_inputs
+        shell: pwsh
+        run: |
+          $bridgeRef = "${{ github.event.inputs.bridge_ref }}"
+          if ([string]::IsNullOrWhiteSpace($bridgeRef)) {
+            $bridgeRef = "main"
+          }
+
+          $baseBranch = "${{ github.event.inputs.base_branch }}"
+          if ([string]::IsNullOrWhiteSpace($baseBranch)) {
+            $baseBranch = "main"
+          }
+
+          $safeBranchSuffix = $baseBranch -replace '[^A-Za-z0-9._-]', '-'
+
+          "bridge_ref=$bridgeRef" >> $env:GITHUB_OUTPUT
+          "base_branch=$baseBranch" >> $env:GITHUB_OUTPUT
+          "sync_branch=bot/sync-bridge-package-$safeBranchSuffix" >> $env:GITHUB_OUTPUT
+
       - name: Checkout KimodoUnityBridge
         uses: actions/checkout@v4
         with:
           repository: OneYoungMean/KimodoUnityBridge
-          ref: ${{ github.event.inputs.bridge_ref || 'main' }}
+          ref: ${{ steps.resolved_inputs.outputs.bridge_ref }}
           path: __bridge_source
 
       - name: Mirror package into Packages/KimodoUnityBridge
@@ -68,18 +88,18 @@ jobs:
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: chore: sync KimodoUnityBridge package from ${{ github.event.inputs.bridge_ref || 'main' }}
-          branch: bot/sync-bridge-package-${{ github.event.inputs.base_branch || 'main' }}
+          commit-message: chore: sync KimodoUnityBridge package from ${{ steps.resolved_inputs.outputs.bridge_ref }}
+          branch: ${{ steps.resolved_inputs.outputs.sync_branch }}
           delete-branch: true
-          title: chore: sync KimodoUnityBridge package into ${{ github.event.inputs.base_branch || 'main' }}
+          title: chore: sync KimodoUnityBridge package into ${{ steps.resolved_inputs.outputs.base_branch }}
           body: |
             This PR was created automatically by `sync-bridge-package`.
 
-            Source ref: `${{ github.event.inputs.bridge_ref || 'main' }}`
-            Base branch: `${{ github.event.inputs.base_branch || 'main' }}`
+            Source ref: `${{ steps.resolved_inputs.outputs.bridge_ref }}`
+            Base branch: `${{ steps.resolved_inputs.outputs.base_branch }}`
             Target path: `Packages/KimodoUnityBridge`
             Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          base: ${{ github.event.inputs.base_branch || 'main' }}
+          base: ${{ steps.resolved_inputs.outputs.base_branch }}
           add-paths: |
             Packages/KimodoUnityBridge
 
@@ -87,8 +107,8 @@ jobs:
         shell: pwsh
         run: |
           @(
-            "Synced bridge ref: ${{ github.event.inputs.bridge_ref || 'main' }}"
-            "Pull request base branch: ${{ github.event.inputs.base_branch || 'main' }}"
+            "Synced bridge ref: ${{ steps.resolved_inputs.outputs.bridge_ref }}"
+            "Pull request base branch: ${{ steps.resolved_inputs.outputs.base_branch }}"
             "Target path: Packages/KimodoUnityBridge"
-            "Package changes detected: ${{ steps.package_changes.outputs.changed || 'false' }}"
+            "Package changes detected: ${{ steps.package_changes.outputs.changed }}"
           ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
