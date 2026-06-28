@@ -295,6 +295,12 @@ def normalize_runtime_hints(run_device: str | None) -> RuntimeHints:
             normalized_device = "cuda:0"
         elif lowered.startswith("cuda"):
             normalized_device = raw_device
+        elif lowered == "mps" or lowered.startswith("mps"):
+            normalized_device = "mps"
+        elif lowered == "xpu":
+            normalized_device = "xpu:0"
+        elif lowered.startswith("xpu"):
+            normalized_device = raw_device
         else:
             raise ValueError(f"Invalid --device value: {run_device}")
     return RuntimeHints(
@@ -321,10 +327,8 @@ def should_use_int8(total_vram_gb: float) -> bool:
 def choose_prepare_encoder_route(highvram: bool, hints: RuntimeHints, total_vram_gb: float | None = None) -> str:
     if hints.normalized_device == "cpu":
         return ENCODER_ROUTE_INT8
-    if total_vram_gb is None:
-        total_vram_gb = detect_total_vram_gb()
-    if should_use_int8(total_vram_gb):
-        return ENCODER_ROUTE_INT8
+    if hints.normalized_device == "mps" or str(hints.normalized_device or "").startswith("xpu"):
+        return ENCODER_ROUTE_FP16 if highvram else ENCODER_ROUTE_INT8
     return ENCODER_ROUTE_FP16 if highvram else ENCODER_ROUTE_NF4
 
 
@@ -912,7 +916,7 @@ def build_runtime_env(
         "TEXT_ENCODER": "llm2vec_int8" if selected_layout.route == ENCODER_ROUTE_INT8 else "llm2vec",
         "TEXT_ENCODER_MODE": "local",
     }
-    env["TEXT_ENCODER_DEVICE"] = selected_layout.text_encoder_device
+    env["TEXT_ENCODER_DEVICE"] = hints.normalized_device or selected_layout.text_encoder_device
     env["KIMODO_LLM2VEC_DIR"] = str(primary_dir)
     if peft_dir is not None:
         env["TEXT_ENCODERS_DIR"] = str(models_path)

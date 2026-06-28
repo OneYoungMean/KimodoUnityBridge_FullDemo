@@ -79,7 +79,7 @@ namespace KimodoBridge.Editor
                 runtimeRoot = KimodoBridgeServerManage.GetRuntimeRootPath();
             }
 
-            PullServerStatusFromController(forceRefresh: false);
+            PullServerStatusFromController();
 
             EditorGUILayout.LabelField("Kimodo Server Manager", EditorStyles.boldLabel);
             EditorGUILayout.Space(4f);
@@ -89,15 +89,18 @@ namespace KimodoBridge.Editor
             if (GUILayout.Button(new GUIContent("Refresh", "Rescan runtime/model folders and request latest bridge server status."), GUILayout.Width(100f)))
             {
                 Refresh();
-                PullServerStatusFromController(forceRefresh: true);
+                PullServerStatusFromController();
             }
 
-            if (!runtimeExists)
+            if (GUILayout.Button(
+                new GUIContent(
+                    runtimeExists ? "Reinstall Kimodo Server" : "Create Kimodo Server",
+                    runtimeExists
+                        ? "Delete the current Kimodo runtime folder and reinstall it from the packaged template."
+                        : "Bootstrap Kimodo runtime folder and required server files."),
+                GUILayout.Width(180f)))
             {
-                if (GUILayout.Button(new GUIContent("Create Kimodo Server", "Bootstrap Kimodo runtime folder and required server files."), GUILayout.Width(180f)))
-                {
-                    _ = EnsureRuntimeRootAsync();
-                }
+                _ = EnsureRuntimeRootAsync();
             }
             EditorGUILayout.EndHorizontal();
 
@@ -283,8 +286,7 @@ namespace KimodoBridge.Editor
             else
             {
                 EditorGUILayout.HelpBox("Server is not running.", MessageType.None);
-                ServerStatusSnapshot staleSnapshot = KimodoBridgeServerManage.GetServerStatusSnapshot();
-                if (staleSnapshot.HasPort)
+                if (serverPort > 0)
                 {
                     EditorGUILayout.HelpBox("Detected stale endpoint file (serverport). Process is not alive.", MessageType.None);
                 }
@@ -403,12 +405,21 @@ namespace KimodoBridge.Editor
 
             using (new EditorGUI.DisabledScope(operationInProgress || EditorCompilationStateGate.IsCompilingOrReloading))
             {
-                if (GUILayout.Button(new GUIContent("Try Fix (delete and reconfigure)", "Run bridge self-repair flow: clean broken parts and reconfigure runtime."), GUILayout.Height(24f)))
+                if (GUILayout.Button(new GUIContent("Open Folder", "Open the Kimodo runtime root folder in Explorer/Finder."), GUILayout.Height(24f)))
+                {
+                    TryOpenRuntimeRootFolder();
+                }
+
+                if (GUILayout.Button(new GUIContent("Try Fix (force setup)", "Run bridge self-repair flow: force setup and revalidate the runtime without deleting the runtime root."), GUILayout.Height(24f)))
                 {
                     _ = TryFixRuntimeAsync();
                 }
 
-                if (GUILayout.Button(new GUIContent("Delete All Data", "Delete the full Kimodo runtime folder including downloaded models and cache."), GUILayout.Height(24f)))
+                Color previousColor = GUI.color;
+                GUI.color = new Color(0.9f, 0.3f, 0.3f, 1f);
+                bool deleteAllDataClicked = GUILayout.Button(new GUIContent("Delete All Data", "Delete the full Kimodo runtime folder including downloaded models and cache."), GUILayout.Height(24f));
+                GUI.color = previousColor;
+                if (deleteAllDataClicked)
                 {
                     if (EditorUtility.DisplayDialog("Delete All Data", "Delete entire Kimodo runtime folder? This cannot be undone.", "Delete", "Cancel"))
                     {
@@ -418,6 +429,32 @@ namespace KimodoBridge.Editor
             }
 
             EditorGUILayout.EndVertical();
+        }
+
+        private void TryOpenRuntimeRootFolder()
+        {
+            lastError = string.Empty;
+
+            try
+            {
+                if (string.IsNullOrWhiteSpace(runtimeRoot))
+                {
+                    lastError = "Runtime root is empty.";
+                    return;
+                }
+
+                if (!Directory.Exists(runtimeRoot))
+                {
+                    lastError = $"Runtime root not found: {runtimeRoot}";
+                    return;
+                }
+
+                EditorUtility.RevealInFinder(runtimeRoot);
+            }
+            catch (Exception e)
+            {
+                lastError = $"Open runtime root failed: {e.Message}";
+            }
         }
 
         private void TryDeleteModelDirectory(string path, string modelName)
@@ -557,7 +594,7 @@ namespace KimodoBridge.Editor
             return Path.GetFullPath(customPath);
         }
 
-        private void PullServerStatusFromController(bool forceRefresh)
+        private void PullServerStatusFromController()
         {
             if (!runtimeExists)
             {
@@ -565,7 +602,6 @@ namespace KimodoBridge.Editor
                 return;
             }
 
-            _ = forceRefresh;
             ServerStatusSnapshot snapshot = KimodoBridgeServerManage.GetServerStatusSnapshot();
             serverHost = snapshot.Host;
             serverPort = snapshot.Port;
@@ -575,13 +611,18 @@ namespace KimodoBridge.Editor
         private Task EnsureRuntimeRootAsync()
         {
             return RunOperationAsync(
-                initialStatus: "Creating runtime root...",
-                successStatus: "Runtime root ready.",
+                initialStatus: runtimeExists ? "Reinstalling runtime root (keep models)..." : "Creating runtime root...",
+                successStatus: runtimeExists ? "Runtime root reinstalled (models preserved)." : "Runtime root ready.",
                 async _ =>
                 {
-                    if (!KimodoBridgeServerManage.BootstrapRuntimeRootIfMissing())
+                    using (KimodoBridgeServerManage.EnterRuntimeMaintenanceScope())
                     {
-                        throw new InvalidOperationException("Failed to create runtime root from package template.");
+                        await KimodoBridgeServerManage.StopServerAsync(CancellationToken.None);
+
+                        if (!KimodoBridgeServerManage.ReinstallRuntimeRoot())
+                        {
+                            throw new InvalidOperationException("Failed to reinstall runtime root from package template.");
+                        }
                     }
 
                     await Task.CompletedTask;
@@ -612,7 +653,7 @@ namespace KimodoBridge.Editor
                 },
                 onSuccess: () =>
                 {
-                    PullServerStatusFromController(forceRefresh: true);
+                    PullServerStatusFromController();
                     operationStatus = serverState == ServerState.Enabled
                         ? $"Running at {serverHost}:{serverPort}"
                         : "Start completed.";
@@ -630,7 +671,7 @@ namespace KimodoBridge.Editor
         private Task TryFixRuntimeAsync()
         {
             return RunOperationAsync(
-                initialStatus: "TryFix running...",
+                initialStatus: "Force setup running...",
                 successStatus: "TryFix completed.",
                 async progress =>
                 {
@@ -646,12 +687,6 @@ namespace KimodoBridge.Editor
                         if (!Directory.Exists(runtimeRootPath))
                         {
                             throw new DirectoryNotFoundException($"Runtime root not found: {runtimeRootPath}");
-                        }
-
-                        Directory.Delete(runtimeRootPath, recursive: true);
-                        if (!KimodoBridgeServerManage.BootstrapRuntimeRootIfMissing())
-                        {
-                            throw new InvalidOperationException("TryFix failed: cannot bootstrap runtime.");
                         }
 
                         await KimodoBridgeServerManage.StartServerAsync(
@@ -723,7 +758,7 @@ namespace KimodoBridge.Editor
                 });
 
                 Refresh();
-                PullServerStatusFromController(forceRefresh: true);
+                PullServerStatusFromController();
                 onSuccess?.Invoke();
                 if (!string.IsNullOrWhiteSpace(successStatus))
                 {
@@ -740,7 +775,7 @@ namespace KimodoBridge.Editor
                 lastError = ex.Message;
                 operationStatus = "Failed.";
                 Refresh();
-                PullServerStatusFromController(forceRefresh: true);
+                PullServerStatusFromController();
             }
             finally
             {

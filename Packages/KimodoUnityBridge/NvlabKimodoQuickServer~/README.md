@@ -11,11 +11,8 @@
 
 ## Requirements
 - Windows 10/11 x64
-- Local tools under `program\exe\`:
-  - `uv\uv.exe`
-  - `git\cmd\git.exe`
-  - `git\mingw32\bin\git-lfs.exe`
 - Model root available (recommended): `C:\nvlab\models~`
+- `uv` is required. `run_server.bat` / `run_server.sh` can download an unmanaged local `uv` binary into `program\exe\uv\` on first launch if missing. Its package cache still uses uv's normal global cache location.
 
 ## Install
 ```bat

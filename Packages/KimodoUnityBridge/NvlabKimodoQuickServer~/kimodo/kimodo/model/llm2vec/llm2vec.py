@@ -336,7 +336,12 @@ class LLM2Vec(nn.Module):
             sentences = [[""] + [sentence] for sentence in sentences]
 
         if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
 
         concatenated_input_texts = []
         for sentence in sentences:
@@ -356,7 +361,6 @@ class LLM2Vec(nn.Module):
 
         if torch.cuda.device_count() <= 1:
             # This branch also support mps devices
-            self.to(device)
             for start_index in trange(
                 0,
                 len(sentences),
@@ -365,7 +369,12 @@ class LLM2Vec(nn.Module):
                 disable=not show_progress_bar,
             ):
                 sentences_batch = sentences_sorted[start_index : start_index + batch_size]
-                embeddings = self._encode(sentences_batch, device=device, convert_to_numpy=convert_to_numpy)
+                embeddings = self._encode(
+                    sentences_batch,
+                    device=device,
+                    convert_to_numpy=convert_to_numpy,
+                    keep_on_device=convert_to_tensor,
+                )
                 all_embeddings.append(embeddings)
         else:
             num_proc = torch.cuda.device_count()
@@ -390,7 +399,7 @@ class LLM2Vec(nn.Module):
                     results.append(
                         p.apply_async(
                             self._encode,
-                            args=(batch, None, convert_to_numpy, True),
+                            args=(batch, None, convert_to_numpy, False, True),
                             callback=update,
                         )
                     )
@@ -402,7 +411,7 @@ class LLM2Vec(nn.Module):
         all_embeddings = all_embeddings[np.argsort(length_sorted_idx)]
         all_embeddings = all_embeddings.to(torch.float32)
         if convert_to_numpy:
-            all_embeddings = np.asarray([emb.numpy() for emb in all_embeddings])
+            all_embeddings = np.asarray([emb.cpu().numpy() for emb in all_embeddings])
         return all_embeddings
 
     def save(self, output_path, merge_before_save=False, save_config=True):
@@ -432,6 +441,7 @@ class LLM2Vec(nn.Module):
         sentences_batch,
         device: Optional[str] = None,
         convert_to_numpy: bool = False,
+        keep_on_device: bool = False,
         multiprocessing=False,
     ):
         if multiprocessing:
@@ -441,14 +451,24 @@ class LLM2Vec(nn.Module):
             if device is None and torch.cuda.is_available():
                 device = f"cuda:{rank % torch.cuda.device_count()}"
 
-        self.to(device)
+        if device is not None:
+            target_device = torch.device(device)
+            if target_device.type == "cuda" and target_device.index is None:
+                target_device = torch.device("cuda:0")
+            current_device = next(
+                (p.device for p in self.model.parameters() if p.device.type != "meta"),
+                None,
+            )
+            if current_device != target_device:
+                self.to(target_device)
         features = self.tokenize([self.prepare_for_tokenization(sentence) for sentence in sentences_batch])
         features = batch_to_device(features, device)
 
         with torch.no_grad():
             embeddings = self.forward(features)
             embeddings = embeddings.detach()
-            embeddings = embeddings.cpu()
+            if convert_to_numpy or not keep_on_device:
+                embeddings = embeddings.cpu()
 
         return embeddings
 
