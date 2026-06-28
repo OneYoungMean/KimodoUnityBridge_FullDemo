@@ -283,6 +283,7 @@ class Kimodo(nn.Module):
                 observed_motion=observed_motion,
                 cfg_weight=cfg_weight,
                 cfg_type=cfg_type,
+                progress_bar=progress_bar,
             )
 
             motion = self.motion_rep.unnormalize(motion)

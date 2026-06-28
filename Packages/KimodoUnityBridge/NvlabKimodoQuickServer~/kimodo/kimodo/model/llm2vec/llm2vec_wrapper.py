@@ -167,6 +167,9 @@ class LLM2VecEncoder(nn.Module):
                 torch_dtype=self.torch_dtype,
                 device_map="cpu"
             )
+            self.model.eval()
+            for param in self.model.parameters():
+                param.requires_grad = False
 
         if self.target_device.startswith("cuda"):
             from kimodo.demo.memory_manager import manager
@@ -216,18 +219,24 @@ class LLM2VecEncoder(nn.Module):
 
     def __call__(self, text: list[str] | str):
         self.reload() # Auto-reload if called
-        is_string = False
-        if isinstance(text, str):
-            text = [text]
-            is_string = True
+        is_string = isinstance(text, str)
+        texts = [text] if is_string else list(text)
 
-        results = []
-        for t in text:
-            with torch.no_grad():
-                emb = self.model.encode([t])
-                results.append(emb)
+        if len(texts) == 0:
+            empty = torch.empty((0, 1, self.llm_dim), dtype=torch.float32, device=self.get_device())
+            return empty, []
 
-        encoded_text = np.concatenate(results, axis=0)
+        with torch.no_grad():
+            encoded_text = self.model.encode(
+                texts,
+                batch_size=min(32, len(texts)),
+                show_progress_bar=False,
+                convert_to_tensor=True,
+                device=self.target_device,
+            )
+
+        if len(encoded_text.shape) == 1:
+            encoded_text = encoded_text.unsqueeze(0)
 
         assert len(encoded_text.shape)
         assert self.llm_dim == encoded_text.shape[-1]
@@ -239,5 +248,4 @@ class LLM2VecEncoder(nn.Module):
             encoded_text = encoded_text[0]
             lengths = lengths[0]
 
-        encoded_text = torch.tensor(encoded_text).to(self.get_device())
         return encoded_text, lengths

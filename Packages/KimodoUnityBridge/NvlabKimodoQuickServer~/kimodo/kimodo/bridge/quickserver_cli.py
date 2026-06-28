@@ -84,12 +84,17 @@ def _prepare_logger(
 
 
 def _runtime_import_preflight(logger: SetupLogger) -> None:
-    import motion_correction  # noqa: F401
     import torch
     import kimodo  # noqa: F401
 
     logger.log(f"torch={torch.__version__}")
     logger.log(f"cuda={torch.version.cuda}")
+    try:
+        import motion_correction  # noqa: F401
+
+        logger.log("motion_correction=available")
+    except Exception as exc:
+        logger.log(f"[WARN] motion_correction unavailable: {exc}")
 
 
 def _read_key_value_file(path: Path) -> dict[str, str]:
@@ -435,6 +440,22 @@ def _run_watchdog(
             except Exception:
                 pass
 
+    def _kill_bridge_and_cleanup_endpoint() -> None:
+        _kill_bridge()
+        for _ in range(50):
+            if not _is_running(bridge_pid):
+                break
+            time.sleep(0.1)
+        _cleanup_endpoint_file()
+
+    def _cleanup_endpoint_file() -> None:
+        try:
+            if port_file.exists():
+                port_file.unlink()
+                _write_watchdog(f"[INFO] Removed stale endpoint file: {port_file}")
+        except Exception as exc:
+            _write_watchdog(f"[WARN] Failed to remove stale endpoint file {port_file}: {exc}")
+
     _write_watchdog(f"[INFO] Bridge watchdog started. pid={bridge_pid} startup_interval={startup_interval}s startup_max_fails={startup_max_fails} runtime_interval={runtime_interval}s idle_nolog_max={idle_no_log_max}")
 
     while True:
@@ -456,7 +477,7 @@ def _run_watchdog(
             startup_fails += 1
             if startup_fails >= startup_max_fails:
                 _write_watchdog(f"[ERROR] server not ready within {startup_max_fails} checks. Killing pid={bridge_pid}")
-                _kill_bridge()
+                _kill_bridge_and_cleanup_endpoint()
                 return 1
             _write_watchdog(f"[INFO] Waiting server readiness ({startup_fails}/{startup_max_fails})")
             time.sleep(startup_interval)
@@ -465,7 +486,7 @@ def _run_watchdog(
         if watchpid and os.name == "nt":
             if not _is_running(int(watchpid)):
                 _write_watchdog(f"[WARN] Owner pid missing. owner_pid={watchpid} bridge_pid={bridge_pid}")
-                _kill_bridge()
+                _kill_bridge_and_cleanup_endpoint()
                 return 0
 
         now_mtime = _log_mtime_ns(bridge_log_path)
@@ -478,7 +499,7 @@ def _run_watchdog(
             last_mtime = now_mtime
         if idle_no_log_max <= 0:
             _write_watchdog(f"[INFO] No bridge log update for runtime window. Killing pid={bridge_pid}")
-            _kill_bridge()
+            _kill_bridge_and_cleanup_endpoint()
             return 0
         time.sleep(runtime_interval)
 

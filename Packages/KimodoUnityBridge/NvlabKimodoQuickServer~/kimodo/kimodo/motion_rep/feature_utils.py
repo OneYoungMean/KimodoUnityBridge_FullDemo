@@ -183,7 +183,7 @@ class RotateFeatures:
         self.corrective_mat_Y = torch.stack((cos, zero, sin, zero, one, zero, -sin, zero, cos), -1).reshape(
             angle.shape + (3, 3)
         )
-        self.corrective_mat_Y_T = self.corrective_mat_Y.transpose(1, 2).contiguous()
+        self.corrective_mat_Y_T = self.corrective_mat_Y.transpose(-2, -1).contiguous()
 
     def rotate_positions(self, positions: torch.Tensor):
         """Rotate 3D positions around the Y axis."""

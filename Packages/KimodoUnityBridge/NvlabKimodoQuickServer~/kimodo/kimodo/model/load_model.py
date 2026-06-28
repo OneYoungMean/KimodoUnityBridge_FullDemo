@@ -17,6 +17,7 @@ from .loading import (
     get_env_var,
     instantiate_from_dict,
 )
+from .device_utils import preferred_text_encoder_dtype, resolve_runtime_device
 from .registry import get_model_info, resolve_model_name
 
 DEFAULT_TEXT_ENCODER = "llm2vec"
@@ -78,7 +79,7 @@ def _build_api_text_encoder_conf(text_encoder_url: str) -> dict:
     }
 
 
-def _build_local_text_encoder_conf(text_encoder_fp32: bool = False) -> dict:
+def _build_local_text_encoder_conf(device: str | None, text_encoder_fp32: bool = False) -> dict:
     text_encoder_name = get_env_var("TEXT_ENCODER", DEFAULT_TEXT_ENCODER)
     if text_encoder_name not in TEXT_ENCODER_PRESETS:
         available = ", ".join(sorted(TEXT_ENCODER_PRESETS))
@@ -88,20 +89,22 @@ def _build_local_text_encoder_conf(text_encoder_fp32: bool = False) -> dict:
     kwargs = dict(preset["kwargs"])
     if text_encoder_fp32 and "dtype" in kwargs:
         kwargs["dtype"] = "float32"
+    elif "dtype" in kwargs:
+        kwargs["dtype"] = preferred_text_encoder_dtype(device)
     return {
         "_target_": preset["target"],
         **kwargs,
     }
 
 
-def _select_text_encoder_conf(text_encoder_url: str, text_encoder_fp32: bool = False) -> dict:
+def _select_text_encoder_conf(text_encoder_url: str, device: str | None, text_encoder_fp32: bool = False) -> dict:
     # TEXT_ENCODER_MODE options:
     # - "api": force TextEncoderAPI
     # - "local": force local LLM2VecEncoder
     # - "auto": try API first, fallback to local if unreachable
     mode = get_env_var("TEXT_ENCODER_MODE", "auto").lower()
     if mode == "local":
-        return _build_local_text_encoder_conf(text_encoder_fp32)
+        return _build_local_text_encoder_conf(device, text_encoder_fp32)
     if mode == "api":
         return _build_api_text_encoder_conf(text_encoder_url)
 
@@ -116,7 +119,7 @@ def _select_text_encoder_conf(text_encoder_url: str, text_encoder_fp32: bool = F
             "Text encoder service is unreachable, falling back to local LLM2Vec "
             f"encoder. ({type(error).__name__}: {error})"
         )
-        return _build_local_text_encoder_conf(text_encoder_fp32)
+        return _build_local_text_encoder_conf(device, text_encoder_fp32)
 
 
 def load_model(
@@ -157,6 +160,8 @@ def load_model(
         ValueError: If modelname is not in AVAILABLE_MODELS and cannot be resolved.
         FileNotFoundError: If config.yaml is missing in the checkpoint folder.
     """
+    device = resolve_runtime_device(device)
+
     if modelname is None:
         modelname = DEFAULT_MODEL
     if modelname not in AVAILABLE_MODELS:
@@ -209,7 +214,7 @@ def load_model(
         runtime_conf = OmegaConf.create(
             {
                 "checkpoint_dir": str(model_path),
-                "text_encoder": _select_text_encoder_conf(text_encoder_url, text_encoder_fp32),
+                "text_encoder": _select_text_encoder_conf(text_encoder_url, device, text_encoder_fp32),
             }
         )
 

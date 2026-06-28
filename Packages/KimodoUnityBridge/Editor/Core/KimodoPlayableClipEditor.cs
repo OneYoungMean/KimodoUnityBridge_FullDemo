@@ -48,7 +48,7 @@ namespace KimodoBridge.Editor
         {
             InitializeSerializedBindings();
             showAdvancedFoldout = KimodoPlayableClipGenerationSettings.instance.AdvancedCurveFilterFoldout;
-            PullBridgeStatusSnapshot(forceRefresh: true);
+            PullBridgeStatusSnapshot();
             SyncRequestHandleState();
         }
 
@@ -106,7 +106,7 @@ namespace KimodoBridge.Editor
                 return;
             }
 
-            PullBridgeStatusSnapshot(forceRefresh: false);
+            PullBridgeStatusSnapshot();
             SyncRequestHandleState();
             serializedObject.UpdateIfRequiredOrScript();
             DrawGenerationSection();
@@ -295,14 +295,13 @@ namespace KimodoBridge.Editor
             }
         }
 
-        private void PullBridgeStatusSnapshot(bool forceRefresh)
+        private void PullBridgeStatusSnapshot()
         {
             if (clip == null)
             {
                 return;
             }
 
-            _ = forceRefresh;
             ServerStatusSnapshot snapshot = KimodoBridgeServerManage.GetServerStatusSnapshot();
             bridgeStatusReady = snapshot.Ready;
             bridgeRunningCached = snapshot.Running;

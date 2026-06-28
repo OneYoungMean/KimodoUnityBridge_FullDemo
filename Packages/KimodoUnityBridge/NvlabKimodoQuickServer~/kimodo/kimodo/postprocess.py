@@ -312,10 +312,23 @@ def post_process_motion(
     try:
         from motion_correction import motion_postprocess
     except ImportError as e:
-        raise RuntimeError(
-            "Motion correction is required for this postprocessing path but the "
-            "motion_correction package is not installed. Install with: pip install -e ."
-        ) from e
+        print(
+            "[WARN] motion_correction package is unavailable; skipping optional motion correction postprocess. "
+            f"({type(e).__name__}: {e})"
+        )
+        local_rot_mats_corrected = quaternion_to_matrix(rotations_corrected)
+        device = local_rot_mats.device
+        global_rot_mats, posed_joints, _ = fk(
+            local_rot_mats_corrected.to(device),
+            hip_translations_corrected.to(device),
+            skeleton,
+        )
+        return {
+            "local_rot_mats": local_rot_mats_corrected.to(device),
+            "global_rot_mats": global_rot_mats,
+            "posed_joints": posed_joints,
+            "root_positions": hip_translations_corrected.to(device),
+        }
     for b in range(batch_size):
         masks_b = constraint_masks_dict_lst[b] if batched_constraints else constraint_masks_dict
         motion_postprocess.correct_motion(

@@ -11,11 +11,8 @@
 
 ## 环境要求
 - Windows 10/11 x64
-- 本地工具位于 `program\exe\`：
-  - `uv\uv.exe`
-  - `git\cmd\git.exe`
-  - `git\mingw32\bin\git-lfs.exe`
 - 可用模型目录（推荐）：`C:\nvlab\models~`
+- 需要 `uv`。如果本机缺失，`run_server.bat` / `run_server.sh` 会在首次运行时尝试下载一份本地 unmanaged `uv` 到 `program\exe\uv\`。它自己的包缓存仍然走 `uv` 默认的全局缓存目录。
 
 ## 安装
 ```bat

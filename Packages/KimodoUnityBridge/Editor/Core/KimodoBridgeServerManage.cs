@@ -75,7 +75,6 @@ namespace KimodoBridge.Editor
         private static int shutdownTicket;
         private static int runtimeMaintenanceDepth;
         private static readonly object sharedServiceGate = new object();
-
         static KimodoBridgeServerManage()
         {
             EditorApplication.delayCall += RecoverBridgeAfterDomainReload;
@@ -99,6 +98,11 @@ namespace KimodoBridge.Editor
         internal static bool BootstrapRuntimeRootIfMissing()
         {
             return KimodoBridgeRuntimeInstallFacade.BootstrapRuntimeRootIfMissing();
+        }
+
+        internal static bool ReinstallRuntimeRoot()
+        {
+            return KimodoBridgeRuntimeInstallFacade.ReinstallRuntimeRoot();
         }
 
         internal static string ResolveStartScript(string runtimeRoot)
