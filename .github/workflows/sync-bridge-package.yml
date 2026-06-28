@@ -40,9 +40,11 @@ jobs:
 
           New-Item -ItemType Directory -Force -Path $target | Out-Null
           robocopy $source $target /MIR /XD .git .github | Out-Null
-          if ($LASTEXITCODE -ge 8) {
-            throw "robocopy failed with exit code $LASTEXITCODE"
+          $robocopyExitCode = $LASTEXITCODE
+          if ($robocopyExitCode -ge 8) {
+            throw "robocopy failed with exit code $robocopyExitCode"
           }
+          $global:LASTEXITCODE = 0
 
       - name: Commit synced package
         shell: pwsh
