@@ -88,10 +88,10 @@ jobs:
         uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: chore: sync KimodoUnityBridge package from ${{ steps.resolved_inputs.outputs.bridge_ref }}
+          commit-message: "chore: sync KimodoUnityBridge package from ${{ steps.resolved_inputs.outputs.bridge_ref }}"
           branch: ${{ steps.resolved_inputs.outputs.sync_branch }}
           delete-branch: true
-          title: chore: sync KimodoUnityBridge package into ${{ steps.resolved_inputs.outputs.base_branch }}
+          title: "chore: sync KimodoUnityBridge package into ${{ steps.resolved_inputs.outputs.base_branch }}"
           body: |
             This PR was created automatically by `sync-bridge-package`.
 
