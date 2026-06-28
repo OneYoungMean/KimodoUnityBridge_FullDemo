@@ -74,4 +74,6 @@ Constraint Edit保存的的时候有概率没有写入成功.
 [省略掉的小声BB的话]
 肴核既尽，不知东方之既白
 ```
-
+## 致谢 
+感谢以下人员对本项目的付出！
+[AkiKurisu](https://github.com/AkiKurisu )   
