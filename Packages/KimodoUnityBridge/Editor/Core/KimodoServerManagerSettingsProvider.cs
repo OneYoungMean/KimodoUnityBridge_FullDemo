@@ -41,6 +41,9 @@ namespace KimodoBridge.Editor
         private double detectHintUntilTime;
         private string serverHost = "127.0.0.1";
         private int serverPort = -1;
+        private bool serverHasPort;
+        private BridgePingStatus serverPingStatus;
+        private string serverStatusMessage = string.Empty;
 
         private bool operationInProgress;
         private string operationStatus = string.Empty;
@@ -279,6 +282,12 @@ namespace KimodoBridge.Editor
             {
                 EditorGUILayout.HelpBox("detect...", MessageType.None);
             }
+            else if (serverPingStatus == BridgePingStatus.Error)
+            {
+                EditorGUILayout.HelpBox(
+                    $"Server reported an error at {serverHost}:{serverPort}. {SummarizeForUi(serverStatusMessage)}",
+                    MessageType.Error);
+            }
             else if (serverState == ServerState.Enabled)
             {
                 EditorGUILayout.HelpBox($"Running at {serverHost}:{serverPort}", MessageType.Info);
@@ -286,14 +295,21 @@ namespace KimodoBridge.Editor
             else
             {
                 EditorGUILayout.HelpBox("Server is not running.", MessageType.None);
-                if (serverPort > 0)
+                if (serverHasPort)
                 {
-                    EditorGUILayout.HelpBox("Detected stale endpoint file (serverport). Process is not alive.", MessageType.None);
+                    string detail = string.IsNullOrWhiteSpace(serverStatusMessage)
+                        ? string.Empty
+                        : " " + SummarizeForUi(serverStatusMessage);
+                    EditorGUILayout.HelpBox("Detected stale endpoint file (serverport). Process is not alive." + detail, MessageType.None);
                 }
             }
             if (compileGate)
             {
                 EditorGUILayout.LabelField("Status", "detect/compiling", EditorStyles.miniLabel);
+            }
+            else if (serverPingStatus == BridgePingStatus.Error)
+            {
+                EditorGUILayout.LabelField("Status", "error", EditorStyles.miniLabel);
             }
             else
             {
@@ -605,6 +621,9 @@ namespace KimodoBridge.Editor
             ServerStatusSnapshot snapshot = KimodoBridgeServerManage.GetServerStatusSnapshot();
             serverHost = snapshot.Host;
             serverPort = snapshot.Port;
+            serverHasPort = snapshot.HasPort;
+            serverPingStatus = snapshot.PingStatus;
+            serverStatusMessage = snapshot.Message;
             serverState = snapshot.Running ? ServerState.Enabled : ServerState.Disabled;
         }
 
@@ -654,7 +673,9 @@ namespace KimodoBridge.Editor
                 onSuccess: () =>
                 {
                     PullServerStatusFromController();
-                    operationStatus = serverState == ServerState.Enabled
+                    operationStatus = serverPingStatus == BridgePingStatus.Error
+                        ? "Server reported an error. " + SummarizeForUi(serverStatusMessage)
+                        : serverState == ServerState.Enabled
                         ? $"Running at {serverHost}:{serverPort}"
                         : "Start completed.";
                 });
@@ -781,6 +802,22 @@ namespace KimodoBridge.Editor
             {
                 operationInProgress = false;
             }
+        }
+
+        private static string SummarizeForUi(string message, int maxLength = 320)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return string.Empty;
+            }
+
+            string normalized = string.Join(" ", message.Split(new[] { '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries)).Trim();
+            if (normalized.Length <= maxLength)
+            {
+                return normalized;
+            }
+
+            return normalized.Substring(0, maxLength) + "...";
         }
     }
 }
