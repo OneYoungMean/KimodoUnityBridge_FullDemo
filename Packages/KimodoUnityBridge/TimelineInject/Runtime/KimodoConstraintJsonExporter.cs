@@ -299,6 +299,22 @@ namespace TimelineInject
                                        string.Equals(type, "right-hand", StringComparison.OrdinalIgnoreCase) ||
                                        string.Equals(type, "left-foot", StringComparison.OrdinalIgnoreCase) ||
                                        string.Equals(type, "right-foot", StringComparison.OrdinalIgnoreCase);
+            bool root2DHasCompleteHeading = true;
+
+            if (isRoot2D)
+            {
+                for (int i = 0; i < group.Count; i++)
+                {
+                    KimodoConstraintJson item = group[i];
+                    int frameCount = item != null && item.frame_indices != null ? item.frame_indices.Count : 0;
+                    int headingCount = item != null && item.global_root_heading != null ? item.global_root_heading.Count : 0;
+                    if (frameCount > 0 && headingCount != frameCount)
+                    {
+                        root2DHasCompleteHeading = false;
+                        break;
+                    }
+                }
+            }
 
             if (isRoot2D || isFullBody || isEndEffectorFamily)
             {
@@ -309,7 +325,7 @@ namespace TimelineInject
                 merged.root_positions = new List<float[]>();
                 merged.local_joints_rot = new List<float[][]>();
             }
-            if (isRoot2D)
+            if (isRoot2D && root2DHasCompleteHeading)
             {
                 merged.global_root_heading = new List<float[]>();
             }

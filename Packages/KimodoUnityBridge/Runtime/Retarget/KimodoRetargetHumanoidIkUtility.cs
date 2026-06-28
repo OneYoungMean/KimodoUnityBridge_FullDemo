@@ -65,13 +65,14 @@ namespace KimodoBridge
 
             int humanId = (int)bone;
             Quaternion postRotation = AvatarRuntimeAccess.GetAvatarPostRotationOrIdentity(cache.avatar, humanId);
-            Quaternion worldGoalRotation = transform.rotation * postRotation;
+            Quaternion boneWorldRotation = transform.rotation;
+            Quaternion worldGoalRotation = boneWorldRotation;
             Vector3 worldGoalPosition = transform.position;
 
             if (avatarIKGoal == AvatarIKGoal.LeftFoot || avatarIKGoal == AvatarIKGoal.RightFoot)
             {
                 float axisLength = AvatarRuntimeAccess.GetAvatarAxisLengthOrZero(cache.avatar, humanId);
-                worldGoalPosition += worldGoalRotation * new Vector3(axisLength, 0f, 0f);
+                worldGoalPosition += (boneWorldRotation * postRotation) * new Vector3(axisLength, 0f, 0f);
             }
 
             Quaternion inverseBodyRotation = Quaternion.Inverse(bodyRotation);
