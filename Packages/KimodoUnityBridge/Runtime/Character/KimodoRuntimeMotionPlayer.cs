@@ -24,9 +24,6 @@ namespace KimodoBridge
         {
             public Animator Animator;
             public Avatar Avatar;
-#if KIMODO_RUNTIME_USE_PLAYABLE_GRAPH
-            public KimodoRuntimeMotionPlayableController PlayableController;
-#else
             public HumanPoseHandler PoseHandler;
             public Transform LeftFootBone;
             public Transform RightFootBone;
@@ -44,15 +41,10 @@ namespace KimodoBridge
             public bool RightFootIkInitialized;
             public bool AnimatorWasEnabled;
             public bool AnimatorDisabledForRetarget;
-#endif
             public bool DriveFootIk;
 
             public void Dispose()
             {
-#if KIMODO_RUNTIME_USE_PLAYABLE_GRAPH
-                PlayableController?.Dispose();
-                PlayableController = null;
-#else
                 if (Animator != null && AnimatorDisabledForRetarget)
                 {
                     Animator.enabled = AnimatorWasEnabled;
@@ -65,7 +57,6 @@ namespace KimodoBridge
                 RightFootIkTarget = null;
                 AnimatorDisabledForRetarget = false;
                 AnimatorWasEnabled = false;
-#endif
 
                 Animator = null;
                 Avatar = null;
@@ -130,14 +121,16 @@ namespace KimodoBridge
             string rightFootIkTargetName,
             bool verboseLogging,
             out KimodoRuntimeGeneratedSegment startedSegment,
+            out KimodoRuntimeGeneratedSegment completedSegment,
             out string error)
         {
             startedSegment = null;
+            completedSegment = null;
             error = string.Empty;
 
             if (playing && sourceBinding != null)
             {
-                AdvanceCurrentMotion(deltaTime, out error);
+                AdvanceCurrentMotion(deltaTime, out completedSegment, out error);
                 if (!string.IsNullOrWhiteSpace(error))
                 {
                     return;
@@ -296,8 +289,9 @@ namespace KimodoBridge
             return true;
         }
 
-        private void AdvanceCurrentMotion(float deltaTime, out string error)
+        private void AdvanceCurrentMotion(float deltaTime, out KimodoRuntimeGeneratedSegment completedSegment, out string error)
         {
+            completedSegment = null;
             error = string.Empty;
             if (!playing || sourceBinding == null)
             {
@@ -323,7 +317,7 @@ namespace KimodoBridge
 
             if (reachedEnd)
             {
-                MarkCurrentSegmentCompleted();
+                completedSegment = MarkCurrentSegmentCompleted();
                 StopActiveMotion();
             }
         }
@@ -343,8 +337,9 @@ namespace KimodoBridge
             }
         }
 
-        private void MarkCurrentSegmentCompleted()
+        private KimodoRuntimeGeneratedSegment MarkCurrentSegmentCompleted()
         {
+            KimodoRuntimeGeneratedSegment completedSegment = currentSegment;
             if (currentSegment != null && currentSegment.Index > LastCompletedSegmentIndex)
             {
                 LastCompletedSegmentIndex = currentSegment.Index;
@@ -354,6 +349,8 @@ namespace KimodoBridge
                     0f,
                     completedDelta.z);
             }
+
+            return completedSegment;
         }
 
         private void StopActiveMotion()
@@ -554,24 +551,6 @@ namespace KimodoBridge
                 out Vector3 rightFootWorldPosition,
                 out Quaternion rightFootWorldRotation);
 
-#if KIMODO_RUNTIME_USE_PLAYABLE_GRAPH
-            targetState.PlayableController.SetFrame(new KimodoRuntimeMotionFrame
-            {
-                hasPose = true,
-                bodyPosition = pose.bodyPosition,
-                bodyRotation = pose.bodyRotation,
-                muscles = pose.muscles,
-                applyFootIk = targetState.DriveFootIk,
-                leftFootGoalPosition = leftFootWorldPosition,
-                leftFootGoalRotation = leftFootWorldRotation,
-                leftFootPositionWeight = 1f,
-                leftFootRotationWeight = 1f,
-                rightFootGoalPosition = rightFootWorldPosition,
-                rightFootGoalRotation = rightFootWorldRotation,
-                rightFootPositionWeight = 1f,
-                rightFootRotationWeight = 1f
-            });
-#else
             if (targetState.PoseHandler == null)
             {
                 error = "Target pose handler is not initialized.";
@@ -585,7 +564,6 @@ namespace KimodoBridge
                 leftFootWorldRotation,
                 rightFootWorldPosition,
                 rightFootWorldRotation);
-#endif
             return true;
         }
 
@@ -614,7 +592,7 @@ namespace KimodoBridge
             }
 
             bool needsNewState = targetState == null || !ReferenceEquals(targetState.Animator, animator);
-            bool needsNewPoseHandler = needsNewState || targetState == null || targetState.PoseHandler == null || !ReferenceEquals(targetState.Avatar, avatar);
+            bool needsNewPoseHandler = needsNewState || targetState.PoseHandler == null || !ReferenceEquals(targetState.Avatar, avatar);
             if (needsNewState)
             {
                 DisposeTargetState();
@@ -625,15 +603,6 @@ namespace KimodoBridge
             }
 
             targetState.Avatar = avatar;
-#if KIMODO_RUNTIME_USE_PLAYABLE_GRAPH
-            if (targetState.PlayableController == null)
-            {
-                targetState.PlayableController = new KimodoRuntimeMotionPlayableController();
-            }
-
-            targetState.DriveFootIk = driveFootIkTargets;
-            return targetState.PlayableController.EnsureInitialized(animator, out error);
-#else
             if (needsNewPoseHandler)
             {
                 targetState.PoseHandler = new HumanPoseHandler(avatar, animator.transform);
@@ -657,12 +626,10 @@ namespace KimodoBridge
             targetState.DriveFootIk = driveFootIkTargets;
             animator.enabled = false;
             return true;
-#endif
         }
 
         private void ResetTargetFootIkBaselines()
         {
-#if !KIMODO_RUNTIME_USE_PLAYABLE_GRAPH
             if (targetState == null)
             {
                 return;
@@ -670,7 +637,6 @@ namespace KimodoBridge
 
             targetState.LeftFootIkInitialized = false;
             targetState.RightFootIkInitialized = false;
-#endif
         }
 
         private static void BuildFootWorldPose(
@@ -697,7 +663,6 @@ namespace KimodoBridge
             Debug.DrawLine(position + Vector3.forward * markerSize, position + Vector3.back * markerSize, color, 0f, false);
         }
 
-#if !KIMODO_RUNTIME_USE_PLAYABLE_GRAPH
         private static void ApplyFootIkTargets(
             TargetRetargetState state,
             Vector3 leftFootWorldPosition,
@@ -793,6 +758,5 @@ namespace KimodoBridge
 
             return null;
         }
-#endif
     }
 }

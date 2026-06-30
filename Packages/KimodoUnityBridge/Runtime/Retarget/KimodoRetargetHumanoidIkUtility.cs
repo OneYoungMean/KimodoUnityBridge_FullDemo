@@ -66,7 +66,7 @@ namespace KimodoBridge
             int humanId = (int)bone;
             Quaternion postRotation = AvatarRuntimeAccess.GetAvatarPostRotationOrIdentity(cache.avatar, humanId);
             Quaternion boneWorldRotation = transform.rotation;
-            Quaternion worldGoalRotation = boneWorldRotation;
+            Quaternion worldGoalRotation = boneWorldRotation * postRotation;
             Vector3 worldGoalPosition = transform.position;
 
             if (avatarIKGoal == AvatarIKGoal.LeftFoot || avatarIKGoal == AvatarIKGoal.RightFoot)

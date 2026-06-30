@@ -402,11 +402,12 @@ namespace KimodoBridge.Editor
             int generationFrames,
             List<KimodoMarkerSampleResult> manualSamples)
         {
-            if (context == null || mode == KimodoInOutConstraintMode.None)
+            if (context == null)
             {
                 return null;
             }
 
+            bool hasManualSamples = manualSamples != null && manualSamples.Count > 0;
             KimodoInOutConstraintClipSegment beginSegment = null;
             KimodoInOutConstraintClipSegment endSegment = null;
             bool enableBegin = false;
@@ -429,7 +430,7 @@ namespace KimodoBridge.Editor
                     break;
             }
 
-            if (!enableBegin && !enableEnd)
+            if (!enableBegin && !enableEnd && !hasManualSamples)
             {
                 return null;
             }
