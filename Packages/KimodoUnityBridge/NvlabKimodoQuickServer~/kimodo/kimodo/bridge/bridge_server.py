@@ -97,6 +97,10 @@ def _out(obj):
 
 def _log(msg: str):
     line = str(msg)
+    verbose_network_log = os.environ.get("KIMODO_BRIDGE_VERBOSE_NETWORK_LOG", "").strip() == "1"
+    if not verbose_network_log:
+        if line.startswith("[bridge] accept ") or line == "[bridge] cmd=ping":
+            return
     log_path = os.environ.get("KIMODO_BRIDGE_LOG", "")
     direct_only = os.environ.get("KIMODO_BRIDGE_LOG_DIRECT_ONLY", "").strip() == "1"
     sys.stderr.write(line + "\n")

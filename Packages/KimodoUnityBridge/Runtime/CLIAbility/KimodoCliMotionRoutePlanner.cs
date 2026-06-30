@@ -1,0 +1,248 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace KimodoBridge
+{
+    [AddComponentMenu("Kimodo/CLI Motion Route Planner")]
+    public sealed class KimodoCliMotionRoutePlanner : MonoBehaviour
+    {
+        [Header("Scene References")]
+        [SerializeField] private KimodoRuntimeMotionDriver motionDriver;
+        [SerializeField] private Transform characterRoot;
+
+        [Header("Route Timing")]
+        [SerializeField][Min(0.01f)] private float maxSpeedMetersPerSecond = 1.25f;
+        [SerializeField][Min(0.01f)] private float maxAccelerationMetersPerSecond2 = 1.5f;
+        [SerializeField][Min(0.1f)] private float minSegmentDurationSeconds = 1f;
+        [SerializeField][Min(0.1f)] private float maxSegmentDurationSeconds = 10f;
+
+        [Header("Route Thresholds")]
+        [SerializeField][Min(0f)] private float waypointArrivalThreshold = 0.1f;
+        [SerializeField] private bool verboseLogging = true;
+
+        private readonly Queue<Vector3> pendingWorldTargets = new Queue<Vector3>();
+        private bool routeActive;
+        private int dispatchedSegmentCount;
+        private int startedSegmentCount;
+        private string activePrompt = "idle";
+
+        public bool RouteActive => routeActive;
+        public int PendingWaypointCount => pendingWorldTargets.Count;
+
+        private void Reset()
+        {
+            if (motionDriver == null)
+            {
+                motionDriver = GetComponent<KimodoRuntimeMotionDriver>();
+            }
+
+            if (characterRoot == null)
+            {
+                characterRoot = transform;
+            }
+        }
+
+        private void Awake()
+        {
+            if (motionDriver == null)
+            {
+                motionDriver = GetComponent<KimodoRuntimeMotionDriver>();
+            }
+
+            if (characterRoot == null)
+            {
+                characterRoot = transform;
+            }
+        }
+
+        private void OnEnable()
+        {
+            Subscribe();
+        }
+
+        private void OnDisable()
+        {
+            Unsubscribe();
+        }
+
+        public string Animate(string prompt, float localX, float localZ)
+        {
+            return AnimateRoute(prompt, new[] { new Vector2(localX, localZ) });
+        }
+
+        public string AnimateRoute(string prompt, IList<Vector2> localWaypoints)
+        {
+            if (motionDriver == null)
+            {
+                return "Error: motionDriver is not assigned";
+            }
+
+            Transform root = ResolveRoot();
+            if (root == null)
+            {
+                return "Error: characterRoot is not assigned";
+            }
+
+            pendingWorldTargets.Clear();
+            routeActive = false;
+            dispatchedSegmentCount = 0;
+            startedSegmentCount = 0;
+            activePrompt = string.IsNullOrWhiteSpace(prompt) ? "idle" : prompt.Trim();
+
+            if (localWaypoints == null || localWaypoints.Count == 0)
+            {
+                motionDriver.SetAnimationPrompt(activePrompt);
+                return $"Animation configured: prompt = \"{activePrompt}\" (no displacement)";
+            }
+
+            Vector3 routeOrigin = root.position;
+            Vector3 routeRight = root.right;
+            Vector3 routeForward = root.forward;
+            for (int i = 0; i < localWaypoints.Count; i++)
+            {
+                Vector2 waypoint = localWaypoints[i];
+                Vector3 worldTarget = routeOrigin + routeRight * waypoint.x + routeForward * waypoint.y;
+                pendingWorldTargets.Enqueue(new Vector3(worldTarget.x, root.position.y, worldTarget.z));
+            }
+
+            while (pendingWorldTargets.Count > 0)
+            {
+                Vector3 first = pendingWorldTargets.Peek();
+                if (Vector2.Distance(
+                        new Vector2(first.x, first.z),
+                        new Vector2(root.position.x, root.position.z)) > waypointArrivalThreshold)
+                {
+                    break;
+                }
+
+                pendingWorldTargets.Dequeue();
+            }
+
+            if (pendingWorldTargets.Count == 0)
+            {
+                motionDriver.SetAnimationPrompt(activePrompt);
+                return $"Animation configured: prompt = \"{activePrompt}\" (empty route)";
+            }
+
+            routeActive = true;
+            DispatchNextSegment();
+
+            return $"Route queued: prompt=\"{activePrompt}\", waypoints={localWaypoints.Count}, pendingSegments={pendingWorldTargets.Count}";
+        }
+
+        private void Subscribe()
+        {
+            if (motionDriver == null)
+            {
+                return;
+            }
+
+            motionDriver.SegmentStarted -= HandleSegmentStarted;
+            motionDriver.SegmentStarted += HandleSegmentStarted;
+        }
+
+        private void Unsubscribe()
+        {
+            if (motionDriver == null)
+            {
+                return;
+            }
+
+            motionDriver.SegmentStarted -= HandleSegmentStarted;
+        }
+
+        private void HandleSegmentStarted(KimodoRuntimeSegmentReport report)
+        {
+            if (!routeActive)
+            {
+                return;
+            }
+
+            if (startedSegmentCount >= dispatchedSegmentCount)
+            {
+                return;
+            }
+
+            startedSegmentCount++;
+            DispatchNextSegment();
+        }
+
+        private void DispatchNextSegment()
+        {
+            if (!routeActive || motionDriver == null)
+            {
+                return;
+            }
+
+            Transform root = ResolveRoot();
+            if (root == null)
+            {
+                routeActive = false;
+                return;
+            }
+
+            while (pendingWorldTargets.Count > 0)
+            {
+                Vector3 targetWorld = pendingWorldTargets.Dequeue();
+                Vector3 deltaWorld = targetWorld - root.position;
+                deltaWorld.y = 0f;
+                if (deltaWorld.magnitude <= waypointArrivalThreshold)
+                {
+                    continue;
+                }
+
+                Vector3 localDelta = Quaternion.Inverse(root.rotation) * deltaWorld;
+                float durationSeconds = EstimateSegmentDuration(deltaWorld.magnitude);
+                motionDriver.QueuePromptedRoot2DLocal(activePrompt, localDelta.x, localDelta.z, durationSeconds);
+                dispatchedSegmentCount++;
+
+                if (verboseLogging)
+                {
+                    Debug.Log(
+                        $"[KimodoCliMotionRoutePlanner] Dispatch segment {dispatchedSegmentCount} target={targetWorld} localDelta=({localDelta.x:0.###}, {localDelta.z:0.###}) duration={durationSeconds:0.###}",
+                        this);
+                }
+
+                return;
+            }
+
+            routeActive = false;
+        }
+
+        private float EstimateSegmentDuration(float distanceMeters)
+        {
+            float maxSpeed = Mathf.Max(0.01f, maxSpeedMetersPerSecond);
+            float maxAcceleration = Mathf.Max(0.01f, maxAccelerationMetersPerSecond2);
+            float accelTime = maxSpeed / maxAcceleration;
+            float accelDistance = 0.5f * maxAcceleration * accelTime * accelTime;
+            float durationSeconds;
+
+            if (distanceMeters <= 2f * accelDistance)
+            {
+                durationSeconds = 2f * Mathf.Sqrt(distanceMeters / maxAcceleration);
+            }
+            else
+            {
+                float cruiseDistance = distanceMeters - 2f * accelDistance;
+                durationSeconds = 2f * accelTime + cruiseDistance / maxSpeed;
+            }
+
+            return Mathf.Clamp(durationSeconds, minSegmentDurationSeconds, maxSegmentDurationSeconds);
+        }
+
+        private Transform ResolveRoot()
+        {
+            if (characterRoot != null)
+            {
+                return characterRoot;
+            }
+
+            if (motionDriver != null)
+            {
+                return motionDriver.transform;
+            }
+
+            return transform;
+        }
+    }
+}

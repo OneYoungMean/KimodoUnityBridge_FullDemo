@@ -29,10 +29,9 @@ namespace KimodoBridge
         [SerializeField] private int fixedSeed = 42;
         [SerializeField][Min(0.1f)] private float segmentIntervalSeconds = 5f;
         [SerializeField] private bool loopHint = true;
-        [SerializeField][Min(1)] private int overlapConstraintSamples = 4;
+        [SerializeField] private KimodoSegmentOverlapHeadSettings segmentOverlapHeadSettings = new KimodoSegmentOverlapHeadSettings();
         [SerializeField] private bool allowPartialJoints;
-        [SerializeField] private bool trimSegmentTail = true;
-        [SerializeField][Range(0f, 0.2f)] private float segmentTailTrimPercent = 0.1f;
+        [SerializeField] private KimodoSegmentTrimTrailSettings segmentTrimTrailSettings = new KimodoSegmentTrimTrailSettings();
 
         [Header("Foot IK Targets")]
         [SerializeField] private bool driveFootIkTargets = true;
@@ -57,7 +56,6 @@ namespace KimodoBridge
         private const string KimodoFolderName = "NvlabKimodoQuickServer~";
         private const float MinGenerationDurationSeconds = 1f;
         private const float MaxGenerationDurationSeconds = 10f;
-        private const int MaxOverlapConstraintSamples = 10;
 
         private KimodoBridgeService bridgeService;
         private CancellationTokenSource lifetimeCts;
@@ -72,6 +70,7 @@ namespace KimodoBridge
         private string promptDraft;
         private string statusMessage = "Idle.";
         private readonly List<KimodoMarkerSampleResult> nextConstraintPoses = new List<KimodoMarkerSampleResult>();
+        private readonly List<KimodoMarkerSampleResult> stagedConstraintSamples = new List<KimodoMarkerSampleResult>();
         private readonly List<KimodoMarkerSampleResult> pendingConstraintSamples = new List<KimodoMarkerSampleResult>();
         private readonly List<KimodoMarkerSampleResult> constraintJsonScratch = new List<KimodoMarkerSampleResult>();
         private KimodoRuntimeMotionPlayer motionPlayer;
@@ -80,6 +79,11 @@ namespace KimodoBridge
 
         public string StatusMessage => statusMessage;
         public bool IsRunning => running;
+        public KimodoSegmentTrimTrailSettings SegmentTrimTrailSettings => segmentTrimTrailSettings;
+        public KimodoSegmentOverlapHeadSettings SegmentOverlapHeadSettings => segmentOverlapHeadSettings;
+        public event Action<KimodoRuntimeSegmentReport> SegmentReady;
+        public event Action<KimodoRuntimeSegmentReport> SegmentStarted;
+        public event Action<KimodoRuntimeSegmentReport> SegmentCompleted;
         public bool DrawDebugSkeleton
         {
             get => drawDebugSkeleton;
@@ -155,6 +159,7 @@ namespace KimodoBridge
                 rightFootIkTargetName,
                 verboseLogging,
                 out KimodoRuntimeGeneratedSegment startedSegment,
+                out KimodoRuntimeGeneratedSegment completedSegment,
                 out string playbackError);
 
             if (!string.IsNullOrWhiteSpace(playbackError))
@@ -164,6 +169,11 @@ namespace KimodoBridge
 
             if (startedSegment == null)
             {
+                if (completedSegment != null)
+                {
+                    SegmentCompleted?.Invoke(CreateSegmentReport(completedSegment));
+                }
+
                 if (drawDebugSkeleton)
                 {
                     motionPlayer.DrawDebugSkeleton(debugSkeletonBoneColor, debugSkeletonJointColor, debugJointMarkerSize);
@@ -182,6 +192,12 @@ namespace KimodoBridge
             }
 
             UpdateStatus($"Playing segment {startedSegment.Index}.");
+            SegmentStarted?.Invoke(CreateSegmentReport(startedSegment));
+
+            if (completedSegment != null)
+            {
+                SegmentCompleted?.Invoke(CreateSegmentReport(completedSegment));
+            }
 
             if (drawDebugSkeleton)
             {
@@ -231,68 +247,69 @@ namespace KimodoBridge
 
         public void SetLeftHandConstraint(float x, float y, float z, float duration = 1f)
         {
-            QueueEndEffectorConstraintInternal("LeftHand constraint", LeftHandConstraintType, "LeftHand", x, y, z, duration);
+            StageEndEffectorConstraintInternal("LeftHand constraint", LeftHandConstraintType, "LeftHand", x, y, z, duration);
         }
 
         public void SetRightHandConstraint(float x, float y, float z, float duration = 1f)
         {
-            QueueEndEffectorConstraintInternal("RightHand constraint", RightHandConstraintType, "RightHand", x, y, z, duration);
+            StageEndEffectorConstraintInternal("RightHand constraint", RightHandConstraintType, "RightHand", x, y, z, duration);
         }
 
         public void SetLeftFootConstraint(float x, float y, float z, float duration = 1f)
         {
-            QueueEndEffectorConstraintInternal("LeftFoot constraint", LeftFootConstraintType, "LeftFoot", x, y, z, duration);
+            StageEndEffectorConstraintInternal("LeftFoot constraint", LeftFootConstraintType, "LeftFoot", x, y, z, duration);
         }
 
         public void SetRightFootConstraint(float x, float y, float z, float duration = 1f)
         {
-            QueueEndEffectorConstraintInternal("RightFoot constraint", RightFootConstraintType, "RightFoot", x, y, z, duration);
+            StageEndEffectorConstraintInternal("RightFoot constraint", RightFootConstraintType, "RightFoot", x, y, z, duration);
         }
 
         public void SetRoot2D(float x, float z, float duration = 1f)
         {
-            QueueRoot2DConstraintInternal(x, z, duration, null);
+            StageRoot2DConstraintInternal(x, z, duration, null);
         }
 
         public void SetRoot2D(float x, float z, float headingX, float headingZ, float duration = 1f)
         {
-            QueueRoot2DConstraintInternal(x, z, duration, NormalizeHeading(new Vector2(headingX, headingZ)));
+            StageRoot2DConstraintInternal(x, z, duration, NormalizeHeading(new Vector2(headingX, headingZ)));
+        }
+
+        public string QueuePromptedRoot2DLocal(string prompt, float x, float z, float generationDurationSeconds)
+        {
+            ApplyGenerationDurationSeconds(generationDurationSeconds);
+            if (!string.IsNullOrWhiteSpace(prompt))
+            {
+                promptDraft = prompt.Trim();
+            }
+
+            string stageResult = StageRoot2DLocalConstraintInternal(x, z, generationDurationSeconds, null);
+            if (stageResult.StartsWith("Cannot", StringComparison.OrdinalIgnoreCase) ||
+                stageResult.StartsWith("Failed", StringComparison.OrdinalIgnoreCase))
+            {
+                return stageResult;
+            }
+
+            ApplyStagedConstraints();
+            return stageResult;
         }
 
         public void SetRoot2DLocal(float x, float z, float duration = 1f)
         {
-            if (!TryCreateRoot2DLocalConstraintSample(x, z, duration, null, out KimodoMarkerSampleResult sample, out string error))
-            {
-                UpdateStatus(error);
-                return;
-            }
-
-            UpsertPendingConstraintSample(sample);
-            _ = RefreshUpcomingGenerationAsync(
-                $"Root2D local queued at ({x:0.###}, {z:0.###}).",
-                "Root2D local queued. Waiting for current generation to finish.",
-                "Root2D local queued. Generating constrained segment.");
+            StageRoot2DLocalConstraintInternal(x, z, duration, null);
         }
 
         public void SetRoot2DLocal(float x, float z, float headingX, float headingZ, float duration = 1f)
         {
-            if (!TryCreateRoot2DLocalConstraintSample(
-                    x,
-                    z,
-                    duration,
-                    new Vector2(headingX, headingZ),
-                    out KimodoMarkerSampleResult sample,
-                    out string error))
-            {
-                UpdateStatus(error);
-                return;
-            }
+            StageRoot2DLocalConstraintInternal(x, z, duration, new Vector2(headingX, headingZ));
+        }
 
-            UpsertPendingConstraintSample(sample);
-            _ = RefreshUpcomingGenerationAsync(
-                $"Root2D local queued at ({x:0.###}, {z:0.###}).",
-                "Root2D local queued. Waiting for current generation to finish.",
-                "Root2D local queued. Generating constrained segment.");
+        public void ApplyStagedConstraints()
+        {
+            ApplyStagedConstraintsInternal(
+                "Constraints queued.",
+                "Constraints queued. Waiting for current generation to finish.",
+                "Constraints queued. Generating constrained segment.");
         }
 
         public Vector3 GetPosition()
@@ -304,6 +321,7 @@ namespace KimodoBridge
         {
             promptLocked = false;
             promptDraft = ResolveInitialPrompt();
+            stagedConstraintSamples.Clear();
             pendingConstraintSamples.Clear();
             ClearNextConstraintPoses();
             generationRequestVersion++;
@@ -352,6 +370,7 @@ namespace KimodoBridge
                 generationInFlight = false;
                 generationRequestVersion = 0;
                 lastGenerationWaitStatusSegment = -1;
+                stagedConstraintSamples.Clear();
                 pendingConstraintSamples.Clear();
                 ClearNextConstraintPoses();
                 motionPlayer.Stop();
@@ -446,6 +465,7 @@ namespace KimodoBridge
             generationCts?.Dispose();
             generationInFlight = false;
             lastGenerationWaitStatusSegment = -1;
+            stagedConstraintSamples.Clear();
             pendingConstraintSamples.Clear();
             ClearNextConstraintPoses();
             motionPlayer.Stop();
@@ -577,7 +597,9 @@ namespace KimodoBridge
                     return parsedMetadata;
                 }, generationToken);
 
-                int effectiveLastFrameIndex = ResolveEffectiveLastFrameIndex(metadata.Motion);
+                int effectiveLastFrameIndex = KimodoRuntimeSegmentAnalysisUtility.ResolveEffectiveLastFrameIndex(
+                    metadata.Motion,
+                    segmentTrimTrailSettings);
                 if (!metadata.Motion.TryReadUnityRootPosition(effectiveLastFrameIndex, out Vector3 effectiveLastRootPosition))
                 {
                     throw new InvalidOperationException(
@@ -608,7 +630,12 @@ namespace KimodoBridge
                 }
 
                 List<KimodoMarkerSampleResult> constraintOverlapPoses =
-                    BuildConstraintOverlapPoses(metadata.Motion, effectiveLastFrameIndex);
+                    KimodoRuntimeSegmentAnalysisUtility.BuildConstraintOverlapPoses(
+                        metadata.Motion,
+                        modelName,
+                        effectiveLastFrameIndex,
+                        segmentOverlapHeadSettings,
+                        allowPartialJoints);
                 if (constraintOverlapPoses.Count == 0)
                 {
                     KimodoMarkerSampleResult fallbackPose = effectiveTailPose.Clone();
@@ -630,6 +657,18 @@ namespace KimodoBridge
                         ? effectiveLastFrameIndex / metadata.Motion.FrameRate
                         : metadata.Motion.LastFrameTimeSeconds
                 }, verboseLogging);
+                SegmentReady?.Invoke(CreateSegmentReport(new KimodoRuntimeGeneratedSegment
+                {
+                    Index = requestSegmentIndex,
+                    PromptText = prompt,
+                    Motion = metadata.Motion,
+                    FirstRootPosition = metadata.FirstRootPosition,
+                    LastRootPosition = effectiveLastRootPosition,
+                    EffectiveLastFrameIndex = effectiveLastFrameIndex,
+                    EffectiveLastFrameTimeSeconds = metadata.Motion.FrameRate > 0f
+                        ? effectiveLastFrameIndex / metadata.Motion.FrameRate
+                        : metadata.Motion.LastFrameTimeSeconds
+                }));
 
                 pendingConstraintSamples.Clear();
                 if (!promptLocked)
@@ -827,7 +866,7 @@ namespace KimodoBridge
             return promptDraft;
         }
 
-        private string QueueEndEffectorConstraintInternal(
+        private string StageEndEffectorConstraintInternal(
             string label,
             string constraintType,
             string jointName,
@@ -848,15 +887,13 @@ namespace KimodoBridge
                 return error;
             }
 
-            UpsertPendingConstraintSample(sample);
-            _ = RefreshUpcomingGenerationAsync(
-                $"{label} queued at {FormatVector3(new Vector3(x, y, z))}.",
-                $"{label} queued. Waiting for current generation to finish.",
-                $"{label} queued. Generating constrained segment.");
-            return $"{label} queued at {FormatVector3(new Vector3(x, y, z))}.";
+            StageConstraintSample(sample);
+            string result = $"{label} staged at {FormatVector3(new Vector3(x, y, z))}.";
+            UpdateStatus(result);
+            return result;
         }
 
-        private string QueueRoot2DConstraintInternal(float x, float z, float durationSeconds, Vector2? heading)
+        private string StageRoot2DConstraintInternal(float x, float z, float durationSeconds, Vector2? heading)
         {
             if (!TryCreateRoot2DConstraintSample(x, z, durationSeconds, heading, out KimodoMarkerSampleResult sample, out string error))
             {
@@ -864,12 +901,68 @@ namespace KimodoBridge
                 return error;
             }
 
-            UpsertPendingConstraintSample(sample);
-            _ = RefreshUpcomingGenerationAsync(
-                $"Root2D queued at ({x:0.###}, {z:0.###}).",
-                "Root2D queued. Waiting for current generation to finish.",
-                "Root2D queued. Generating constrained segment.");
-            return $"Root2D queued at ({x:0.###}, {z:0.###}).";
+            StageConstraintSample(sample);
+            string result = $"Root2D staged at ({x:0.###}, {z:0.###}).";
+            UpdateStatus(result);
+            return result;
+        }
+
+        private string StageRoot2DLocalConstraintInternal(float x, float z, float durationSeconds, Vector2? heading)
+        {
+            if (!TryCreateRoot2DLocalConstraintSample(x, z, durationSeconds, heading, out KimodoMarkerSampleResult sample, out string error))
+            {
+                UpdateStatus(error);
+                return error;
+            }
+
+            StageConstraintSample(sample);
+            string result = $"Root2D local staged at ({x:0.###}, {z:0.###}).";
+            UpdateStatus(result);
+            return result;
+        }
+
+        private void ApplyStagedConstraintsInternal(
+            string inactiveStatus,
+            string waitingStatus,
+            string generatingStatus)
+        {
+            if (stagedConstraintSamples.Count == 0)
+            {
+                return;
+            }
+
+            for (int i = 0; i < stagedConstraintSamples.Count; i++)
+            {
+                UpsertPendingConstraintSample(stagedConstraintSamples[i]);
+            }
+
+            stagedConstraintSamples.Clear();
+            _ = RefreshUpcomingGenerationAsync(inactiveStatus, waitingStatus, generatingStatus);
+        }
+
+        private void StageConstraintSample(KimodoMarkerSampleResult sample)
+        {
+            if (sample == null)
+            {
+                return;
+            }
+
+            for (int i = stagedConstraintSamples.Count - 1; i >= 0; i--)
+            {
+                KimodoMarkerSampleResult existing = stagedConstraintSamples[i];
+                if (existing == null)
+                {
+                    stagedConstraintSamples.RemoveAt(i);
+                    continue;
+                }
+
+                if (string.Equals(existing.constraintType, sample.constraintType, StringComparison.OrdinalIgnoreCase))
+                {
+                    stagedConstraintSamples.RemoveAt(i);
+                }
+            }
+
+            stagedConstraintSamples.Add(sample);
         }
 
         private string GetCurrentPromptInternal(out bool isIdle)
@@ -1133,80 +1226,6 @@ namespace KimodoBridge
             generationFrames = Mathf.Max(1, Mathf.RoundToInt(clamped * KimodoPlayableClip.FIXED_FRAME_RATE));
         }
 
-        private int ResolveEffectiveLastFrameIndex(KimodoRawMotionData motion)
-        {
-            if (motion == null || motion.FrameCount <= 1)
-            {
-                return 0;
-            }
-
-            int lastFrameIndex = motion.FrameCount - 1;
-            if (!trimSegmentTail)
-            {
-                return lastFrameIndex;
-            }
-
-            float trimPercent = Mathf.Clamp(segmentTailTrimPercent, 0.05f, 0.2f);
-            int trimmedFrameCount = Mathf.FloorToInt(lastFrameIndex * trimPercent);
-            return Mathf.Clamp(lastFrameIndex - trimmedFrameCount, 1, lastFrameIndex);
-        }
-
-        private List<KimodoMarkerSampleResult> BuildConstraintOverlapPoses(
-            KimodoRawMotionData motion,
-            int effectiveLastFrameIndex)
-        {
-            int sampleCount = Mathf.Clamp(overlapConstraintSamples, 1, MaxOverlapConstraintSamples);
-            var samples = new List<KimodoMarkerSampleResult>(sampleCount);
-            if (motion == null)
-            {
-                return samples;
-            }
-
-            float frameRate = motion.FrameRate > 1e-6f ? motion.FrameRate : KimodoPlayableClip.FIXED_FRAME_RATE;
-            float constraintFrameRate = KimodoPlayableClip.FIXED_FRAME_RATE > 1e-6f
-                ? KimodoPlayableClip.FIXED_FRAME_RATE
-                : frameRate;
-            int lastSourceFrameIndex = int.MinValue;
-            for (int sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++)
-            {
-                int reverseOrdinal = 1 << sampleIndex;
-                int sourceFrameIndex = Mathf.Clamp(
-                    effectiveLastFrameIndex - (reverseOrdinal - 1),
-                    0,
-                    effectiveLastFrameIndex);
-                if (sourceFrameIndex == lastSourceFrameIndex)
-                {
-                    continue;
-                }
-
-                double sampleTime = (reverseOrdinal - 1) / Mathf.Max(1e-6f, constraintFrameRate);
-                if (!KimodoRawMotionUtility.TryExtractMarkerSample(
-                        motion,
-                        modelName,
-                        sourceFrameIndex,
-                        out KimodoMarkerSampleResult sample,
-                        out string sampleError,
-                        FullBodyConstraintType,
-                        sampleTime,
-                        allowPartialJoints))
-                {
-                    if (verboseLogging)
-                    {
-                        Debug.LogWarning(
-                            $"[KimodoRuntimeMotionDriver] Failed to extract overlap sample {sampleIndex} at frame {sourceFrameIndex}: {sampleError}",
-                            this);
-                    }
-
-                    continue;
-                }
-
-                lastSourceFrameIndex = sourceFrameIndex;
-                samples.Add(sample);
-            }
-
-            return samples;
-        }
-
         private void ClearNextConstraintPoses()
         {
             nextConstraintPoses.Clear();
@@ -1295,6 +1314,25 @@ namespace KimodoBridge
         private static string FormatVector3(Vector3 value)
         {
             return $"({value.x:0.###}, {value.y:0.###}, {value.z:0.###})";
+        }
+
+        private static KimodoRuntimeSegmentReport CreateSegmentReport(KimodoRuntimeGeneratedSegment segment)
+        {
+            if (segment == null)
+            {
+                return null;
+            }
+
+            return new KimodoRuntimeSegmentReport
+            {
+                Index = segment.Index,
+                PromptText = segment.PromptText,
+                FirstRootPosition = segment.FirstRootPosition,
+                EffectiveLastRootPosition = segment.LastRootPosition,
+                EffectiveLastFrameIndex = segment.EffectiveLastFrameIndex,
+                EffectiveLastFrameTimeSeconds = segment.EffectiveLastFrameTimeSeconds,
+                MotionDurationSeconds = segment.Motion != null ? segment.Motion.LastFrameTimeSeconds : 0f
+            };
         }
 
     }

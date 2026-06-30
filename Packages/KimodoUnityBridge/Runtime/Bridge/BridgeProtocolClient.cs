@@ -95,6 +95,7 @@ namespace KimodoBridge
             payload["segment_index"] = request.segment_index;
             payload["transition_duration"] = request.transition_duration;
 
+            UnityEngine.Debug.Log($"[KimodoBridge] Generate JSON: {payload.ToString(Formatting.None)}");
             await WaitUntilModelReadyAsync(host, port, progress, token).ConfigureAwait(false);
             progress?.Invoke(
                 $"Bridge generate request sent: duration={request.duration:F3}s, steps={request.steps}, seed={(request.seed.HasValue ? request.seed.Value.ToString() : "null")}.");
