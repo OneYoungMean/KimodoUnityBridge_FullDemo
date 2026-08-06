@@ -13,10 +13,8 @@ namespace KimodoBridge.Editor
             float windowHeight,
             KimodoAnimatorPreviewPanel previewPanel,
             ref string bridgeModelName,
-            ref KimodoBridgeVramMode bridgeVramMode,
+            ref KimodoTextEncoderMode textEncoderMode,
             ref string motionPrompt,
-            ref bool autoDuration,
-            ref float customDurationSeconds,
             float suggestedDurationSeconds,
             ref int diffusionSteps,
             ref KimodoInOutConstraintMode inOutConstraintMode,
@@ -50,10 +48,8 @@ namespace KimodoBridge.Editor
                     DrawGeneratePanel(
                         previewPanel != null && previewPanel.HasSelection,
                         ref bridgeModelName,
-                        ref bridgeVramMode,
+                        ref textEncoderMode,
                         ref motionPrompt,
-                        ref autoDuration,
-                        ref customDurationSeconds,
                         suggestedDurationSeconds,
                         ref diffusionSteps,
                         ref inOutConstraintMode,
@@ -79,10 +75,8 @@ namespace KimodoBridge.Editor
         private static void DrawGeneratePanel(
             bool hasSelection,
             ref string bridgeModelName,
-            ref KimodoBridgeVramMode bridgeVramMode,
+            ref KimodoTextEncoderMode textEncoderMode,
             ref string motionPrompt,
-            ref bool autoDuration,
-            ref float customDurationSeconds,
             float suggestedDurationSeconds,
             ref int diffusionSteps,
             ref KimodoInOutConstraintMode inOutConstraintMode,
@@ -97,43 +91,23 @@ namespace KimodoBridge.Editor
             EditorGUILayout.LabelField("Generate", EditorStyles.boldLabel);
             EditorGUILayout.BeginVertical("box");
 
-            DrawBridgePanel(ref bridgeModelName, ref bridgeVramMode);
+            DrawBridgePanel(ref bridgeModelName, ref textEncoderMode);
 
             EditorGUILayout.Space(4f);
             EditorGUILayout.LabelField("Prompt", EditorStyles.miniBoldLabel);
             motionPrompt = EditorGUILayout.TextArea(motionPrompt ?? string.Empty, GUILayout.Height(60f));
 
-            autoDuration = EditorGUILayout.ToggleLeft(
-                new GUIContent("Auto", "Use the original selected animation duration."),
-                autoDuration);
-
-            float minDuration = KimodoPlayableClip.MIN_FRAMES / KimodoPlayableClip.FIXED_FRAME_RATE;
-            float maxDuration = KimodoPlayableClip.MAX_FRAMES / KimodoPlayableClip.FIXED_FRAME_RATE;
-            if (autoDuration)
+            using (new EditorGUI.DisabledScope(true))
             {
-                using (new EditorGUI.DisabledScope(true))
-                {
-                    EditorGUILayout.Slider(
-                        new GUIContent("Duration (s)"),
-                        suggestedDurationSeconds,
-                        minDuration,
-                        maxDuration);
-                }
-            }
-            else
-            {
-                customDurationSeconds = EditorGUILayout.Slider(
-                    new GUIContent("Custom Duration (s)"),
-                    Mathf.Clamp(customDurationSeconds, minDuration, maxDuration),
-                    minDuration,
-                    maxDuration);
+                EditorGUILayout.FloatField(
+                    new GUIContent("Source Duration (s)", "Generation length is read from the selected clip or transition."),
+                    suggestedDurationSeconds);
             }
 
             diffusionSteps = Mathf.Clamp(
                 EditorGUILayout.IntField(new GUIContent("Diffusion Steps"), diffusionSteps),
                 1,
                 1000);
-
             inOutConstraintMode = (KimodoInOutConstraintMode)EditorGUILayout.EnumPopup(
                 new GUIContent("InOut Constraint", "None disables boundary constraints. Inside uses the selected clip's own start/end poses. Outside uses transition boundary poses."),
                 inOutConstraintMode);
@@ -176,13 +150,13 @@ namespace KimodoBridge.Editor
             EditorGUILayout.EndVertical();
         }
 
-        private static void DrawBridgePanel(ref string bridgeModelName, ref KimodoBridgeVramMode bridgeVramMode)
+        private static void DrawBridgePanel(ref string bridgeModelName, ref KimodoTextEncoderMode textEncoderMode)
         {
             EditorGUILayout.Space(4f);
             EditorGUILayout.LabelField("Kimodo Bridge", EditorStyles.miniBoldLabel);
             EditorGUILayout.BeginVertical("box");
 
-            string[] options = KimodoBridgeServerManage.SupportedModelNames;
+            string[] options = KimodoBridgeServerTool.SupportedModelNames;
             if (options != null && options.Length > 0)
             {
                 string current = string.IsNullOrWhiteSpace(bridgeModelName) ? options[0] : bridgeModelName.Trim();
@@ -194,13 +168,26 @@ namespace KimodoBridge.Editor
 
                 int newIndex = EditorGUILayout.Popup(new GUIContent("Bridge Model"), currentIndex, options);
                 bridgeModelName = options[Mathf.Clamp(newIndex, 0, options.Length - 1)];
+                if (newIndex != currentIndex)
+                {
+                    textEncoderMode = KimodoGenerationInspectorGui.IsArdy(bridgeModelName)
+                        ? KimodoTextEncoderMode.HighPrecision
+                        : KimodoTextEncoderMode.HighPerformance;
+                }
             }
             else
             {
                 bridgeModelName = EditorGUILayout.TextField(new GUIContent("Bridge Model"), bridgeModelName ?? string.Empty);
             }
 
-            bridgeVramMode = (KimodoBridgeVramMode)EditorGUILayout.EnumPopup(new GUIContent("VRAM Mode"), bridgeVramMode);
+            textEncoderMode = (KimodoTextEncoderMode)EditorGUILayout.EnumPopup(
+                new GUIContent("Text Encoder Mode", "High Performance uses NF4/INT8. High Precision uses FP16. Device placement is automatic."),
+                textEncoderMode);
+            KimodoGenerationInspectorGui.DrawTextEncoderEstimate(textEncoderMode);
+            KimodoGenerationInspectorGui.DrawArdyTextEncoderWarning(
+                KimodoGenerationInspectorGui.IsArdy(bridgeModelName),
+                textEncoderMode);
+            KimodoGenerationInspectorGui.DrawResolvedTextEncoderStatus();
 
             EditorGUILayout.EndVertical();
         }

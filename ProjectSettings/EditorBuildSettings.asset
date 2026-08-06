@@ -6,6 +6,6 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Scenes/5.RuntimeInfiniteDemo.unity
+    path: Assets/Scenes/4.RuntimeKimodoDemo.unity
     guid: 38bb7aaabffdb3945a3527904568f4d5
   m_configObjects: {}

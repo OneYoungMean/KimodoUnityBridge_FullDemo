@@ -13,7 +13,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   maxGeneratedClips: 400
+  timelineConstraintCacheTimeFrames: 60
+  localModelsPath: 
+  defaultBridgeModelName: Kimodo-SOMA-RP-v1
+  defaultTextEncoderMode: 0
   generationTimeoutSeconds: 120
-  floatingUiEnabled: 0
-  alwaysKeepServerExperimental: 1
+  keepCpuForceExperimental: 0
+  writeResampledTimelineCacheClips: 0
+  enableDebugLog: 0
+  enableKimodoStaticGraph: 0
+  setupWizardCompleted: 1
+  quickServerPath: 
   advancedCurveFilterFoldout: 1

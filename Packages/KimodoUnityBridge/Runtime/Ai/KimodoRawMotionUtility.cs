@@ -11,9 +11,10 @@ namespace KimodoBridge
     {
         internal readonly string[] jointNames;
         internal readonly int[] jointParents;
-        internal readonly Vector3[] rootPositions;
+        internal Vector3[] rootPositions;
         internal readonly List<float> localRotQuats;
         internal readonly int rootJointIndex;
+        internal byte[] footContacts;
 
         internal KimodoRawMotionData(
             int frameCount,
@@ -23,7 +24,8 @@ namespace KimodoBridge
             int[] jointParents,
             Vector3[] rootPositions,
             List<float> localRotQuats,
-            int rootJointIndex)
+            int rootJointIndex,
+            byte[] footContacts = null)
         {
             FrameCount = frameCount;
             JointCount = jointCount;
@@ -33,15 +35,93 @@ namespace KimodoBridge
             this.rootPositions = rootPositions ?? Array.Empty<Vector3>();
             this.localRotQuats = localRotQuats;
             this.rootJointIndex = Mathf.Clamp(rootJointIndex, 0, Mathf.Max(0, jointCount - 1));
+            this.footContacts = footContacts != null && footContacts.Length == frameCount * KimodoFootContactTrackUtility.ChannelCount
+                ? footContacts
+                : Array.Empty<byte>();
         }
 
-        public int FrameCount { get; }
+        public int FrameCount { get; private set; }
         public int JointCount { get; }
         public float FrameRate { get; }
         public float DurationSeconds => FrameCount > 0 ? FrameCount / FrameRate : 0f;
         public float LastFrameTimeSeconds => FrameCount > 1 ? (FrameCount - 1) / FrameRate : 0f;
         public int RootJointIndex => rootJointIndex;
         public IReadOnlyList<string> JointNames => jointNames;
+        public bool HasFootContacts => footContacts.Length >= FrameCount * KimodoFootContactTrackUtility.ChannelCount;
+
+        internal bool TryAppend(KimodoRawMotionData segment, int expectedStartFrame, out string error)
+        {
+            error = string.Empty;
+            if (segment == null)
+            {
+                error = "ARDY KMB segment is empty.";
+                return false;
+            }
+            if (expectedStartFrame != FrameCount)
+            {
+                error = $"ARDY KMB segment is not contiguous: response starts at frame {expectedStartFrame}, local timeline has {FrameCount} frames, segment has {segment.FrameCount} frames.";
+                return false;
+            }
+            if (segment.JointCount != JointCount ||
+                Mathf.Abs(segment.FrameRate - FrameRate) > 1e-4f ||
+                segment.jointNames.Length != jointNames.Length ||
+                segment.jointParents.Length != jointParents.Length)
+            {
+                error = $"ARDY KMB segment metadata changed: local FPS/joints={FrameRate}/{JointCount}, segment FPS/joints={segment.FrameRate}/{segment.JointCount}.";
+                return false;
+            }
+            for (int index = 0; index < jointNames.Length; index++)
+            {
+                if (!string.Equals(segment.jointNames[index], jointNames[index], StringComparison.Ordinal) ||
+                    segment.jointParents[index] != jointParents[index])
+                {
+                    error = "ARDY KMB segment rig metadata changed.";
+                    return false;
+                }
+            }
+
+            int oldFrames = FrameCount;
+            int newFrames = oldFrames + segment.FrameCount;
+            if (rootPositions.Length < newFrames)
+            {
+                int capacity = Mathf.Max(newFrames, Mathf.Max(16, rootPositions.Length * 2));
+                Array.Resize(ref rootPositions, capacity);
+            }
+            Array.Copy(segment.rootPositions, 0, rootPositions, oldFrames, segment.FrameCount);
+
+            int scalarCount = segment.FrameCount * JointCount * 4;
+            if (localRotQuats.Capacity < localRotQuats.Count + scalarCount)
+            {
+                localRotQuats.Capacity = Mathf.Max(localRotQuats.Count + scalarCount, Mathf.Max(64, localRotQuats.Capacity * 2));
+            }
+            for (int scalar = 0; scalar < scalarCount; scalar++)
+            {
+                localRotQuats.Add(segment.localRotQuats[scalar]);
+            }
+
+            if (HasFootContacts && segment.HasFootContacts)
+            {
+                int channelCount = KimodoFootContactTrackUtility.ChannelCount;
+                int required = newFrames * channelCount;
+                if (footContacts.Length < required)
+                {
+                    int capacity = Mathf.Max(required, Mathf.Max(64, footContacts.Length * 2));
+                    Array.Resize(ref footContacts, capacity);
+                }
+                Array.Copy(
+                    segment.footContacts,
+                    0,
+                    footContacts,
+                    oldFrames * channelCount,
+                    segment.FrameCount * channelCount);
+            }
+            else
+            {
+                footContacts = Array.Empty<byte>();
+            }
+            FrameCount = newFrames;
+            return true;
+        }
 
         internal bool TryReadUnityRootPosition(int frameIndex, out Vector3 value)
         {
@@ -54,7 +134,7 @@ namespace KimodoBridge
             }
 
             value = rootPositions[frameIndex];
-            return true;
+            return IsFinite(value.x) && IsFinite(value.y) && IsFinite(value.z);
         }
 
         internal bool TryReadUnityLocalRotation(int frameIndex, int jointIndex, int rotationJointCount, out Quaternion value)
@@ -79,8 +159,33 @@ namespace KimodoBridge
             float x = localRotQuats[baseIndex + 1];
             float y = localRotQuats[baseIndex + 2];
             float z = localRotQuats[baseIndex + 3];
+            float lengthSquared = x * x + y * y + z * z + w * w;
+            if (!IsFinite(x) || !IsFinite(y) || !IsFinite(z) || !IsFinite(w) ||
+                !IsFinite(lengthSquared) || lengthSquared < 1e-12f)
+            {
+                return false;
+            }
             Quaternion source = new Quaternion(x, y, z, w).normalized;
             value = new Quaternion(source.x, -source.y, -source.z, source.w);
+            return true;
+        }
+
+        private static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
+        }
+
+        internal bool TryReadFootContact(int frameIndex, int channel, out float value)
+        {
+            value = 0f;
+            if (!HasFootContacts ||
+                frameIndex < 0 || frameIndex >= FrameCount ||
+                channel < 0 || channel >= KimodoFootContactTrackUtility.ChannelCount)
+            {
+                return false;
+            }
+
+            value = footContacts[frameIndex * KimodoFootContactTrackUtility.ChannelCount + channel] > 0 ? 1f : 0f;
             return true;
         }
     }
@@ -128,6 +233,11 @@ namespace KimodoBridge
 
     public static class KimodoRawMotionUtility
     {
+        private static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
+        }
+
         private const string FullBodyConstraintType = "fullbody";
 
         [Serializable]
@@ -140,6 +250,7 @@ namespace KimodoBridge
             public int[] joint_parents;
             public List<float> joints;
             public List<float> local_rot_quats;
+            public List<float> foot_contacts;
         }
 
         public static bool TryParse(string motionJson, out KimodoRawMotionData motion, out string error)
@@ -182,7 +293,15 @@ namespace KimodoBridge
                 data.joint_parents,
                 rootPositions,
                 data.local_rot_quats,
-                rootJoint);
+                rootJoint,
+                TryBuildFootContacts(data.foot_contacts, frameCount, out byte[] footContacts, out error)
+                    ? footContacts
+                    : null);
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                motion = null;
+                return false;
+            }
             return true;
         }
 
@@ -233,9 +352,274 @@ namespace KimodoBridge
                 joint_names = (string[])motion.jointNames.Clone(),
                 joint_parents = (int[])motion.jointParents.Clone(),
                 joints = joints,
-                local_rot_quats = motion.localRotQuats != null ? new List<float>(motion.localRotQuats) : new List<float>()
+                local_rot_quats = motion.localRotQuats != null ? new List<float>(motion.localRotQuats) : new List<float>(),
+                foot_contacts = ToFloatFootContacts(motion)
             };
             return JsonUtility.ToJson(payload);
+        }
+
+        public static byte[] ToFlatBuffer(KimodoRawMotionData motion, string modelName)
+        {
+            if (motion == null || motion.FrameCount <= 0 || motion.JointCount <= 0)
+            {
+                return Array.Empty<byte>();
+            }
+
+            int frameCount = motion.FrameCount;
+            int jointCount = motion.JointCount;
+            float[] roots = new float[frameCount * 3];
+            for (int frame = 0; frame < frameCount; frame++)
+            {
+                motion.TryReadUnityRootPosition(frame, out Vector3 root);
+                int index = frame * 3;
+                roots[index + 0] = -root.x;
+                roots[index + 1] = root.y;
+                roots[index + 2] = root.z;
+            }
+
+            float[] rotations = motion.localRotQuats != null
+                ? motion.localRotQuats.ToArray()
+                : Array.Empty<float>();
+            byte[] contacts = Array.Empty<byte>();
+            if (motion.HasFootContacts)
+            {
+                contacts = new byte[frameCount * KimodoFootContactTrackUtility.ChannelCount];
+                Array.Copy(motion.footContacts, contacts, contacts.Length);
+            }
+            var builder = new FlatBufferBuilder(Mathf.Max(1024, roots.Length * 4 + rotations.Length * 4 + contacts.Length + 512));
+            var nameOffsets = new StringOffset[jointCount];
+            for (int i = 0; i < jointCount; i++)
+            {
+                string jointName = i < motion.jointNames.Length ? motion.jointNames[i] : $"joint_{i}";
+                nameOffsets[i] = builder.CreateString(jointName ?? string.Empty);
+            }
+
+            VectorOffset namesOffset = MotionPacket.CreateJointNamesVector(builder, nameOffsets);
+            VectorOffset parentsOffset = MotionPacket.CreateJointParentsVector(builder, motion.jointParents);
+            VectorOffset rootsOffset = MotionPacket.CreateRootPositionsVector(builder, roots);
+            VectorOffset rotationsOffset = MotionPacket.CreateLocalRotQuatsVector(builder, rotations);
+            StringOffset modelOffset = builder.CreateString(modelName ?? string.Empty);
+            VectorOffset contactsOffset = contacts.Length > 0
+                ? MotionPacket.CreateFootContactsVector(builder, contacts)
+                : default;
+            Offset<MotionPacket> packet = MotionPacket.CreateMotionPacket(
+                builder,
+                version: 1,
+                fps: motion.FrameRate,
+                num_frames: (uint)frameCount,
+                num_joints: (uint)jointCount,
+                joint_namesOffset: namesOffset,
+                joint_parentsOffset: parentsOffset,
+                root_positionsOffset: rootsOffset,
+                local_rot_quatsOffset: rotationsOffset,
+                model_nameOffset: modelOffset,
+                foot_contactsOffset: contactsOffset);
+            MotionPacket.FinishMotionPacketBuffer(builder, packet);
+            return builder.SizedByteArray();
+        }
+
+        public static bool TryConcatenate(
+            IReadOnlyList<KimodoRawMotionData> motions,
+            int targetFrameCount,
+            out KimodoRawMotionData combined,
+            out string error)
+        {
+            combined = null;
+            error = string.Empty;
+            if (motions == null || motions.Count == 0 || motions[0] == null)
+            {
+                error = "Motion list is empty.";
+                return false;
+            }
+
+            KimodoRawMotionData first = motions[0];
+            int availableFrames = 0;
+            for (int i = 0; i < motions.Count; i++)
+            {
+                KimodoRawMotionData motion = motions[i];
+                if (motion == null ||
+                    motion.JointCount != first.JointCount ||
+                    Mathf.Abs(motion.FrameRate - first.FrameRate) > 1e-4f ||
+                    !SameRig(first, motion))
+                {
+                    error = $"Motion {i} has incompatible FPS or rig metadata.";
+                    return false;
+                }
+                availableFrames += motion.FrameCount;
+            }
+
+            int frameCount = Mathf.Clamp(targetFrameCount, 1, availableFrames);
+            var roots = new Vector3[frameCount];
+            var rotations = new List<float>(frameCount * first.JointCount * 4);
+            bool keepFootContacts = true;
+            var contacts = new byte[frameCount * KimodoFootContactTrackUtility.ChannelCount];
+            int written = 0;
+            for (int i = 0; i < motions.Count && written < frameCount; i++)
+            {
+                KimodoRawMotionData motion = motions[i];
+                int copyFrames = Mathf.Min(motion.FrameCount, frameCount - written);
+                Array.Copy(motion.rootPositions, 0, roots, written, copyFrames);
+                int scalarCount = copyFrames * first.JointCount * 4;
+                for (int scalar = 0; scalar < scalarCount; scalar++)
+                {
+                    rotations.Add(motion.localRotQuats[scalar]);
+                }
+                if (motion.HasFootContacts)
+                {
+                    Array.Copy(
+                        motion.footContacts,
+                        0,
+                        contacts,
+                        written * KimodoFootContactTrackUtility.ChannelCount,
+                        copyFrames * KimodoFootContactTrackUtility.ChannelCount);
+                }
+                else
+                {
+                    keepFootContacts = false;
+                }
+                written += copyFrames;
+            }
+
+            combined = new KimodoRawMotionData(
+                frameCount,
+                first.JointCount,
+                first.FrameRate,
+                (string[])first.jointNames.Clone(),
+                (int[])first.jointParents.Clone(),
+                roots,
+                rotations,
+                first.rootJointIndex,
+                keepFootContacts ? contacts : null);
+            return true;
+        }
+
+        internal static bool TrySlice(
+            KimodoRawMotionData source,
+            int startFrame,
+            int frameCount,
+            out KimodoRawMotionData slice,
+            out string error)
+        {
+            slice = null;
+            error = string.Empty;
+            if (source == null || startFrame < 0 || frameCount <= 0 || startFrame + frameCount > source.FrameCount)
+            {
+                error = $"Motion slice [{startFrame},{startFrame + frameCount}) is outside the source range [0,{source?.FrameCount ?? 0}).";
+                return false;
+            }
+
+            var roots = new Vector3[frameCount];
+            Array.Copy(source.rootPositions, startFrame, roots, 0, frameCount);
+
+            int rotationScalarCount = frameCount * source.JointCount * 4;
+            int rotationScalarStart = startFrame * source.JointCount * 4;
+            var rotations = new List<float>(rotationScalarCount);
+            for (int scalar = 0; scalar < rotationScalarCount; scalar++)
+            {
+                rotations.Add(source.localRotQuats[rotationScalarStart + scalar]);
+            }
+
+            byte[] contacts = null;
+            if (source.HasFootContacts)
+            {
+                int channelCount = KimodoFootContactTrackUtility.ChannelCount;
+                contacts = new byte[frameCount * channelCount];
+                Array.Copy(source.footContacts, startFrame * channelCount, contacts, 0, contacts.Length);
+            }
+
+            slice = new KimodoRawMotionData(
+                frameCount,
+                source.JointCount,
+                source.FrameRate,
+                (string[])source.jointNames.Clone(),
+                (int[])source.jointParents.Clone(),
+                roots,
+                rotations,
+                source.rootJointIndex,
+                contacts);
+            return true;
+        }
+
+        public static bool TryResample(
+            KimodoRawMotionData source,
+            float targetFrameRate,
+            int targetFrameCount,
+            out KimodoRawMotionData resampled,
+            out string error)
+        {
+            resampled = null;
+            error = string.Empty;
+            if (source == null || source.FrameCount <= 0 || targetFrameRate <= 0f || targetFrameCount <= 0)
+            {
+                error = "Source motion or target sampling settings are invalid.";
+                return false;
+            }
+
+            var roots = new Vector3[targetFrameCount];
+            var rotations = new List<float>(targetFrameCount * source.JointCount * 4);
+            byte[] contacts = source.HasFootContacts
+                ? new byte[targetFrameCount * KimodoFootContactTrackUtility.ChannelCount]
+                : null;
+            for (int frame = 0; frame < targetFrameCount; frame++)
+            {
+                float sourceFrame = frame * source.FrameRate / targetFrameRate;
+                int frame0 = Mathf.Clamp(Mathf.FloorToInt(sourceFrame), 0, source.FrameCount - 1);
+                int frame1 = Mathf.Min(frame0 + 1, source.FrameCount - 1);
+                float blend = Mathf.Clamp01(sourceFrame - frame0);
+                source.TryReadUnityRootPosition(frame0, out Vector3 root0);
+                source.TryReadUnityRootPosition(frame1, out Vector3 root1);
+                roots[frame] = Vector3.LerpUnclamped(root0, root1, blend);
+
+                for (int joint = 0; joint < source.JointCount; joint++)
+                {
+                    source.TryReadUnityLocalRotation(frame0, joint, source.JointCount, out Quaternion rotation0);
+                    source.TryReadUnityLocalRotation(frame1, joint, source.JointCount, out Quaternion rotation1);
+                    Quaternion unityRotation = Quaternion.SlerpUnclamped(rotation0, rotation1, blend).normalized;
+                    rotations.Add(unityRotation.w);
+                    rotations.Add(unityRotation.x);
+                    rotations.Add(-unityRotation.y);
+                    rotations.Add(-unityRotation.z);
+                }
+                if (contacts != null)
+                {
+                    int contactFrame = Mathf.Clamp(Mathf.RoundToInt(sourceFrame), 0, source.FrameCount - 1);
+                    Array.Copy(
+                        source.footContacts,
+                        contactFrame * KimodoFootContactTrackUtility.ChannelCount,
+                        contacts,
+                        frame * KimodoFootContactTrackUtility.ChannelCount,
+                        KimodoFootContactTrackUtility.ChannelCount);
+                }
+            }
+
+            resampled = new KimodoRawMotionData(
+                targetFrameCount,
+                source.JointCount,
+                targetFrameRate,
+                (string[])source.jointNames.Clone(),
+                (int[])source.jointParents.Clone(),
+                roots,
+                rotations,
+                source.rootJointIndex,
+                contacts);
+            return true;
+        }
+
+        private static bool SameRig(KimodoRawMotionData a, KimodoRawMotionData b)
+        {
+            if (a.jointNames.Length != b.jointNames.Length || a.jointParents.Length != b.jointParents.Length)
+            {
+                return false;
+            }
+            for (int i = 0; i < a.jointNames.Length; i++)
+            {
+                if (!string.Equals(a.jointNames[i], b.jointNames[i], StringComparison.Ordinal) ||
+                    a.jointParents[i] != b.jointParents[i])
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         public static bool TryParseFlatBuffer(byte[] motionBytes, out KimodoRawMotionData motion, out string error)
@@ -296,6 +680,13 @@ namespace KimodoBridge
             for (int frameIndex = 0; frameIndex < frameCount; frameIndex++)
             {
                 int baseIndex = frameIndex * 3;
+                if (!IsFinite(rootPositionScalars[baseIndex + 0]) ||
+                    !IsFinite(rootPositionScalars[baseIndex + 1]) ||
+                    !IsFinite(rootPositionScalars[baseIndex + 2]))
+                {
+                    error = $"FlatBuffer root_positions contains a non-finite value at frame {frameIndex}.";
+                    return false;
+                }
                 rootPositions[frameIndex] = new Vector3(
                     -rootPositionScalars[baseIndex + 0],
                     rootPositionScalars[baseIndex + 1],
@@ -306,6 +697,29 @@ namespace KimodoBridge
             if (localRotQuatArray == null || localRotQuatArray.Length < frameCount * jointCount * 4)
             {
                 error = $"FlatBuffer local_rot_quats is too small. Expected at least {frameCount * jointCount * 4}, got {localRotQuatArray?.Length ?? 0}.";
+                return false;
+            }
+            for (int baseIndex = 0; baseIndex < frameCount * jointCount * 4; baseIndex += 4)
+            {
+                float w = localRotQuatArray[baseIndex + 0];
+                float x = localRotQuatArray[baseIndex + 1];
+                float y = localRotQuatArray[baseIndex + 2];
+                float z = localRotQuatArray[baseIndex + 3];
+                float lengthSquared = x * x + y * y + z * z + w * w;
+                if (!IsFinite(x) || !IsFinite(y) || !IsFinite(z) || !IsFinite(w) ||
+                    !IsFinite(lengthSquared) || lengthSquared < 1e-12f)
+                {
+                    int quaternionIndex = baseIndex / 4;
+                    error = $"FlatBuffer local_rot_quats contains an invalid quaternion at frame {quaternionIndex / jointCount}, joint {quaternionIndex % jointCount}.";
+                    return false;
+                }
+            }
+
+            byte[] footContacts = packet.GetFootContactsArray();
+            if (footContacts != null && footContacts.Length > 0 &&
+                footContacts.Length != frameCount * KimodoFootContactTrackUtility.ChannelCount)
+            {
+                error = $"FlatBuffer foot_contacts is invalid. Expected {frameCount * KimodoFootContactTrackUtility.ChannelCount} values, got {footContacts.Length}.";
                 return false;
             }
 
@@ -327,8 +741,53 @@ namespace KimodoBridge
                 jointParents,
                 rootPositions,
                 new List<float>(localRotQuatArray),
-                rootJoint);
+                rootJoint,
+                footContacts);
             return true;
+        }
+
+        private static bool TryBuildFootContacts(
+            List<float> source,
+            int frameCount,
+            out byte[] contacts,
+            out string error)
+        {
+            contacts = Array.Empty<byte>();
+            error = string.Empty;
+            if (source == null || source.Count == 0)
+            {
+                return true;
+            }
+
+            int expected = frameCount * KimodoFootContactTrackUtility.ChannelCount;
+            if (source.Count != expected)
+            {
+                error = $"foot_contacts length mismatch. Expected {expected}, got {source.Count}.";
+                return false;
+            }
+
+            contacts = new byte[expected];
+            for (int i = 0; i < expected; i++)
+            {
+                contacts[i] = source[i] >= 0.5f ? (byte)1 : (byte)0;
+            }
+            return true;
+        }
+
+        private static List<float> ToFloatFootContacts(KimodoRawMotionData motion)
+        {
+            var values = new List<float>();
+            if (motion == null || !motion.HasFootContacts)
+            {
+                return values;
+            }
+
+            int count = motion.FrameCount * KimodoFootContactTrackUtility.ChannelCount;
+            for (int i = 0; i < count; i++)
+            {
+                values.Add(motion.footContacts[i] > 0 ? 1f : 0f);
+            }
+            return values;
         }
 
         public static bool TryParseAndAnalyze(

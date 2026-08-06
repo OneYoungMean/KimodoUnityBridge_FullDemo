@@ -8,8 +8,11 @@ import os
 import numpy as np
 import torch
 from torch import nn
-from kimodo.bridge.quickserver_assets import NF4_LOCAL_DIR
 from .llm2vec import LLM2Vec
+
+
+NF4_LOCAL_DIR = "KIMODO-Meta3_llm2vec_NF4"
+
 
 class LLM2VecEncoder(nn.Module):
     """LLM2Vec text embeddings."""
@@ -30,6 +33,9 @@ class LLM2VecEncoder(nn.Module):
         self.custom_dir = self._resolve_local_text_encoder_dir()
         self.custom_peft_dir = self._resolve_local_llm2vec_peft_dir()
         self.target_device = self._resolve_target_device()
+        route = os.environ.get("KIMODO_TEXT_ENCODER_ROUTE", "").strip().lower()
+        self.accelerator_int8 = route == "int8" and self.target_device != "cpu"
+        self.accelerator_nf4 = route == "nf4" and self.target_device != "cpu"
 
         print(f"[LLM2VecEncoder] Initializing model from {self.custom_dir}...")
         if self.custom_peft_dir:
@@ -67,11 +73,6 @@ class LLM2VecEncoder(nn.Module):
             candidates.append(
                 os.path.abspath(os.path.join(kimodo_root, "models", NF4_LOCAL_DIR))
             )
-
-        # Keep compatibility with the original README override placeholder.
-        manual_placeholder = r"path_to_your_Llama_text-encoders"
-        if manual_placeholder and os.path.isdir(manual_placeholder):
-            candidates.append(os.path.abspath(manual_placeholder))
 
         # Derive from package location.
         this_dir = os.path.dirname(os.path.abspath(__file__))
@@ -139,7 +140,10 @@ class LLM2VecEncoder(nn.Module):
         if self.model is not None:
             if self.get_device().type == "cuda":
                 print(f"[LLM2VecEncoder] Offloading 5.4GB model to System RAM...")
-                self.model.model.to("cpu")
+                if self.accelerator_int8 or self.accelerator_nf4:
+                    self.model = None
+                else:
+                    self.model.model.to("cpu")
                 gc.collect()
                 if platform.system() == "Linux":
                     try:
@@ -147,10 +151,6 @@ class LLM2VecEncoder(nn.Module):
                         ctypes.CDLL("libc.so.6").malloc_trim(0)
                     except Exception:
                         pass
-                elif platform.system() == "Windows":
-                    from kimodo.demo.memory_manager import release_system_memory
-                    release_system_memory()
-
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                     torch.cuda.ipc_collect()
@@ -160,26 +160,33 @@ class LLM2VecEncoder(nn.Module):
     def reload(self):
         """Move from System RAM to VRAM."""
         if self.model is None:
-            print(f"[LLM2VecEncoder] Model was None. Reloading from disk (15s delay)...")
-            self.model = LLM2Vec.from_pretrained(
-                base_model_name_or_path=self.custom_dir,
-                peft_model_name_or_path=self.custom_peft_dir,
-                torch_dtype=self.torch_dtype,
-                device_map="cpu"
-            )
+            print("[LLM2VecEncoder] Loading weights from disk...")
+            load_kwargs = {
+                "base_model_name_or_path": self.custom_dir,
+                "peft_model_name_or_path": self.custom_peft_dir,
+                "torch_dtype": self.torch_dtype,
+                "device_map": "cpu",
+            }
+            if self.accelerator_int8:
+                from transformers import BitsAndBytesConfig
+
+                load_kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
+                load_kwargs["device_map"] = {"": self.target_device}
+            elif self.accelerator_nf4 or self.target_device.startswith("cuda"):
+                load_kwargs["device_map"] = {"": self.target_device}
+            self.model = LLM2Vec.from_pretrained(**load_kwargs)
+            print("[LLM2VecEncoder] Weight files loaded. Preparing inference modules...", flush=True)
             self.model.eval()
             for param in self.model.parameters():
                 param.requires_grad = False
-
-        if self.target_device.startswith("cuda"):
-            from kimodo.demo.memory_manager import manager
-            manager.ensure_vram_capacity(5400 * 1024 * 1024, device=self.target_device, exclude_name="text_encoder")
+            print("[LLM2VecEncoder] Inference modules ready. Resolving device placement...", flush=True)
 
         curr_device = self.get_device()
         desired_type = self.target_device.split(":")[0]
-        if curr_device.type != desired_type:
-            print(f"[LLM2VecEncoder] Moving weights to {self.target_device}...")
+        if curr_device.type != desired_type and not (self.accelerator_int8 or self.accelerator_nf4):
+            print(f"[LLM2VecEncoder] Moving encoder weights to {self.target_device}...", flush=True)
             self.model.model.to(self.target_device)
+            print("[LLM2VecEncoder] Device transfer complete. Reclaiming host memory...", flush=True)
             
             gc.collect()
             
@@ -189,19 +196,13 @@ class LLM2VecEncoder(nn.Module):
                     ctypes.CDLL("libc.so.6").malloc_trim(0)
                 except Exception:
                     pass
-            elif platform.system() == "Windows":
-                from kimodo.demo.memory_manager import release_system_memory
-                release_system_memory()
-
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 torch.cuda.ipc_collect()
             if torch.backends.mps.is_available():
                 torch.mps.empty_cache()
             
-            if self.target_device.startswith("cuda"):
-                from kimodo.demo.memory_manager import manager
-                manager.log_memory_usage("Encoder Transfer Complete (RAM Reclaimed)")
+            print(f"[LLM2VecEncoder] Text encoder ready on {self.target_device}.", flush=True)
         else:
             print(f"[LLM2VecEncoder] Model already on target device ({curr_device})")
 

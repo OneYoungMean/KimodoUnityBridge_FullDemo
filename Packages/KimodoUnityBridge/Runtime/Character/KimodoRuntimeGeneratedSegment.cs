@@ -15,5 +15,9 @@ namespace KimodoBridge
         public Vector3 WorldAccumulatedOffset;
         public int EffectiveLastFrameIndex;
         public float EffectiveLastFrameTimeSeconds;
+        public byte[] MotionBytes;
+        public string MotionRepFingerprint;
+        public int? ResolvedSeed;
+        public bool UseRawRootPosition;
     }
 }

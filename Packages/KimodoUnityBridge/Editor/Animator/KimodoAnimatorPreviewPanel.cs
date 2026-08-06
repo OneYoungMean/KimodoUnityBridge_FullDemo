@@ -359,9 +359,11 @@ namespace KimodoBridge.Editor
             float generationDurationSeconds,
             bool isLoop,
             out string constraintsJson,
+            out List<KimodoMarkerSampleResult> constraintSamples,
             out string error)
         {
             constraintsJson = string.Empty;
+            constraintSamples = new List<KimodoMarkerSampleResult>();
             error = string.Empty;
 
             if (mode == KimodoInOutConstraintMode.None)
@@ -423,7 +425,12 @@ namespace KimodoBridge.Editor
                     return false;
             }
 
-            int generatedFrameCount = KimodoInOutConstraintAdapter.DurationSecondsToFrameCount(generationDurationSeconds);
+            float generationFrameRate = KimodoMotionModelProfiles.ResolveGenerationFrameRate(modelName);
+            int generatedFrameCount = Mathf.Max(
+                1,
+                KimodoFrameTimeUtility.SecondsToFrameCount(
+                    generationDurationSeconds,
+                    generationFrameRate));
             var request = new KimodoInOutConstraintRequest
             {
                 Mode = mode,
@@ -447,6 +454,10 @@ namespace KimodoBridge.Editor
             }
 
             constraintsJson = result != null ? result.ConstraintsJson ?? string.Empty : string.Empty;
+            if (result?.CombinedSamples != null)
+            {
+                constraintSamples.AddRange(result.CombinedSamples);
+            }
             return true;
         }
 
@@ -495,12 +506,12 @@ namespace KimodoBridge.Editor
         {
             if (selectedTransition != null)
             {
-                return selectedTransition.GetInstanceID();
+                return KimodoUnityObjectIdUtility.IdHash(selectedTransition);
             }
 
             if (selectedState != null)
             {
-                return selectedState.GetInstanceID();
+                return KimodoUnityObjectIdUtility.IdHash(selectedState);
             }
 
             return 0;
@@ -522,7 +533,7 @@ namespace KimodoBridge.Editor
                 selectedController = KimodoAnimatorSelectionUtility.FindControllerForObject(transition);
                 selectedStateMachine = KimodoAnimatorSelectionUtility.FindStateMachineForTransition(selectedController, transition, out selectedFromState);
                 selectionLatched = lockSelection;
-                latchedSelectionInstanceId = lockSelection ? obj.GetInstanceID() : 0;
+                latchedSelectionInstanceId = lockSelection ? KimodoUnityObjectIdUtility.IdHash(obj) : 0;
                 return true;
             }
 
@@ -534,7 +545,7 @@ namespace KimodoBridge.Editor
                 selectedController = KimodoAnimatorSelectionUtility.FindControllerForObject(state);
                 selectedStateMachine = KimodoAnimatorSelectionUtility.FindStateMachineForState(selectedController, state);
                 selectionLatched = lockSelection;
-                latchedSelectionInstanceId = lockSelection ? obj.GetInstanceID() : 0;
+                latchedSelectionInstanceId = lockSelection ? KimodoUnityObjectIdUtility.IdHash(obj) : 0;
                 return true;
             }
 
@@ -754,7 +765,7 @@ namespace KimodoBridge.Editor
                     if (KimodoRuntimeAvatarSkeletonBuilder.TryLoadAvatarByModelName(modelName, out Avatar fallbackAvatar, out _)
                         && fallbackAvatar != null && fallbackAvatar.isValid && fallbackAvatar.isHuman)
                     {
-                        if (!KimodoRetargetAvatarUtility.TryCreateTemporaryHumanoidRoot(
+                        if (!KimodoRetargetAvatarUtility.TryCreateVirtualSkeleton(
                             fallbackAvatar,
                             "KimodoPreviewSkeletonTemplate",
                             animatorEnabled: false,

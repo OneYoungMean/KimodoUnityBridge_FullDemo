@@ -6,6 +6,7 @@ using TimelineInject;
 using UnityEditor;
 using UnityEditor.Timeline;
 using UnityEngine;
+using UnityEngine.Playables;
 using UnityEngine.Timeline;
 
 namespace KimodoBridge.Editor
@@ -14,49 +15,207 @@ namespace KimodoBridge.Editor
     {
         private const string ReplaceTimelineAnimationUndoName = "Kimodo Replace Timeline Animation";
         private static readonly KimodoEditorConstraintProvider ConstraintProvider = new KimodoEditorConstraintProvider();
-
         public static KimodoEditorGenerateRequest BuildRequest(
             KimodoPlayableClip clip,
             string prompt,
             KimodoExternalConstraintRequest externalConstraint,
-            CancellationToken token)
+            CancellationToken token,
+            int? effectiveSeedOverride = null,
+            bool disableTimelineInOut = false,
+            bool deferConstraintNormalization = false,
+            bool enableAutoBeginAnchor = true)
         {
             if (clip == null)
             {
                 throw new InvalidOperationException("Playable clip is null.");
             }
 
+            string resolvedModelName = KimodoPlayableClip.NormalizeBridgeModelName(clip.bridgeModelName);
+            bool isArdy = KimodoMotionModelProfiles.TryGetArdy(
+                resolvedModelName,
+                out KimodoMotionModelProfile ardyProfile);
+            TimelineClip timelineClip = KimodoTimelineClipResolver.FindTimelineClipForAsset(clip);
+            if (timelineClip == null || timelineClip.duration <= 0.0)
+            {
+                throw new InvalidOperationException("Generation length requires a Timeline clip with positive duration.");
+            }
+            float targetFrameRate = KimodoMotionModelProfiles.ResolveGenerationFrameRate(resolvedModelName);
+            int targetFrameCount = Mathf.Max(
+                KimodoPlayableClip.MIN_FRAMES,
+                KimodoFrameTimeUtility.SecondsToFrameCount(timelineClip.duration, targetFrameRate));
+            bool useOutsideGuardFrame = ShouldUseOutsideGuardFrame(
+                clip,
+                externalConstraint,
+                disableTimelineInOut);
+            int runtimeFrameCount = targetFrameCount + (useOutsideGuardFrame ? 1 : 0);
+            int runtimeTrimStartFrame = useOutsideGuardFrame ? 1 : 0;
+            double runtimeSampleOffsetSeconds = useOutsideGuardFrame ? 1.0 / targetFrameRate : 0.0;
+            float runtimeLengthSeconds = runtimeFrameCount / targetFrameRate;
+
             string constraintsJson;
+            bool hasSyntheticAutoBeginConstraint = false;
+            var constraintSamples = new List<KimodoMarkerSampleResult>();
             if (externalConstraint != null && externalConstraint.Enabled)
             {
-                constraintsJson = externalConstraint.ConstraintsJson ?? string.Empty;
+                if (externalConstraint.IncludeTimelineConstraints)
+                {
+                    KimodoInOutConstraintResult constraintResult = ConstraintProvider.BuildConstraintDataOrThrow(
+                        clip,
+                        runtimeFrameCount,
+                        disableTimelineInOut,
+                        deferConstraintNormalization,
+                        enableAutoBeginAnchor,
+                        runtimeSampleOffsetSeconds);
+                    constraintsJson = constraintResult.ConstraintsJson ?? string.Empty;
+                    KimodoInOutConstraintComposer.AppendSamples(constraintResult.CombinedSamples, constraintSamples);
+                    hasSyntheticAutoBeginConstraint = constraintResult.HasSyntheticAutoBeginConstraint;
+                }
+                else
+                {
+                    constraintsJson = externalConstraint.ConstraintsJson ?? string.Empty;
+                }
+                int externalSampleStart = constraintSamples.Count;
+                KimodoInOutConstraintComposer.AppendSamples(externalConstraint.ConstraintSamples, constraintSamples);
+                for (int i = externalSampleStart; i < constraintSamples.Count; i++)
+                {
+                    constraintSamples[i].sampleTime += runtimeSampleOffsetSeconds;
+                }
+                if (hasSyntheticAutoBeginConstraint &&
+                    constraintSamples.Count > 0 &&
+                    KimodoConstraintNormalizationUtility.HasNormalizationAnchor(
+                        constraintSamples,
+                        1.0,
+                        constraintSamples[0]))
+                {
+                    constraintSamples.RemoveAt(0);
+                    hasSyntheticAutoBeginConstraint = false;
+                }
+                if (constraintSamples.Count > 0)
+                {
+                    constraintsJson = KimodoConstraintJsonExporter.ToConstraintsJson(
+                        constraintSamples,
+                        0.0,
+                        runtimeLengthSeconds,
+                        targetFrameRate);
+                }
             }
             else
             {
-                constraintsJson = ConstraintProvider.BuildConstraintsJsonOrThrow(clip);
+                KimodoInOutConstraintResult constraintResult = ConstraintProvider.BuildConstraintDataOrThrow(
+                    clip,
+                    runtimeFrameCount,
+                    disableTimelineInOut,
+                    deferConstraintNormalization,
+                    enableAutoBeginAnchor,
+                    runtimeSampleOffsetSeconds);
+                constraintsJson = constraintResult.ConstraintsJson ?? string.Empty;
+                KimodoInOutConstraintComposer.AppendSamples(constraintResult.CombinedSamples, constraintSamples);
+                hasSyntheticAutoBeginConstraint = constraintResult.HasSyntheticAutoBeginConstraint;
             }
 
-            string resolvedModelName = KimodoPlayableClip.NormalizeBridgeModelName(clip.bridgeModelName);
-            int effectiveSeed = ResolveEffectiveSeed(clip);
+            ArdyEditorHistorySource initialHistorySource = null;
+            if (isArdy)
+            {
+                if (!disableTimelineInOut)
+                {
+                    ResolveArdyInitialHistory(
+                        clip,
+                        ardyProfile,
+                        out initialHistorySource);
+                }
+                if (constraintSamples.Count > 0)
+                {
+                    constraintsJson = KimodoConstraintJsonExporter.ToConstraintsJson(
+                        constraintSamples,
+                        0.0,
+                        runtimeLengthSeconds,
+                        ardyProfile.SourceFps);
+                }
+            }
+            int effectiveSeed = effectiveSeedOverride ?? ResolveEffectiveSeed(clip);
+            if (effectiveSeedOverride.HasValue && clip.seed != effectiveSeed)
+            {
+                clip.seed = effectiveSeed;
+                EditorUtility.SetDirty(clip);
+            }
+            GameObject outputBindingObject = ConstraintProvider.FindTimelineBindingObjectForAsset(clip);
+            PlayableDirector outputDirector = null;
+            TrackAsset outputTrack = timelineClip.GetParentTrack();
+            if (outputTrack != null)
+            {
+                KimodoInOutConstraintAdapter.TryResolveDirector(
+                    timelineClip,
+                    outputTrack,
+                    out outputDirector,
+                    out _);
+            }
+            KimodoEditorGenerateOutputPlan outputPlanSnapshot = CaptureTimelineOutputPlan(
+                clip,
+                externalConstraint?.RetargetAvatar,
+                resolvedModelName,
+                outputBindingObject);
             return new KimodoEditorGenerateRequest
             {
                 Prompt = prompt,
                 ModelName = resolvedModelName,
-                BridgeVramMode = clip.bridgeVramMode,
-                DurationSeconds = Mathf.Clamp(clip.generationFrames, KimodoPlayableClip.MIN_FRAMES, KimodoPlayableClip.MAX_FRAMES) / KimodoPlayableClip.FIXED_FRAME_RATE,
-                DiffusionSteps = Mathf.Clamp(clip.diffusionSteps, 1, 1000),
+                TextEncoderMode = clip.textEncoderMode,
+                TargetFrameCount = targetFrameCount,
+                TargetFrameRate = targetFrameRate,
+                RuntimeFrameCount = runtimeFrameCount,
+                RuntimeTrimStartFrame = runtimeTrimStartFrame,
+                DiffusionSteps = KimodoMotionModelProfiles.ClampDiffusionSteps(
+                    resolvedModelName,
+                    clip.diffusionSteps),
+                TextWeight = 1f,
                 EffectiveSeed = effectiveSeed,
                 ConstraintsJson = constraintsJson,
                 CreateTargetClip = () => CreateTimelineTargetClip(clip),
                 ResolveOutputPlan = (generatedClip, modelName) => ResolveTimelineOutputPlan(
-                    clip,
+                    outputPlanSnapshot,
+                    outputBindingObject,
                     generatedClip,
-                    externalConstraint?.RetargetAvatar,
                     modelName),
+                OutputPlan = outputPlanSnapshot,
                 ModelsRoot = KimodoPlayableClipGenerationSettings.instance.LocalModelsPath?.Trim() ?? string.Empty,
                 GenerationTimeoutSeconds = KimodoPlayableClipGenerationSettings.instance.GenerationTimeoutSeconds,
-                Token = token
+                Token = token,
+                HasSyntheticAutoBeginConstraint = hasSyntheticAutoBeginConstraint,
+                ConstraintSamples = constraintSamples,
+                TimelineClipSnapshot = timelineClip,
+                ResetTimelineTimeScaleAfterGeneration =
+                    !disableTimelineInOut &&
+                    (externalConstraint == null ||
+                        !externalConstraint.Enabled ||
+                        externalConstraint.IncludeTimelineConstraints) &&
+                    clip.inOutConstraintMode == KimodoInOutConstraintMode.Inside &&
+                    (clip.enableInConstraint || clip.enableOutConstraint) &&
+                    !Mathf.Approximately((float)timelineClip.timeScale, 1f),
+                TimelineDirectorSnapshot = outputDirector,
+                InitialArdyHistorySource = initialHistorySource,
+                ArdyHistoryCropSeconds = isArdy && clip.ardyAutoHistory ? 0.0 : (double?)null,
+                ArdyHistoryWeight = isArdy && !clip.ardyAutoHistory
+                    ? Mathf.Clamp01(clip.ardyHistoryWeight)
+                    : (double?)null,
+                ArdyMaxSpeed = isArdy && clip.ardyAutoHistory
+                    ? Mathf.Max(0.01f, clip.ardyTargetMaxSpeed)
+                    : (double?)null,
+                ArdyMaxAcceleration = isArdy && clip.ardyAutoHistory
+                    ? Mathf.Max(0.01f, clip.ardyTargetMaxAcceleration)
+                    : (double?)null,
+                ArdyHistoryTransitionWeight = isArdy && clip.ardyAutoHistory ? 0.5 : (double?)null
             };
+        }
+
+        private static bool ShouldUseOutsideGuardFrame(
+            KimodoPlayableClip clip,
+            KimodoExternalConstraintRequest externalConstraint,
+            bool disableTimelineInOut)
+        {
+            return clip != null &&
+                !disableTimelineInOut &&
+                (externalConstraint?.Enabled != true || externalConstraint.IncludeTimelineConstraints) &&
+                clip.inOutConstraintMode == KimodoInOutConstraintMode.Outside &&
+                (clip.enableInConstraint || clip.enableOutConstraint);
         }
 
         public static void FinalizeGeneration(
@@ -69,15 +228,21 @@ namespace KimodoBridge.Editor
                 return;
             }
 
-            int undoGroup = BeginReplaceTimelineAnimationUndo(clip, out TimelineClip timelineClip);
+            TimelineClip timelineClip = request.TimelineClipSnapshot ??
+                KimodoTimelineClipResolver.FindTimelineClipForAsset(clip);
+            int undoGroup = BeginReplaceTimelineAnimationUndo(clip, timelineClip);
             try
             {
                 clip.clip = result.GeneratedClip;
                 ApplyGeneratedMetadata(clip, result.Prompt, result.MotionJsonCompact);
+                clip.ardyMotionCachePath = result.ArdyMotionCachePath ?? string.Empty;
+                // Per-request KMB data is released after the final clip is materialized.
+                clip.ardyMotionRepFingerprint = result.ArdyMotionRepFingerprint ?? string.Empty;
+                clip.ardyResolvedSeeds = result.ArdyResolvedSeeds ?? new List<int>();
                 EditorUtility.SetDirty(clip);
                 EditorUtility.SetDirty(result.GeneratedClip);
                 result.ConstraintsPath = string.IsNullOrWhiteSpace(request.ConstraintsJson) ? "(none)" : "(inline-json)";
-                HandleGeneratedClipWritebackCompleted(clip, timelineClip);
+                HandleGeneratedClipWritebackCompleted(clip);
 
                 if (!KimodoEditorClipWritebackService.TryMaterializeGeneratedClipCache(
                         result.GeneratedClip,
@@ -97,11 +262,44 @@ namespace KimodoBridge.Editor
                 {
                     EditorUtility.SetDirty(generatedCacheClip);
                 }
+
+                ResetTimelineTimeScaleAfterGeneration(request);
             }
             finally
             {
                 Undo.CollapseUndoOperations(undoGroup);
             }
+        }
+
+        internal static bool ResetTimelineTimeScaleAfterGeneration(KimodoEditorGenerateRequest request)
+        {
+            TimelineClip timelineClip = request?.TimelineClipSnapshot;
+            if (request?.ResetTimelineTimeScaleAfterGeneration != true ||
+                timelineClip == null ||
+                Mathf.Approximately((float)timelineClip.timeScale, 1f))
+            {
+                return false;
+            }
+
+            timelineClip.timeScale = 1.0;
+            TrackAsset track = timelineClip.GetParentTrack();
+            if (track != null)
+            {
+                EditorUtility.SetDirty(track);
+                if (track.timelineAsset != null)
+                {
+                    EditorUtility.SetDirty(track.timelineAsset);
+                }
+            }
+
+            if (TimelineEditor.inspectedAsset != null)
+            {
+                TimelineEditor.Refresh(
+                    RefreshReason.ContentsModified |
+                    RefreshReason.SceneNeedsUpdate |
+                    RefreshReason.WindowNeedsRedraw);
+            }
+            return true;
         }
 
         public static void CleanupFailedGeneration(KimodoEditorGenerateRequest request)
@@ -125,6 +323,11 @@ namespace KimodoBridge.Editor
                 return;
             }
 
+            if (string.IsNullOrWhiteSpace(AssetDatabase.GetAssetPath(clip)))
+            {
+                UnityEngine.Object.DestroyImmediate(clip);
+                return;
+            }
             KimodoEditorClipWritebackService.TryDeleteGeneratedAnimationClipAsset(clip);
         }
 
@@ -145,63 +348,24 @@ namespace KimodoBridge.Editor
             clip.isGenerated = true;
             clip.frameCount = obj.Value<int?>("num_frames") ?? 0;
             clip.jointCount = obj.Value<int?>("num_joints") ?? 0;
-            clip.fps = Mathf.RoundToInt(KimodoPlayableClip.FIXED_FRAME_RATE);
+            clip.fps = Mathf.RoundToInt(obj.Value<float?>("fps") ?? KimodoPlayableClip.FIXED_FRAME_RATE);
         }
 
-        private static void HandleGeneratedClipWritebackCompleted(KimodoPlayableClip playableClip, TimelineClip timelineClip)
+        private static void HandleGeneratedClipWritebackCompleted(KimodoPlayableClip playableClip)
         {
+            if (playableClip != null)
+            {
+                playableClip.position = Vector3.zero;
+                playableClip.rotation = Quaternion.identity;
+                EditorUtility.SetDirty(playableClip);
+            }
             KimodoTimelinePreviewRefreshUtility.RefreshIfPreviewing();
-            TryMatchOffsetsToPreviousClip(playableClip, timelineClip);
         }
 
-        private static void TryMatchOffsetsToPreviousClip(KimodoPlayableClip playableClip, TimelineClip timelineClip)
+        private static int BeginReplaceTimelineAnimationUndo(
+            KimodoPlayableClip playableClip,
+            TimelineClip timelineClip)
         {
-            if (playableClip == null || playableClip.inOutConstraintMode != KimodoInOutConstraintMode.Outside)
-            {
-                return;
-            }
-
-            if (TimelineEditor.inspectedDirector == null)
-            {
-                Debug.LogWarning($"[Kimodo][TimelineOffset] skipped for '{playableClip.name}': Timeline inspected director is null.");
-                return;
-            }
-
-            if (timelineClip == null)
-            {
-                Debug.LogWarning($"[Kimodo][TimelineOffset] skipped for '{playableClip.name}': timeline clip not found.");
-                return;
-            }
-
-            if (!KimodoInOutConstraintAdapter.HasPreviousNeighbor(timelineClip))
-            {
-                Debug.LogWarning($"[Kimodo][TimelineOffset] skipped for '{playableClip.name}': no previous neighbor clip.");
-                return;
-            }
-
-            if (!KimodoTimelinePreviewRefreshUtility.TimelineMatchClipsToPrevious(timelineClip,out string error))
-            {
-                throw new InvalidOperationException(
-                    $"Match Offsets to Previous Clip failed for '{playableClip.name}': {error}");
-            }
-
-            Debug.Log($"[Kimodo][TimelineOffset] matched previous offsets for '{playableClip.name}'.");
-            EditorUtility.SetDirty(playableClip);
-            if (timelineClip.GetParentTrack() != null)
-            {
-                EditorUtility.SetDirty(timelineClip.GetParentTrack());
-            }
-
-            if (TimelineEditor.inspectedAsset != null)
-            {
-                EditorUtility.SetDirty(TimelineEditor.inspectedAsset);
-            }
-        }
-
-        private static int BeginReplaceTimelineAnimationUndo(KimodoPlayableClip playableClip, out TimelineClip timelineClip)
-        {
-            timelineClip = KimodoTimelineClipResolver.FindTimelineClipForAsset(playableClip);
-
             Undo.IncrementCurrentGroup();
             int undoGroup = Undo.GetCurrentGroup();
             Undo.SetCurrentGroupName(ReplaceTimelineAnimationUndoName);
@@ -226,7 +390,7 @@ namespace KimodoBridge.Editor
             return undoGroup;
         }
 
-        private static Avatar ResolveOriginRetargetAvatar(string modelName)
+        internal static Avatar ResolveOriginRetargetAvatar(string modelName)
         {
             if (!KimodoRuntimeAvatarSkeletonBuilder.TryLoadAvatarByModelName(modelName, out Avatar avatar, out _))
             {
@@ -244,14 +408,20 @@ namespace KimodoBridge.Editor
             }
 
             return KimodoEditorClipWritebackService.CreateGeneratedAnimationClipAsset(
-                $"Kimodo_Playable_{DateTime.Now:yyyyMMdd_HHmmss_fff}");
+                BuildTimelineTargetClipName(clip.bridgeModelName, DateTime.Now));
         }
 
-        private static KimodoEditorGenerateOutputPlan ResolveTimelineOutputPlan(
+        internal static string BuildTimelineTargetClipName(string modelName, DateTime timestamp)
+        {
+            bool isArdy = KimodoMotionModelProfiles.TryGetArdy(modelName, out _);
+            return $"{(isArdy ? "ARDY" : "Kimodo")}_Playable_{timestamp:yyyyMMdd_HHmmss_fff}";
+        }
+
+        internal static KimodoEditorGenerateOutputPlan CaptureTimelineOutputPlan(
             KimodoPlayableClip clip,
-            AnimationClip generatedClip,
             Avatar explicitRetargetAvatar,
-            string modelName)
+            string modelName,
+            GameObject bindingObject)
         {
             if (clip == null)
             {
@@ -260,27 +430,57 @@ namespace KimodoBridge.Editor
 
             string resolvedModelName = KimodoPlayableClip.NormalizeBridgeModelName(modelName);
             Avatar originRetargetAvatar = ResolveOriginRetargetAvatar(resolvedModelName);
-            Avatar targetRetargetAvatar = ResolveTargetRetargetAvatar(clip, explicitRetargetAvatar, out bool hasBindingAvatar);
+            Avatar targetRetargetAvatar = ResolveTargetRetargetAvatar(
+                clip,
+                explicitRetargetAvatar,
+                bindingObject,
+                out bool hasBindingAvatar);
             bool hasValidRetargetAvatar =
                 KimodoRetargetCoreUtility.IsValidHumanoid(originRetargetAvatar) &&
                 hasBindingAvatar &&
                 KimodoRetargetCoreUtility.IsValidHumanoid(targetRetargetAvatar);
-            GameObject bindingObject = ConstraintProvider.FindTimelineBindingObjectForAsset(clip);
+
+            return new KimodoEditorGenerateOutputPlan
+            {
+                OriginRetargetAvatar = originRetargetAvatar,
+                TargetRetargetAvatar = targetRetargetAvatar,
+                ExportMuscleClip = hasValidRetargetAvatar && TryResolveBindingAnimatorAvatar(bindingObject, out _),
+                CurveFilterOptions = CloneCurveFilterOptions(clip.curveFilterOptions),
+                SkipRetarget = false
+            };
+        }
+
+        internal static KimodoEditorGenerateOutputPlan ResolveTimelineOutputPlan(
+            KimodoEditorGenerateOutputPlan snapshot,
+            GameObject bindingObject,
+            AnimationClip generatedClip,
+            string modelName)
+        {
+            if (snapshot == null)
+            {
+                throw new InvalidOperationException("Timeline output plan snapshot is null.");
+            }
+
+            string resolvedModelName = KimodoPlayableClip.NormalizeBridgeModelName(modelName);
             bool canSkipRetarget =
                 bindingObject != null &&
                 KimodoEditorClipUtility.CanApplyClipDirectlyToProfileSkeleton(generatedClip, bindingObject, resolvedModelName, out _);
 
             return new KimodoEditorGenerateOutputPlan
             {
-                OriginRetargetAvatar = originRetargetAvatar,
-                TargetRetargetAvatar = targetRetargetAvatar,
-                ExportMuscleClip = hasValidRetargetAvatar && TryResolveBindingAnimatorAvatar(clip, out _),
-                CurveFilterOptions = clip.curveFilterOptions,
+                OriginRetargetAvatar = snapshot.OriginRetargetAvatar,
+                TargetRetargetAvatar = snapshot.TargetRetargetAvatar,
+                ExportMuscleClip = snapshot.ExportMuscleClip,
+                CurveFilterOptions = snapshot.CurveFilterOptions,
                 SkipRetarget = canSkipRetarget
             };
         }
 
-        private static Avatar ResolveTargetRetargetAvatar(KimodoPlayableClip clip, Avatar explicitRetargetAvatar, out bool hasBindingAvatar)
+        private static Avatar ResolveTargetRetargetAvatar(
+            KimodoPlayableClip clip,
+            Avatar explicitRetargetAvatar,
+            GameObject bindingObject,
+            out bool hasBindingAvatar)
         {
             hasBindingAvatar = false;
             if (explicitRetargetAvatar != null && explicitRetargetAvatar.isValid && explicitRetargetAvatar.isHuman)
@@ -289,7 +489,6 @@ namespace KimodoBridge.Editor
                 return explicitRetargetAvatar;
             }
 
-            GameObject bindingObject = ConstraintProvider.FindTimelineBindingObjectForAsset(clip);
             if (bindingObject != null)
             {
                 KimodoLocalAvatarUtility.AvatarResolveResult result = KimodoLocalAvatarUtility.ResolveAvatarFromGameObject(bindingObject);
@@ -309,10 +508,9 @@ namespace KimodoBridge.Editor
             return null;
         }
 
-        private static bool TryResolveBindingAnimatorAvatar(KimodoPlayableClip clip, out Avatar avatar)
+        private static bool TryResolveBindingAnimatorAvatar(GameObject bindingObject, out Avatar avatar)
         {
             avatar = null;
-            GameObject bindingObject = ConstraintProvider.FindTimelineBindingObjectForAsset(clip);
             if (bindingObject == null)
             {
                 return false;
@@ -333,6 +531,19 @@ namespace KimodoBridge.Editor
             return true;
         }
 
+        private static KimodoCurveFilterOptions CloneCurveFilterOptions(KimodoCurveFilterOptions source)
+        {
+            source ??= new KimodoCurveFilterOptions();
+            return new KimodoCurveFilterOptions
+            {
+                enabled = source.enabled,
+                positionError = source.positionError,
+                rotationError = source.rotationError,
+                floatError = source.floatError,
+                ensureQuaternionContinuity = source.ensureQuaternionContinuity
+            };
+        }
+
         private static int ResolveEffectiveSeed(KimodoPlayableClip clip)
         {
             int effectiveSeed = clip.randomSeed
@@ -346,6 +557,42 @@ namespace KimodoBridge.Editor
             }
 
             return effectiveSeed;
+        }
+
+        private static void ResolveArdyInitialHistory(
+            KimodoPlayableClip clip,
+            KimodoMotionModelProfile profile,
+            out ArdyEditorHistorySource source)
+        {
+            source = null;
+            if (clip.inOutConstraintMode != KimodoInOutConstraintMode.Outside || !clip.enableInConstraint)
+            {
+                return;
+            }
+
+            TimelineClip timelineClip = KimodoTimelineClipResolver.FindTimelineClipForAsset(clip);
+            if (timelineClip == null ||
+                !KimodoInOutConstraintAdapter.TryResolveTimelineContext(
+                    timelineClip,
+                    out KimodoTimelineInOutConstraintContext context,
+                    out _))
+            {
+                return;
+            }
+
+            if (context.PreviousTimelineClip == null || context.PreviousTimelineClip.duration <= 0.0)
+            {
+                return;
+            }
+
+            source = new ArdyEditorHistorySource
+            {
+                TimelineContext = context,
+                RangeStartSeconds = Math.Max(
+                    0.0,
+                    timelineClip.start - (profile.MaxContextFrames - profile.HorizonFrames) / profile.SourceFps),
+                RangeEndSeconds = Math.Max(0.0, timelineClip.start)
+            };
         }
 
     }

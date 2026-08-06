@@ -14,12 +14,6 @@ namespace KimodoBridge
 
         public ProcessStartInfo BuildLauncherStartInfo(
             string launcherPath,
-            string modelName,
-            bool highVram,
-            bool forceSetup,
-            bool forceCpu,
-            string modelsRoot,
-            int idleTimeoutSeconds,
             int ownerProcessId)
         {
             string ext = Path.GetExtension(launcherPath)?.ToLowerInvariant() ?? string.Empty;
@@ -30,24 +24,20 @@ namespace KimodoBridge
 
             EnsureReadableByBash(launcherPath);
 
-            string modelArg = $" --model \"{(string.IsNullOrWhiteSpace(modelName) ? "Kimodo-SOMA-RP-v1" : modelName.Trim())}\"";
-            string vramArg = highVram ? " --highvram" : string.Empty;
-            string forceSetupArg = forceSetup ? " --force-setup" : string.Empty;
-            string forceCpuArg = forceCpu ? " --device cpu" : string.Empty;
-            string modelsArg = string.IsNullOrWhiteSpace(modelsRoot) ? string.Empty : $" --models-root \"{modelsRoot.Trim()}\"";
             string watchPidArg = ownerProcessId > 0 ? $" --watchpid {ownerProcessId}" : string.Empty;
             string outputArg = " --output file";
-            string args = modelArg + vramArg + forceSetupArg + forceCpuArg + modelsArg + watchPidArg + outputArg;
-            string envPrefix = $"KIMODO_IDLE_TIMEOUT_SEC={Math.Max(0, idleTimeoutSeconds)}";
-
-            return new ProcessStartInfo
+            string args = watchPidArg + outputArg;
+            var startInfo = new ProcessStartInfo
             {
                 FileName = "bash",
-                Arguments = $"-lc \"{envPrefix} bash \\\"{launcherPath}\\\"{args}\"",
+                Arguments = $"-lc \"bash \\\"{launcherPath}\\\"{args}\"",
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 WorkingDirectory = Path.GetDirectoryName(launcherPath) ?? Environment.CurrentDirectory
             };
+            startInfo.EnvironmentVariables["KIMODO_IDLE_TIMEOUT_SEC"] = "0";
+            startInfo.EnvironmentVariables["KIMODO_AUTO_INSTALL_UV"] = "1";
+            return startInfo;
         }
 
         private static void EnsureReadableByBash(string launcherPath)

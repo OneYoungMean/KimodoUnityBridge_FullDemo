@@ -1,4 +1,6 @@
+using TimelineInject;
 using UnityEngine;
+using System;
 
 namespace KimodoBridge
 {
@@ -16,20 +18,34 @@ namespace KimodoBridge
 
         public static Vector3 QuaternionToAxisAngleVector(Quaternion q)
         {
-            q.Normalize();
-            q.ToAngleAxis(out float degrees, out Vector3 axis);
-            if (float.IsNaN(axis.x) || axis == Vector3.zero)
+            return KimodoConstraintRotationUtility.QuaternionToAxisAngleVector(q);
+        }
+    }
+
+    public static class KimodoUnityObjectIdUtility
+    {
+        public static string NameKey(UnityEngine.Object value)
+        {
+            return value != null ? value.name ?? string.Empty : string.Empty;
+        }
+
+        public static int IdHash(UnityEngine.Object value)
+        {
+            if (value == null)
             {
-                return Vector3.zero;
+                return 0;
             }
 
-            if (degrees > 180f)
-            {
-                degrees -= 360f;
-            }
+#if UNITY_6000_5_OR_NEWER
+            return value.GetEntityId().GetHashCode();
+#else
+            return value.GetInstanceID();
+#endif
+        }
 
-            float radians = degrees * Mathf.Deg2Rad;
-            return axis.normalized * radians;
+        public static int NameHash(UnityEngine.Object value)
+        {
+            return StringComparer.Ordinal.GetHashCode(NameKey(value));
         }
     }
 }

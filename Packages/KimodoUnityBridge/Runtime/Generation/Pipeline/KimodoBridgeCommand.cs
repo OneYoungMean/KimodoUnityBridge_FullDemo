@@ -18,11 +18,6 @@ namespace KimodoBridge
 
             progress?.Invoke(KimodoBridgeCommandStage.Validate, "Validating generation request...");
 
-            if (request.RuntimeSettings == null)
-            {
-                throw new InvalidOperationException("Runtime settings are required.");
-            }
-
             if (request.GenerationRequest == null)
             {
                 throw new InvalidOperationException("Generation request is required.");
@@ -41,7 +36,9 @@ namespace KimodoBridge
                 result.motionJsonCompact = KimodoRawMotionUtility.ToCompactJson(result.motionData);
             }
 
-            if (string.IsNullOrWhiteSpace(result.motionJsonCompact))
+            bool emptyKmbResult = string.Equals(result.motionFormat, "kmb_v1", StringComparison.OrdinalIgnoreCase) &&
+                result.motionBytes != null && result.motionBytes.Length == 0;
+            if (string.IsNullOrWhiteSpace(result.motionJsonCompact) && !emptyKmbResult)
             {
                 throw new InvalidOperationException(result.message ?? "No motion json found in runtime generation result.");
             }
@@ -54,7 +51,12 @@ namespace KimodoBridge
                 MotionData = result.motionData,
                 MotionFormat = result.motionFormat,
                 Message = result.message ?? string.Empty,
-                RawStatus = result.rawStatus ?? string.Empty
+                RawStatus = result.rawStatus ?? string.Empty,
+                MotionBytes = result.motionBytes,
+                MotionRepFingerprint = result.motionRepFingerprint ?? string.Empty,
+                ResolvedSeed = result.resolvedSeed,
+                StartFrame = result.startFrame,
+                EndFrameExclusive = result.endFrameExclusive
             };
         }
 
@@ -63,25 +65,21 @@ namespace KimodoBridge
             Action<KimodoBridgeCommandStage, string> progress,
             CancellationToken token)
         {
-            if (request.RuntimeSettings.bridgeSettings == null)
-            {
-                throw new InvalidOperationException("Bridge runtime settings are required.");
-            }
-
-            progress?.Invoke(KimodoBridgeCommandStage.InvokeBackend, "Starting generation backend...");
-
-            using var bridgeService = new KimodoBridgeService(request.RuntimeSettings.bridgeSettings);
-            _ = await bridgeService.StartAsync(
-                message => progress?.Invoke(KimodoBridgeCommandStage.InvokeBackend, message ?? string.Empty),
-                token);
-
-            token.ThrowIfCancellationRequested();
             progress?.Invoke(KimodoBridgeCommandStage.InvokeBackend, "Invoking generation backend...");
 
-            KimodoBridgeGenerationResult bridgeResult = await bridgeService.GenerateAsync(
-                request.GenerationRequest,
-                message => progress?.Invoke(KimodoBridgeCommandStage.InvokeBackend, message ?? string.Empty),
-                token);
+            KimodoBridgeGenerationResult bridgeResult;
+            KimodoBridgeService bridgeService = KimodoBridgeService.CreateOwned();
+            try
+            {
+                bridgeResult = await bridgeService.GenerateAsync(
+                    request.GenerationRequest,
+                    message => progress?.Invoke(KimodoBridgeCommandStage.InvokeBackend, message ?? string.Empty),
+                    token);
+            }
+            finally
+            {
+                await bridgeService.DisposeAsync();
+            }
 
             return new KimodoGenerationResultDto
             {
@@ -89,7 +87,12 @@ namespace KimodoBridge
                 message = bridgeResult?.Message ?? "Bridge generation complete.",
                 motionJsonCompact = bridgeResult?.MotionJsonCompact,
                 motionData = bridgeResult?.MotionData,
-                motionFormat = bridgeResult?.MotionFormat
+                motionBytes = bridgeResult?.MotionBytes,
+                motionFormat = bridgeResult?.MotionFormat,
+                motionRepFingerprint = bridgeResult?.MotionRepFingerprint,
+                resolvedSeed = bridgeResult?.ResolvedSeed,
+                startFrame = bridgeResult?.StartFrame ?? 0,
+                endFrameExclusive = bridgeResult?.EndFrameExclusive ?? 0
             };
         }
     }
@@ -101,6 +104,11 @@ namespace KimodoBridge
         public string MotionFormat;
         public string Message;
         public string RawStatus;
+        public byte[] MotionBytes;
+        public string MotionRepFingerprint;
+        public int? ResolvedSeed;
+        public int StartFrame;
+        public int EndFrameExclusive;
     }
 
     public enum KimodoBridgeCommandStage
@@ -118,7 +126,6 @@ namespace KimodoBridge
 
     public sealed class KimodoBridgeCommandRequest
     {
-        public KimodoRuntimeGenerationSettings RuntimeSettings;
         public KimodoGenerationRequestDto GenerationRequest;
     }
 }

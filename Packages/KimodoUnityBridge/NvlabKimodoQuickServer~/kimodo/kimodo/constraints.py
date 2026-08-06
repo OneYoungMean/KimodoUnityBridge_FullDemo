@@ -7,7 +7,7 @@ from typing import Optional, Union
 import torch
 from torch import Tensor
 
-from kimodo.motion_rep.feature_utils import compute_heading_angle
+from kimodo.motion_rep.feature_utils import RotateFeatures, compute_heading_angle
 from kimodo.skeleton import SkeletonBase, SOMASkeleton30, SOMASkeleton77
 from kimodo.tools import ensure_batched, load_json, save_json
 
@@ -52,6 +52,104 @@ def compute_global_heading(global_joints_positions: Tensor, skeleton: SkeletonBa
     root_heading_angle = compute_heading_angle(global_joints_positions, skeleton)
     global_root_heading = torch.stack([torch.cos(root_heading_angle), torch.sin(root_heading_angle)], dim=-1)
     return global_root_heading
+
+
+def _root_2d_attribute(constraint) -> str:
+    if hasattr(constraint, "smooth_root_2d"):
+        return "smooth_root_2d"
+    if hasattr(constraint, "root_2d"):
+        return "root_2d"
+    raise AttributeError(f"{type(constraint).__name__} has no planar root constraint.")
+
+
+def transform_constraints_to_origin(constraints_lst: list, transform) -> None:
+    if transform is None:
+        return
+
+    translation, yaw = transform
+    for constraint in constraints_lst:
+        root_attribute = _root_2d_attribute(constraint)
+        root_2d = getattr(constraint, root_attribute)
+        device = root_2d.device
+        dtype = root_2d.dtype
+        local_translation = translation.to(device=device, dtype=dtype)
+        local_yaw = yaw.to(device=device, dtype=dtype)
+        local_rotation = RotateFeatures((-local_yaw).reshape(1))
+        heading_rotation_2d_t = local_rotation.corrective_mat_2d_T[0]
+        rotation_3d = local_rotation.corrective_mat_Y[0]
+        rotation_3d_t = local_rotation.corrective_mat_Y_T[0]
+        # Root positions are stored as (x, z), while heading vectors are stored
+        # as (cos(yaw), sin(yaw)).  Those two pairs use opposite matrix layouts;
+        # using the heading matrix for root positions mirrors the trajectory at
+        # non-zero anchor yaw.  Take the x/z block from the 3D position rotation
+        # so root_2d stays in the same space as global_joints_positions.
+        root_rotation_2d_t = rotation_3d_t[[0, 2]][:, [0, 2]]
+        setattr(constraint, root_attribute, (root_2d - local_translation) @ root_rotation_2d_t)
+
+        heading = getattr(constraint, "global_root_heading", None)
+        if heading is not None:
+            constraint.global_root_heading = (
+                heading - local_yaw
+                if heading.ndim == 1
+                else heading @ heading_rotation_2d_t
+            )
+        if hasattr(constraint, "global_joints_positions"):
+            offset = torch.zeros(3, device=device, dtype=dtype)
+            offset[[0, 2]] = local_translation
+            constraint.global_joints_positions = (constraint.global_joints_positions - offset) @ rotation_3d_t
+            constraint.global_joints_rots = rotation_3d @ constraint.global_joints_rots
+            if root_attribute == "smooth_root_2d":
+                constraint.global_root_heading = compute_global_heading(
+                    constraint.global_joints_positions, constraint.skeleton
+                )
+
+
+def normalize_constraints_to_anchor(constraints_lst: list):
+    """Move Kimodo or ARDY constraints into one planar anchor space.
+
+    The earliest constrained frame wins. At that frame the priority is fullbody,
+    end/foot, then root2d; input order breaks ties. Y is intentionally preserved.
+    Returns the planar ``(x, z)`` translation and yaw needed to restore output.
+    """
+    candidates = []
+    priority = {
+        "fullbody": 3,
+        "end-effector": 2,
+        "left-hand": 2,
+        "right-hand": 2,
+        "left-foot": 2,
+        "right-foot": 2,
+        "root2d": 1,
+    }
+    for order, constraint in enumerate(constraints_lst or []):
+        if len(constraint.frame_indices) == 0:
+            continue
+        rank = priority.get(getattr(constraint, "name", ""), 0)
+        if rank:
+            candidates.append((int(constraint.frame_indices.min().item()), -rank, order, constraint))
+    if not candidates:
+        return None
+
+    anchor_frame, _, _, anchor = min(candidates, key=lambda item: item[:3])
+    matches = (anchor.frame_indices == anchor_frame).nonzero(as_tuple=False).flatten()
+    anchor_row = int(matches[0].item())
+    root_attribute = _root_2d_attribute(anchor)
+    translation = getattr(anchor, root_attribute)[anchor_row].detach().clone()
+    heading = getattr(anchor, "global_root_heading", None)
+    yaw = (
+        (
+            heading[anchor_row]
+            if heading.ndim == 1
+            else torch.atan2(heading[anchor_row, 1], heading[anchor_row, 0])
+        )
+        .detach()
+        .clone()
+        if heading is not None
+        else torch.zeros((), device=translation.device, dtype=translation.dtype)
+    )
+    transform = translation, yaw
+    transform_constraints_to_origin(constraints_lst, transform)
+    return transform
 
 
 def _tensor_to(
@@ -494,13 +592,37 @@ class EndEffectorConstraintSet:
             local_rot_mats,
             torch.tensor(dico["root_positions"], device=device),
         )
+
+        kwargs = {}
+        joint_names = getattr(cls, "joint_names", None)
+        if joint_names is None:
+            joint_names = dico["joint_names"]
+            kwargs["joint_names"] = joint_names
+
+        target_positions = dico.get("target_positions")
+        if target_positions is not None:
+            if len(target_positions) != len(frame_indices):
+                raise ValueError("target_positions must match frame_indices length")
+            _, position_joint_names = skeleton.expand_joint_names(joint_names)
+            if not position_joint_names:
+                raise ValueError("end-effector target has no position joint")
+            target_joint_index = skeleton.bone_index[position_joint_names[0]]
+            global_joints_positions = global_joints_positions.clone()
+            for frame, target_position in enumerate(target_positions):
+                if target_position is None:
+                    continue
+                target = torch.as_tensor(
+                    target_position,
+                    device=global_joints_positions.device,
+                    dtype=global_joints_positions.dtype,
+                )
+                if target.shape != (3,) or not torch.isfinite(target).all():
+                    raise ValueError("target_positions entries must be finite xyz vectors")
+                global_joints_positions[frame, target_joint_index] = target
+
         smooth_root_2d = None
         if "smooth_root_2d" in dico:
             smooth_root_2d = torch.tensor(dico["smooth_root_2d"], device=device)
-
-        kwargs = {}
-        if not hasattr(cls, "joint_names"):
-            kwargs["joint_names"] = dico["joint_names"]
 
         return cls(
             skeleton,

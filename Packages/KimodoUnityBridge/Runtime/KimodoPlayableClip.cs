@@ -1,13 +1,16 @@
 using UnityEngine;
 using UnityEngine.Playables;
 using UnityEngine.Timeline;
+using System.Collections.Generic;
+using UnityEngine.Serialization;
+using TimelineInject;
 
 namespace KimodoBridge
 {
-    public enum KimodoBridgeVramMode
+    public enum KimodoTextEncoderMode
     {
-        Low = 0,
-        High = 1
+        HighPerformance = 0,
+        HighPrecision = 1
     }
 
     public enum KimodoBakeSkeletonType
@@ -44,29 +47,49 @@ namespace KimodoBridge
     }
 
     [System.Serializable]
-    public class KimodoPlayableClip : AnimationPlayableAsset
+    public class KimodoPlayableClip : AnimationPlayableAsset, IKimodoConstraintPreviewSelectable
     {
         [Header("Kimodo Bridge")]
         public string bridgeModelName = DefaultBridgeModelName;
-        [Tooltip("Low: quantized encoder (~4G). High: full encoder (~16G). Kimodo base model ~2G.")]
-        public KimodoBridgeVramMode bridgeVramMode = KimodoBridgeVramMode.Low;
+        [FormerlySerializedAs("bridgeVramMode")]
+        [Tooltip("High Performance uses NF4/INT8. High Precision uses FP16. Device placement is automatic.")]
+        public KimodoTextEncoderMode textEncoderMode = KimodoTextEncoderMode.HighPerformance;
 
         [TextArea(2, 6)]
         public string motionPrompt = "a man walk and say hello";
         public int generationFrames = DEFAULT_FRAMES;
         public int diffusionSteps = 100;
+        [HideInInspector, Range(0f, 4f)] public float textWeight = 1f;
         public bool randomSeed = false;
         public int seed = 42;
         [SerializeField, HideInInspector]
         private Avatar customRetargetAvatar;
         [Tooltip("Choose whether to disable InOutConstraint, use this clip's own start/end poses, or use neighboring clip boundary poses.")]
         public KimodoInOutConstraintMode inOutConstraintMode = KimodoInOutConstraintMode.None;
+        [Tooltip("Generate the In boundary constraint when InOut Constraint is Inside or Outside.")]
+        public bool enableInConstraint = true;
+        [Tooltip("Generate the Out boundary constraint when InOut Constraint is Inside or Outside.")]
+        public bool enableOutConstraint = true;
+        [Tooltip("Adapt the ARDY history window from upcoming motion constraints.")]
+        public bool ardyAutoHistory = true;
+        [Range(0f, 1f)]
+        [Tooltip("0 uses one motion token of history; 1 uses the largest history window allowed by the model context.")]
+        public float ardyHistoryWeight = 1f;
+        [Min(0.01f)]
+        [Tooltip("Maximum root speed used by ARDY Auto History for a future Full-Body target.")]
+        public float ardyTargetMaxSpeed = DefaultArdyTargetMaxSpeed;
+        [Min(0.01f)]
+        [Tooltip("Maximum root acceleration used by ARDY Auto History for a future Full-Body target.")]
+        public float ardyTargetMaxAcceleration = DefaultArdyTargetMaxAcceleration;
         [Tooltip("Show all constraint pose previews for this clip when selected in Timeline/Inspector.")]
         public bool showConstraint = true;
-        [Tooltip("Normalize constraint root positions around the first available origin anchor before export.")]
-        public bool normalizeConstraintOrigin = true;
+        [Tooltip("When the first second has no effective constraint anchor, use the Timeline start pose as the anchor.")]
+        public bool autoBeginAnchor = true;
         public bool isGenerated;
         public string lastGeneratedPrompt;
+        [SerializeField, HideInInspector] public string ardyMotionCachePath;
+        [SerializeField, HideInInspector] public string ardyMotionRepFingerprint;
+        [SerializeField, HideInInspector] public List<int> ardyResolvedSeeds = new List<int>();
         [Header("Bake Options")]
         [Tooltip("Auto retarget baked animation according to timeline binding animator.")]
         public bool autoRetargetOnBinding = true;
@@ -115,11 +138,17 @@ namespace KimodoBridge
             set => customRetargetAvatar = value;
         }
 
+        public bool ConstraintPreviewEnabled => showConstraint;
+        public int ConstraintPreviewPriority => 1;
+        public string ConstraintPreviewName => "Clip";
+
         public const float FIXED_FRAME_RATE = 30f;
         public const int MIN_FRAMES = 1;
         public const int MAX_FRAMES = 300;
         public const int DEFAULT_FRAMES = 150;
         public const string DefaultBridgeModelName = "Kimodo-SOMA-RP-v1";
+        public const float DefaultArdyTargetMaxSpeed = 1.25f;
+        public const float DefaultArdyTargetMaxAcceleration = 1.5f;
 
         public override Playable CreatePlayable(PlayableGraph graph, GameObject owner)
         {
@@ -133,6 +162,9 @@ namespace KimodoBridge
             frameCount = 0;
             jointCount = 0;
             fps = Mathf.RoundToInt(FIXED_FRAME_RATE);
+            ardyMotionCachePath = string.Empty;
+            ardyMotionRepFingerprint = string.Empty;
+            ardyResolvedSeeds.Clear();
         }
 
     }

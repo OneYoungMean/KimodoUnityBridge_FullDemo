@@ -5,14 +5,14 @@ using System.Net;
 
 namespace KimodoBridge
 {
-    public static class BridgeEndpointResolver
+    internal static class BridgeEndpointResolver
     {
-        public static string GetServerPortFilePath(string runtimeRoot)
+        internal static string GetServerPortFilePath(string runtimeRoot)
         {
             return Path.Combine(runtimeRoot, "serverport");
         }
 
-        public static string ResolveAttachLogPath(string runtimeRoot)
+        internal static string ResolveAttachLogPath(string runtimeRoot)
         {
             if (string.IsNullOrWhiteSpace(runtimeRoot))
             {
@@ -59,12 +59,41 @@ namespace KimodoBridge
             return Path.Combine(logDir, "bridge_server.log");
         }
 
-        public static bool TryReadServerEndpoint(string runtimeRoot, string hostFallback, out string host, out int port, out string error)
+        internal static bool TryReadServerEndpoint(string runtimeRoot, string hostFallback, out string host, out int port, out string error)
         {
             return TryReadServerEndpointFromFile(GetServerPortFilePath(runtimeRoot), hostFallback, out host, out port, out error);
         }
 
-        public static bool TryReadServerEndpointFromFile(string serverPortPath, string hostFallback, out string host, out int port, out string error)
+        internal static bool TryReadServerProcessId(string runtimeRoot, out int processId)
+        {
+            processId = -1;
+            try
+            {
+                string path = GetServerPortFilePath(runtimeRoot);
+                if (!File.Exists(path))
+                {
+                    return false;
+                }
+
+                foreach (string line in File.ReadAllLines(path))
+                {
+                    int eqIndex = line.IndexOf('=');
+                    if (eqIndex <= 0 || !line.Substring(0, eqIndex).Trim().Equals("pid", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    return int.TryParse(line.Substring(eqIndex + 1).Trim(), out processId) && processId > 0;
+                }
+            }
+            catch
+            {
+                // The endpoint file may disappear while the server is shutting down.
+            }
+            return false;
+        }
+
+        internal static bool TryReadServerEndpointFromFile(string serverPortPath, string hostFallback, out string host, out int port, out string error)
         {
             host = string.IsNullOrWhiteSpace(hostFallback) ? "127.0.0.1" : hostFallback.Trim();
             port = -1;
@@ -85,11 +114,44 @@ namespace KimodoBridge
                     return false;
                 }
 
-                int split = text.LastIndexOf(':');
-                if (split > 0 && split < text.Length - 1)
+                string[] lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                string firstLine = lines.Length > 0 ? lines[0].Trim() : text;
+                foreach (string line in lines)
                 {
-                    string rawHost = text.Substring(0, split).Trim();
-                    string rawPort = text.Substring(split + 1).Trim();
+                    int eqIndex = line.IndexOf('=');
+                    if (eqIndex <= 0)
+                    {
+                        continue;
+                    }
+
+                    string key = line.Substring(0, eqIndex).Trim();
+                    string value = line.Substring(eqIndex + 1).Trim();
+                    if (key.Equals("host", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!string.IsNullOrWhiteSpace(value))
+                        {
+                            host = value;
+                        }
+                    }
+                    else if (key.Equals("port", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (TryParsePort(value, out int parsedPort))
+                        {
+                            port = parsedPort;
+                        }
+                    }
+                }
+
+                if (port > 0 && TryParseHost(host, out host))
+                {
+                    return true;
+                }
+
+                int split = firstLine.LastIndexOf(':');
+                if (split > 0 && split < firstLine.Length - 1)
+                {
+                    string rawHost = firstLine.Substring(0, split).Trim();
+                    string rawPort = firstLine.Substring(split + 1).Trim();
                     if (!TryParsePort(rawPort, out port))
                     {
                         error = $"invalid port in serverport: '{rawPort}'";
@@ -105,9 +167,9 @@ namespace KimodoBridge
                     return true;
                 }
 
-                if (!TryParsePort(text, out port))
+                if (!TryParsePort(firstLine, out port))
                 {
-                    error = $"invalid serverport content: '{text}'";
+                    error = $"invalid serverport content: '{firstLine}'";
                     return false;
                 }
 

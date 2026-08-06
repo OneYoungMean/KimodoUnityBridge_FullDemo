@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using TimelineInject;
 using UnityEditor;
@@ -15,10 +16,8 @@ namespace KimodoBridge.Editor
         private string lastError = string.Empty;
         private bool isGenerating;
         private string bridgeModelName = KimodoPlayableClip.DefaultBridgeModelName;
-        private KimodoBridgeVramMode bridgeVramMode = KimodoBridgeVramMode.Low;
+        private KimodoTextEncoderMode textEncoderMode = KimodoTextEncoderMode.HighPerformance;
         private string motionPrompt = string.Empty;
-        private bool autoDuration = true;
-        private float customDurationSeconds = KimodoPlayableClip.DEFAULT_FRAMES / KimodoPlayableClip.FIXED_FRAME_RATE;
         private int diffusionSteps = 100;
         private KimodoInOutConstraintMode inOutConstraintMode = KimodoInOutConstraintMode.Inside;
         private bool isLoop;
@@ -30,7 +29,9 @@ namespace KimodoBridge.Editor
         private KimodoAnimatorEditorPanel editorPanel;
         private string lastSuggestedPrompt = string.Empty;
 
-        [MenuItem(MenuPath, priority = 110)]
+        // TODO: Re-enable the Animator Tool entry after its workflow is reviewed.
+        // The implementation below is intentionally preserved; only the editor menu entry is disabled.
+        //[MenuItem(MenuPath, priority = 110)]
         private static void OpenWindow()
         {
             KimodoAnimatorToolWindow window = GetWindow<KimodoAnimatorToolWindow>("Kimodo Animator Tool");
@@ -40,6 +41,13 @@ namespace KimodoBridge.Editor
 
         private void OnEnable()
         {
+            KimodoPlayableClipGenerationSettings settings = KimodoPlayableClipGenerationSettings.instance;
+            if (settings != null)
+            {
+                bridgeModelName = settings.DefaultBridgeModelName;
+                textEncoderMode = settings.DefaultTextEncoderMode;
+            }
+
             previewPanel = new KimodoAnimatorPreviewPanel();
             previewPanel.Initialize();
             editorPanel = new KimodoAnimatorEditorPanel();
@@ -104,10 +112,8 @@ namespace KimodoBridge.Editor
                     position.height,
                     previewPanel,
                     ref bridgeModelName,
-                    ref bridgeVramMode,
+                    ref textEncoderMode,
                     ref motionPrompt,
-                    ref autoDuration,
-                    ref customDurationSeconds,
                     suggestedDurationSeconds,
                     ref diffusionSteps,
                     ref inOutConstraintMode,
@@ -189,8 +195,14 @@ namespace KimodoBridge.Editor
                 return;
             }
 
-            float generationDurationSeconds = ResolveGenerationDurationSeconds();
-            int generationFrameCount = KimodoInOutConstraintAdapter.DurationSecondsToFrameCount(generationDurationSeconds);
+            float generationDurationSeconds = previewPanel.GetSuggestedDurationSeconds();
+            string resolvedModelName = KimodoPlayableClip.NormalizeBridgeModelName(bridgeModelName);
+            float targetFrameRate = KimodoMotionModelProfiles.TryGetArdy(resolvedModelName, out KimodoMotionModelProfile profile)
+                ? profile.SourceFps
+                : KimodoPlayableClip.FIXED_FRAME_RATE;
+            int generationFrameCount = Mathf.Max(
+                1,
+                KimodoFrameTimeUtility.SecondsToFrameCount(generationDurationSeconds, targetFrameRate));
             int effectiveSeed = ResolveEffectiveSeedForRun();
             string constraintsJson = string.Empty;
             if (!previewPanel.TryBuildExternalConstraints(
@@ -199,6 +211,7 @@ namespace KimodoBridge.Editor
                     generationDurationSeconds,
                     isLoop,
                     out constraintsJson,
+                    out List<KimodoMarkerSampleResult> constraintSamples,
                     out error))
             {
                 lastError = error;
@@ -218,7 +231,7 @@ namespace KimodoBridge.Editor
             lastStatus = "Generating and baking...";
             if (!EditorGenerateSessionRunner.Start(
                     requestTarget,
-                    $"animator:{requestTarget.GetInstanceID()}",
+                    $"animator:{KimodoUnityObjectIdUtility.NameKey(requestTarget)}",
                     KimodoEditorCommandKind.GeneratePlayableClip,
                     async (session, token) =>
                     {
@@ -226,6 +239,8 @@ namespace KimodoBridge.Editor
                             constraintsJson,
                             previewPanel.RetargetAvatarForPreview,
                             generationFrameCount,
+                            targetFrameRate,
+                            constraintSamples,
                             effectiveSeed,
                             token,
                             (stage, message) =>
@@ -332,22 +347,6 @@ namespace KimodoBridge.Editor
             }
 
             lastSuggestedPrompt = suggestedPrompt;
-            if (autoDuration)
-            {
-                customDurationSeconds = previewPanel.GetSuggestedDurationSeconds();
-            }
-            else
-            {
-                customDurationSeconds = ClampDurationSeconds(customDurationSeconds);
-            }
-        }
-
-        private float ResolveGenerationDurationSeconds()
-        {
-            float durationSeconds = autoDuration && previewPanel != null
-                ? previewPanel.GetSuggestedDurationSeconds()
-                : customDurationSeconds;
-            return ClampDurationSeconds(durationSeconds);
         }
 
         private int ResolveEffectiveSeedForRun()
@@ -363,20 +362,33 @@ namespace KimodoBridge.Editor
             string constraintsJson,
             Avatar explicitRetargetAvatar,
             int generationFrameCount,
+            float targetFrameRate,
+            List<KimodoMarkerSampleResult> constraintSamples,
             int effectiveSeed,
             CancellationToken token,
             Action<KimodoBridgeCommandStage, string> progress)
         {
             string resolvedModelName = KimodoPlayableClip.NormalizeBridgeModelName(bridgeModelName);
+            List<KimodoMarkerSampleResult> samples = constraintSamples ?? new List<KimodoMarkerSampleResult>();
+            string resolvedConstraintsJson = samples.Count > 0
+                ? KimodoConstraintJsonExporter.ToConstraintsJson(
+                    samples,
+                    0.0,
+                    generationFrameCount / targetFrameRate,
+                    targetFrameRate)
+                : constraintsJson ?? string.Empty;
             return new KimodoEditorGenerateRequest
             {
                 Prompt = motionPrompt,
                 ModelName = resolvedModelName,
-                BridgeVramMode = bridgeVramMode,
-                DurationSeconds = generationFrameCount / KimodoPlayableClip.FIXED_FRAME_RATE,
+                TextEncoderMode = textEncoderMode,
+                TargetFrameCount = generationFrameCount,
+                TargetFrameRate = targetFrameRate,
                 DiffusionSteps = diffusionSteps,
+                TextWeight = 1f,
                 EffectiveSeed = effectiveSeed,
-                ConstraintsJson = constraintsJson ?? string.Empty,
+                ConstraintsJson = resolvedConstraintsJson,
+                ConstraintSamples = samples,
                 CreateTargetClip = CreateAnimatorTargetClip,
                 ResolveOutputPlan = (generatedClip, modelName) => ResolveAnimatorOutputPlan(
                     generatedClip,
@@ -442,13 +454,6 @@ namespace KimodoBridge.Editor
             }
 
             return KimodoRetargetCoreUtility.IsValidHumanoid(avatar) ? avatar : null;
-        }
-
-        private static float ClampDurationSeconds(float durationSeconds)
-        {
-            float minDuration = KimodoPlayableClip.MIN_FRAMES / KimodoPlayableClip.FIXED_FRAME_RATE;
-            float maxDuration = KimodoPlayableClip.MAX_FRAMES / KimodoPlayableClip.FIXED_FRAME_RATE;
-            return Mathf.Clamp(durationSeconds, minDuration, maxDuration);
         }
 
         private void SyncSharedRequestState()
