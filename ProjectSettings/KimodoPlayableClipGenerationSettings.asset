@@ -22,6 +22,5 @@ MonoBehaviour:
   writeResampledTimelineCacheClips: 0
   enableDebugLog: 0
   enableKimodoStaticGraph: 1
-  setupWizardCompleted: 1
   quickServerPath: 
   advancedCurveFilterFoldout: 0
