@@ -47,7 +47,7 @@ namespace KimodoBridge
     }
 
     [System.Serializable]
-    public class KimodoPlayableClip : AnimationPlayableAsset, IKimodoConstraintPreviewSelectable
+    public partial class KimodoPlayableClip : AnimationPlayableAsset, IKimodoConstraintPreviewSelectable
     {
         [Header("Kimodo Bridge")]
         public string bridgeModelName = DefaultBridgeModelName;
@@ -56,7 +56,7 @@ namespace KimodoBridge
         public KimodoTextEncoderMode textEncoderMode = KimodoTextEncoderMode.HighPerformance;
 
         [TextArea(2, 6)]
-        public string motionPrompt = "a man walk and say hello";
+        public string motionPrompt = string.Empty;
         public int generationFrames = DEFAULT_FRAMES;
         public int diffusionSteps = 100;
         [HideInInspector, Range(0f, 4f)] public float textWeight = 1f;

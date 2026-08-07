@@ -28,6 +28,10 @@ namespace KimodoBridge.Editor
         private SerializedProperty ardyTargetMaxSpeed;
         private SerializedProperty ardyTargetMaxAcceleration;
         private SerializedProperty showConstraint;
+        private SerializedProperty splinePathEnabled;
+        private SerializedProperty splineWaypointCount;
+        private SerializedProperty splineDensePath;
+        private SerializedProperty splineIncludeHeading;
         private SerializedProperty autoBeginAnchor;
 
         private SerializedProperty animationClipProp;
@@ -47,7 +51,6 @@ namespace KimodoBridge.Editor
         private string lastStatus;
         private string lastError;
         private string lastConstraintsPath = string.Empty;
-        private readonly List<KimodoConstraintMarkerBase> lastConstraintMarkers = new List<KimodoConstraintMarkerBase>();
         private bool bridgeConnectedCached;
         private bool showAdvancedFoldout = true;
         private double lastRepaintTime;
@@ -56,9 +59,41 @@ namespace KimodoBridge.Editor
         private void OnEnable()
         {
             InitializeSerializedBindings();
+            ApplyProjectPromptDefault();
             showAdvancedFoldout = KimodoPlayableClipGenerationSettings.instance.AdvancedCurveFilterFoldout;
             PullBridgeStatusSnapshot();
             SyncRequestHandleState();
+        }
+
+        private void ApplyProjectPromptDefault()
+        {
+            KimodoPlayableClipGenerationSettings settings = KimodoPlayableClipGenerationSettings.instance;
+            string defaultPrompt = settings.DefaultPrompt;
+            foreach (UnityEngine.Object selectedTarget in targets)
+            {
+                if (selectedTarget is not KimodoPlayableClip playableClip)
+                {
+                    continue;
+                }
+
+                string currentPrompt = playableClip.motionPrompt?.Trim() ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(currentPrompt) &&
+                    !string.Equals(
+                        currentPrompt,
+                        KimodoPlayableClipGenerationSettings.DefaultPromptFallback,
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (!string.Equals(playableClip.motionPrompt, defaultPrompt, StringComparison.Ordinal))
+                {
+                    playableClip.motionPrompt = defaultPrompt;
+                    EditorUtility.SetDirty(playableClip);
+                }
+            }
+
+            serializedObject.UpdateIfRequiredOrScript();
         }
 
         private void InitializeSerializedBindings()
@@ -79,6 +114,10 @@ namespace KimodoBridge.Editor
             ardyTargetMaxSpeed = serializedObject.FindProperty("ardyTargetMaxSpeed");
             ardyTargetMaxAcceleration = serializedObject.FindProperty("ardyTargetMaxAcceleration");
             showConstraint = serializedObject.FindProperty("showConstraint");
+            splinePathEnabled = serializedObject.FindProperty("splinePathEnabled");
+            splineWaypointCount = serializedObject.FindProperty("splineWaypointCount");
+            splineDensePath = serializedObject.FindProperty("splineDensePath");
+            splineIncludeHeading = serializedObject.FindProperty("splineIncludeHeading");
             autoBeginAnchor = serializedObject.FindProperty("autoBeginAnchor");
 
             animationClipProp = serializedObject.FindProperty("m_Clip");
@@ -234,6 +273,8 @@ namespace KimodoBridge.Editor
             }
             KimodoConstraintSelectionPreviewTool.ScheduleRefresh();
 
+            DrawSplinePathSection(timelineClip);
+
             DrawConstraintReferenceList();
 
             bool disableGenerate =
@@ -325,18 +366,119 @@ namespace KimodoBridge.Editor
             EditorGUILayout.Space();
         }
 
+        private void DrawSplinePathSection(TimelineClip timelineClip)
+        {
+            if (splinePathEnabled == null ||
+                !KimodoPlayableClipGenerationSettings.instance.EnableSplineExperimental)
+            {
+                return;
+            }
+
+            if (targets.Length != 1)
+            {
+                EditorGUILayout.HelpBox("Spline Path can only be edited for one Kimodo Playable clip at a time.", MessageType.Info);
+                return;
+            }
+
+            EditorGUI.BeginChangeCheck();
+            EditorGUILayout.PropertyField(
+                splinePathEnabled,
+                new GUIContent("Spline Path", "Store an editable spline on this clip and export its Root2D waypoints when generating."));
+            if (EditorGUI.EndChangeCheck())
+            {
+                serializedObject.ApplyModifiedProperties();
+                if (KimodoSplinePathEditorBridge.TrySetEnabled(
+                        clip,
+                        splinePathEnabled.boolValue,
+                        out string pathError))
+                {
+                    lastError = string.Empty;
+                    lastStatus = splinePathEnabled.boolValue
+                        ? "Spline Path enabled. Select Edit Spline to change its knots."
+                        : "Spline Path hidden.";
+                }
+                else
+                {
+                    lastError = pathError;
+                }
+            }
+
+            if (!splinePathEnabled.boolValue)
+            {
+                return;
+            }
+
+            EditorGUI.indentLevel++;
+            EditorGUILayout.PropertyField(
+                splineWaypointCount,
+                new GUIContent("Root2D Samples", "Number of evenly timed Root2D samples exported from the spline."));
+            EditorGUILayout.PropertyField(
+                splineDensePath,
+                new GUIContent("Dense Path", "Ask Kimodo to expand the Root2D samples into a dense path."));
+            EditorGUILayout.PropertyField(
+                splineIncludeHeading,
+                new GUIContent("Include Heading", "Export the planar spline tangent as Root2D heading."));
+            EditorGUI.indentLevel--;
+
+            if (!KimodoSplinePathEditorBridge.IsAvailable)
+            {
+                EditorGUILayout.HelpBox(
+                    "Install com.unity.splines to use this experimental editor integration. The main Kimodo package does not install it automatically.",
+                    MessageType.Warning);
+                return;
+            }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button(new GUIContent("Edit Spline", "Create a temporary hidden SplineContainer and enter Unity's spline editing mode.")))
+                {
+                    if (KimodoSplinePathEditorBridge.TryBeginEditing(clip, timelineClip, out string editError))
+                    {
+                        lastError = string.Empty;
+                        lastStatus = "Editing Spline Path.";
+                    }
+                    else
+                    {
+                        lastError = editError;
+                    }
+                }
+
+                if (GUILayout.Button(new GUIContent("Reset Spline", "Rebuild from the current animation root motion, or from duration at 1 m/s when no animation is assigned.")))
+                {
+                    if (KimodoSplinePathEditorBridge.TryResetPath(clip, out string resetError))
+                    {
+                        lastError = string.Empty;
+                        lastStatus = "Spline Path reset from the current clip.";
+                    }
+                    else
+                    {
+                        lastError = resetError;
+                    }
+                }
+
+                EditorGUILayout.LabelField(
+                    $"{splineWaypointCount.intValue} Root2D samples",
+                    EditorStyles.miniLabel,
+                    GUILayout.Width(132f));
+            }
+            EditorGUILayout.HelpBox(
+                "Spline data is stored on this PlayableAsset. Unity's temporary editor proxy is created only while the clip is selected or edited. Only XZ is exported to Root2D.",
+                MessageType.None);
+        }
+
         private void DrawConstraintReferenceList()
         {
             EditorGUILayout.LabelField("Constraint References", EditorStyles.miniBoldLabel);
-            if (lastConstraintMarkers.Count == 0)
+            List<KimodoConstraintMarkerBase> references = CollectConstraintReferences();
+            if (references.Count == 0)
             {
                 EditorGUILayout.LabelField("(none)", EditorStyles.miniLabel);
             }
             else
             {
-                for (int i = 0; i < lastConstraintMarkers.Count; i++)
+                for (int i = 0; i < references.Count; i++)
                 {
-                    KimodoConstraintMarkerBase marker = lastConstraintMarkers[i];
+                    KimodoConstraintMarkerBase marker = references[i];
                     if (marker == null)
                     {
                         continue;
@@ -352,6 +494,15 @@ namespace KimodoBridge.Editor
                     }
                 }
             }
+        }
+
+        private List<KimodoConstraintMarkerBase> CollectConstraintReferences()
+        {
+            TimelineClip timelineClip = KimodoTimelineClipResolver.FindTimelineClipForAsset(clip);
+            TrackAsset track = timelineClip != null ? timelineClip.GetParentTrack() : null;
+            return track == null
+                ? new List<KimodoConstraintMarkerBase>()
+                : KimodoTimelineConstraintMarkerSampler.CollectMarkersForClip(track, timelineClip);
         }
 
         private void PullBridgeStatusSnapshot()
@@ -528,19 +679,6 @@ namespace KimodoBridge.Editor
                         lastConstraintsPath = generateResult.ConstraintsPath;
                     }
 
-                    lastConstraintMarkers.Clear();
-                    var latestMarkers = KimodoPlayableClipGenerationHostService.GetLatestConstraintMarkers();
-                    if (latestMarkers != null)
-                    {
-                        for (int i = 0; i < latestMarkers.Count; i++)
-                        {
-                            KimodoConstraintMarkerBase marker = latestMarkers[i];
-                            if (marker != null)
-                            {
-                                lastConstraintMarkers.Add(marker);
-                            }
-                        }
-                    }
                     break;
                 case KimodoEditorRequestStatus.Failed:
                     lastStatus = "Generation failed.";

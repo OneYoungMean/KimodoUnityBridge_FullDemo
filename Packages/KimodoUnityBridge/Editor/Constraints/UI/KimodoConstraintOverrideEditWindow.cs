@@ -15,6 +15,7 @@ namespace KimodoBridge.Editor
         private string editEntryId;
         private bool timelineLockCaptured;
         private bool previousTimelineLockState;
+        private bool sceneDragActive;
         private Vector2 scroll;
         private string lastError;
 
@@ -114,6 +115,7 @@ namespace KimodoBridge.Editor
             }
             LockTimelineWindow();
             EditorApplication.update += OnEditorUpdate;
+            SceneView.duringSceneGui += OnSceneGUI;
         }
 
         private void OnDisable()
@@ -128,6 +130,7 @@ namespace KimodoBridge.Editor
                 currentWindow = null;
             }
             EditorApplication.update -= OnEditorUpdate;
+            SceneView.duringSceneGui -= OnSceneGUI;
             if (hasEditContext)
             {
                 if (!string.IsNullOrWhiteSpace(editEntryId))
@@ -167,6 +170,25 @@ namespace KimodoBridge.Editor
             selectionBeforeOpen = null;
             hasEditContext = false;
             editEntryId = string.Empty;
+            sceneDragActive = false;
+        }
+
+        private void OnSceneGUI(SceneView sceneView)
+        {
+            Event current = Event.current;
+            if (current == null)
+            {
+                return;
+            }
+
+            if (current.type == EventType.MouseDrag)
+            {
+                sceneDragActive = true;
+            }
+            else if (current.type == EventType.MouseUp || current.type == EventType.Ignore)
+            {
+                sceneDragActive = false;
+            }
         }
 
         private void OnEditorUpdate()
@@ -179,10 +201,25 @@ namespace KimodoBridge.Editor
 
             if (TryGetEditContext(out PoseCacheRenderContext context, out _))
             {
+                if (!sceneDragActive &&
+                    (Tools.current == Tool.Move || Tools.current == Tool.Transform) &&
+                    KimodoConstraintPoseCache.IsNonRootPoseTransform(
+                        context,
+                        editEntryId,
+                        Selection.activeTransform))
+                {
+                    Tools.current = Tool.Rotate;
+                }
+
                 if (KimodoConstraintPoseCache.HasAnyTransformChanges(context, editEntryId))
                 {
-                    bool targetChanged = marker is KimodoEndEffectorConstraintMarker &&
-                        KimodoConstraintPoseCache.HasEndEffectorTargetTransformChanges(context, editEntryId);
+                    if (sceneDragActive)
+                    {
+                        Repaint();
+                        return;
+                    }
+
+                    KimodoConstraintPoseCache.RestoreNonRootBoneTranslations(context, editEntryId);
                     KimodoConstraintMarkerEditorUtility.LogDragMuscleSnapshot(
                         marker,
                         context,
@@ -205,8 +242,10 @@ namespace KimodoBridge.Editor
                     {
                         lastError = string.IsNullOrWhiteSpace(writeError) ? "marker writeback failed." : writeError;
                     }
-                    else if (!targetChanged &&
-                             !KimodoConstraintMarkerEditorUtility.TryRenderMarkerToPoseCache(marker, context, out string poseError))
+                    else if (!KimodoConstraintMarkerEditorUtility.TryRenderMarkerToPoseCache(
+                                 marker,
+                                 context,
+                                 out string poseError))
                     {
                         lastError = string.IsNullOrWhiteSpace(poseError) ? "pose cache update failed." : poseError;
                     }
@@ -260,14 +299,13 @@ namespace KimodoBridge.Editor
         {
             if (!marker.useOverride)
             {
-                EditorGUILayout.HelpBox("Override is disabled. Move the target or a preview bone to enable it.", MessageType.Info);
+                EditorGUILayout.HelpBox("Override is disabled. Move a preview bone to enable it.", MessageType.Info);
             }
 
             var so = new SerializedObject(marker);
             so.Update();
 
-            bool targetFieldChanged = DrawEndEffectorTargetField(so);
-            using (new EditorGUI.DisabledScope(!marker.useOverride && !targetFieldChanged))
+            using (new EditorGUI.DisabledScope(!marker.useOverride))
             {
                 DrawPropertyIfExists(so, "sampleData.sampleTime");
                 DrawPropertyIfExists(so, "sampleData.kimodoRootPosition");
@@ -293,13 +331,7 @@ namespace KimodoBridge.Editor
                 EditorUtility.SetDirty(marker);
                 string poseError = string.Empty;
                 bool rendered = TryGetEditContext(out PoseCacheRenderContext context, out poseError) &&
-                    (targetFieldChanged
-                        ? KimodoConstraintPoseCache.TryUpdateEndEffectorTarget(
-                            context,
-                            editEntryId,
-                            marker.ConstraintType,
-                            marker.SampleData)
-                        : KimodoConstraintMarkerEditorUtility.TryRenderMarkerToPoseCache(marker, context, out poseError));
+                    KimodoConstraintMarkerEditorUtility.TryRenderMarkerToPoseCache(marker, context, out poseError);
                 if (rendered)
                 {
                     KimodoConstraintPoseCache.ClearTransformChanges(context, editEntryId);
@@ -311,44 +343,9 @@ namespace KimodoBridge.Editor
                 }
             }
 
-            EditorGUILayout.HelpBox("Pose writes back continuously while this window is open.", MessageType.None);
-        }
-
-        private bool DrawEndEffectorTargetField(SerializedObject so)
-        {
-            if (marker is not KimodoEndEffectorConstraintMarker endEffector ||
-                string.Equals(endEffector.ConstraintType, "end-effector", System.StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
-            SerializedProperty targetProp = so.FindProperty("sampleData.endEffectorTargetPositionRootLocal");
-            if (targetProp == null)
-            {
-                return false;
-            }
-
-            EditorGUI.BeginChangeCheck();
-            EditorGUILayout.PropertyField(
-                targetProp,
-                new GUIContent("Hand/Foot Point (Root Local)"));
-            bool changed = EditorGUI.EndChangeCheck();
-            if (!changed)
-            {
-                return false;
-            }
-
-            SerializedProperty hasTargetProp = so.FindProperty("sampleData.hasEndEffectorTargetPosition");
-            if (hasTargetProp != null)
-            {
-                hasTargetProp.boolValue = true;
-            }
-            SerializedProperty overrideProp = so.FindProperty("useOverride");
-            if (overrideProp != null)
-            {
-                overrideProp.boolValue = true;
-            }
-            return true;
+            EditorGUILayout.HelpBox(
+                "Pose writes back when a Scene drag ends. Non-root bones support rotation only.",
+                MessageType.None);
         }
 
         private void DrawFooter()
@@ -427,6 +424,7 @@ namespace KimodoBridge.Editor
                 return;
             }
 
+            KimodoConstraintPoseCache.RestoreNonRootBoneTranslations(context, editEntryId);
             KimodoConstraintMarkerEditorUtility.LogDragMuscleSnapshot(
                 marker,
                 context,
@@ -519,11 +517,16 @@ namespace KimodoBridge.Editor
             string entryId)
         {
             if (marker is KimodoEndEffectorConstraintMarker &&
-                KimodoConstraintPoseCache.TryGetEndEffectorTarget(context, entryId, out GameObject target) &&
-                target != null)
+                KimodoConstraintPoseCache.TryGetEndEffectorBone(
+                    context,
+                    entryId,
+                    marker.ConstraintType,
+                    out Transform endEffectorBone) &&
+                endEffectorBone != null)
             {
-                Selection.activeGameObject = target;
-                EditorGUIUtility.PingObject(target);
+                Selection.activeGameObject = endEffectorBone.gameObject;
+                EditorGUIUtility.PingObject(endEffectorBone.gameObject);
+                Tools.current = Tool.Rotate;
                 SceneView.lastActiveSceneView?.FrameSelected();
                 return;
             }
