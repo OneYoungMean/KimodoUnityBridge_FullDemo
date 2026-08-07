@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 import numpy as np
 
+from . import quickserver_assets as assets
 from kimodo.frame_time import seconds_to_frame_count
 
 
@@ -580,6 +581,7 @@ def _plan_root_2d_target(
     anchor_frame: int,
     fps: float,
     future_horizon_frames: int | None = None,
+    extend_prediction_to_horizon: bool = False,
 ) -> dict[str, Any] | None:
     position = np.asarray(anchor_root_2d, dtype=np.float64)
     goal = np.asarray(target.position, dtype=np.float64)
@@ -600,10 +602,15 @@ def _plan_root_2d_target(
 
     prediction_frames = max(1, seconds_to_frame_count(TARGET_VELOCITY_PREDICTION_SECONDS, fps))
     future_horizon_tail_step: int | None = None
-    future_horizon_frames_value = None
-    if target.arrival_frame is None and future_horizon_frames is not None:
-        future_horizon_frames_value = max(1, int(future_horizon_frames))
-        if future_horizon_frames_value == prediction_frames:
+    future_horizon_frames_value = (
+        max(1, int(future_horizon_frames))
+        if future_horizon_frames is not None
+        else None
+    )
+    if future_horizon_frames_value is not None:
+        if extend_prediction_to_horizon:
+            prediction_frames = future_horizon_frames_value
+        elif target.arrival_frame is None and future_horizon_frames_value == prediction_frames:
             future_horizon_tail_step = future_horizon_frames_value + TARGET_VELOCITY_UPDATE_INTERVAL
             prediction_frames = future_horizon_tail_step
     dt = 1.0 / fps
@@ -1928,6 +1935,8 @@ def load_runtime(
     device: str,
     *,
     text_encoder: Any = None,
+    cancel_event: threading.Event | None = None,
+    logger: Any = None,
 ):
     from ardy.model import load_model
     from kimodo.model.load_model import _select_text_encoder_conf
@@ -1942,23 +1951,39 @@ def load_runtime(
         "stats/motion/mean.npy",
         "stats/motion/std.npy",
     )
+    assets.raise_if_download_cancelled(cancel_event)
     if not all((checkpoint_dir / relative).is_file() for relative in required):
         models_root.mkdir(parents=True, exist_ok=True)
-        try:
-            from modelscope import snapshot_download
+        checkpoint_asset = assets.AssetSpec(
+            label=f"ARDY checkpoint {profile.model_name}",
+            local_dir_name=profile.model_name,
+            modelscope_repo=profile.modelscope_repo,
+            huggingface_repo=f"nvidia/{profile.model_name}",
+        )
+        if logger is None:
+            class _SilentLogger:
+                def log(self, _message: str) -> None:
+                    pass
 
-            snapshot_download(model_id=profile.modelscope_repo, local_dir=str(checkpoint_dir))
+            logger = _SilentLogger()
+        try:
+            assets.download_via_modelscope(checkpoint_asset, checkpoint_dir, logger, cancel_event)
+        except assets.DownloadCancelledError:
+            raise
         except Exception as modelscope_error:
             try:
-                from huggingface_hub import snapshot_download
-
-                snapshot_download(repo_id=f"nvidia/{profile.model_name}", local_dir=str(checkpoint_dir))
+                assets.download_via_huggingface(checkpoint_asset, checkpoint_dir, cancel_event)
+            except assets.DownloadCancelledError:
+                raise
             except Exception as huggingface_error:
                 raise RuntimeError(
                     "ARDY checkpoint download failed via both ModelScope and Hugging Face: "
                     f"modelscope={modelscope_error}; huggingface={huggingface_error}"
                 ) from huggingface_error
+        if not all((checkpoint_dir / relative).is_file() for relative in required):
+            raise RuntimeError(f"Downloaded ARDY checkpoint is incomplete: {checkpoint_dir}")
 
+    assets.raise_if_download_cancelled(cancel_event)
     if text_encoder is None:
         text_encoder = instantiate_from_dict(
             _select_text_encoder_conf(get_env_var("TEXT_ENCODER_URL", DEFAULT_TEXT_ENCODER_URL), device)

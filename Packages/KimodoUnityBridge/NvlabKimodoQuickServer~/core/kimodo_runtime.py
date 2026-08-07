@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from dataclasses import replace
 from typing import Any
 
 import numpy as np
@@ -186,7 +187,9 @@ def _ensure_asset_ready(
     *,
     force_site: assets.DownloadSite | None,
     allow_download: bool,
+    cancel_event: threading.Event | None = None,
 ) -> None:
+    assets.raise_if_download_cancelled(cancel_event)
     if assets.asset_is_ready(asset, target_dir):
         logger.log(f"[SKIP] {asset.label} ready: {target_dir}")
         return
@@ -200,6 +203,7 @@ def _ensure_asset_ready(
         download_counter,
         force_site=force_site,
         allow_download=allow_download,
+        cancel_event=cancel_event,
     )
 
 
@@ -275,7 +279,9 @@ def _provision_bridge_assets(
     runtime_profile: _RuntimeSelfCheckResult,
     force_download_site: assets.DownloadSite | None = None,
     encoder_free_vram_gb: float | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> _BridgeProvisionPlan:
+    assets.raise_if_download_cancelled(cancel_event)
     plan = _build_bridge_provision_plan(
         kimodo_root,
         requested_model,
@@ -324,6 +330,7 @@ def _provision_bridge_assets(
         download_counter,
         force_site=force_download_site,
         allow_download=allow_download,
+        cancel_event=cancel_event,
     )
 
     encoder_assets = list(plan.text_encoder_layout.download_assets)
@@ -337,6 +344,7 @@ def _provision_bridge_assets(
             download_counter,
             force_site=force_download_site,
             allow_download=allow_download,
+            cancel_event=cancel_event,
         )
 
     if assets.should_inject_once(
@@ -482,7 +490,7 @@ def _parents_and_names(model, num_joints: int):
     return parents, names
 
 
-def _load_constraints(constraints_json: str, model):
+def _load_constraints(constraints_json: str, model, horizon_frames: int | None = None):
     if not constraints_json:
         return []
 
@@ -507,13 +515,49 @@ def _load_constraints(constraints_json: str, model):
         raise ValueError("constraints_json inline payload must be JSON array/object.")
     if any(isinstance(item, dict) and item.get("type") == "clip" for item in parsed):
         raise ValueError("Clip constraints are supported only by ARDY models.")
-    if any(isinstance(item, dict) and item.get("type") == "root2d_target" for item in parsed):
-        raise ValueError(
-            "root2d_target is an automatic ARDY-only navigation constraint; "
-            "use root2d for a single endpoint Kimodo constraint."
-        )
 
-    return load_constraints_lst(parsed, model.skeleton)
+    root_target = None
+    plain_constraints = []
+    for item in parsed:
+        if isinstance(item, dict) and item.get("type") == "root2d_target":
+            from core.ardy_backend import _parse_root_2d_target
+
+            root_target = _parse_root_2d_target(item)
+            continue
+        plain_constraints.append(item)
+
+    if root_target is not None:
+        from core.ardy_backend import _plan_root_2d_target
+
+        fps = float(model.fps)
+        target_horizon = (
+            max(1, int(horizon_frames))
+            if horizon_frames is not None
+            else max(1, seconds_to_frame_count(5.0, fps))
+        )
+        if root_target.arrival_frame is not None:
+            root_target = replace(
+                root_target,
+                arrival_frame=min(root_target.arrival_frame, target_horizon - 1),
+            )
+        planned_target = _plan_root_2d_target(
+            root_target,
+            (0.0, 0.0),
+            (0.0, 0.0),
+            -1,
+            fps,
+            target_horizon,
+            extend_prediction_to_horizon=True,
+        )
+        if planned_target is not None:
+            if "global_root_heading" in planned_target:
+                planned_target["global_root_heading"] = [
+                    [math.cos(float(angle)), math.sin(float(angle))]
+                    for angle in planned_target["global_root_heading"]
+                ]
+            plain_constraints.append(planned_target)
+
+    return load_constraints_lst(plain_constraints, model.skeleton)
 
 
 def _restore_kimodo_output_origin(output: dict, transform, model) -> dict:
@@ -953,7 +997,7 @@ def _run_generate(
 
     num_frames = max(1, seconds_to_frame_count(duration, model.fps))
     segment_frames = _generation_segment_frames(num_frames, model.fps)
-    constraints = _load_constraints(req.get("constraints_json", ""), model)
+    constraints = _load_constraints(req.get("constraints_json", ""), model, horizon_frames=num_frames)
     from kimodo.constraints import normalize_constraints_to_anchor
 
     constraint_origin = normalize_constraints_to_anchor(constraints)

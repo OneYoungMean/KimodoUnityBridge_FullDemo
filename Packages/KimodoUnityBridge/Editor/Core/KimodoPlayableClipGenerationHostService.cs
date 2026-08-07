@@ -23,7 +23,8 @@ namespace KimodoBridge.Editor
             int? effectiveSeedOverride = null,
             bool disableTimelineInOut = false,
             bool deferConstraintNormalization = false,
-            bool enableAutoBeginAnchor = true)
+            bool enableAutoBeginAnchor = true,
+            TimelineClip timelineClipOverride = null)
         {
             if (clip == null)
             {
@@ -34,7 +35,7 @@ namespace KimodoBridge.Editor
             bool isArdy = KimodoMotionModelProfiles.TryGetArdy(
                 resolvedModelName,
                 out KimodoMotionModelProfile ardyProfile);
-            TimelineClip timelineClip = KimodoTimelineClipResolver.FindTimelineClipForAsset(clip);
+            TimelineClip timelineClip = timelineClipOverride ?? KimodoTimelineClipResolver.FindTimelineClipForAsset(clip);
             if (timelineClip == null || timelineClip.duration <= 0.0)
             {
                 throw new InvalidOperationException("Generation length requires a Timeline clip with positive duration.");
@@ -54,6 +55,7 @@ namespace KimodoBridge.Editor
 
             string constraintsJson;
             bool hasSyntheticAutoBeginConstraint = false;
+            bool denseRootPath = false;
             var constraintSamples = new List<KimodoMarkerSampleResult>();
             if (externalConstraint != null && externalConstraint.Enabled)
             {
@@ -65,10 +67,12 @@ namespace KimodoBridge.Editor
                         disableTimelineInOut,
                         deferConstraintNormalization,
                         enableAutoBeginAnchor,
-                        runtimeSampleOffsetSeconds);
+                        runtimeSampleOffsetSeconds,
+                        timelineClip);
                     constraintsJson = constraintResult.ConstraintsJson ?? string.Empty;
                     KimodoInOutConstraintComposer.AppendSamples(constraintResult.CombinedSamples, constraintSamples);
                     hasSyntheticAutoBeginConstraint = constraintResult.HasSyntheticAutoBeginConstraint;
+                    denseRootPath = constraintResult.DenseRootPath;
                 }
                 else
                 {
@@ -96,7 +100,8 @@ namespace KimodoBridge.Editor
                         constraintSamples,
                         0.0,
                         runtimeLengthSeconds,
-                        targetFrameRate);
+                        targetFrameRate,
+                        denseRootPath);
                 }
             }
             else
@@ -107,10 +112,12 @@ namespace KimodoBridge.Editor
                     disableTimelineInOut,
                     deferConstraintNormalization,
                     enableAutoBeginAnchor,
-                    runtimeSampleOffsetSeconds);
+                    runtimeSampleOffsetSeconds,
+                    timelineClip);
                 constraintsJson = constraintResult.ConstraintsJson ?? string.Empty;
                 KimodoInOutConstraintComposer.AppendSamples(constraintResult.CombinedSamples, constraintSamples);
                 hasSyntheticAutoBeginConstraint = constraintResult.HasSyntheticAutoBeginConstraint;
+                denseRootPath = constraintResult.DenseRootPath;
             }
 
             ArdyEditorHistorySource initialHistorySource = null;
@@ -121,6 +128,7 @@ namespace KimodoBridge.Editor
                     ResolveArdyInitialHistory(
                         clip,
                         ardyProfile,
+                        timelineClip,
                         out initialHistorySource);
                 }
                 if (constraintSamples.Count > 0)
@@ -129,7 +137,8 @@ namespace KimodoBridge.Editor
                         constraintSamples,
                         0.0,
                         runtimeLengthSeconds,
-                        ardyProfile.SourceFps);
+                        ardyProfile.SourceFps,
+                        denseRootPath);
                 }
             }
             int effectiveSeed = effectiveSeedOverride ?? ResolveEffectiveSeed(clip);
@@ -138,7 +147,7 @@ namespace KimodoBridge.Editor
                 clip.seed = effectiveSeed;
                 EditorUtility.SetDirty(clip);
             }
-            GameObject outputBindingObject = ConstraintProvider.FindTimelineBindingObjectForAsset(clip);
+            GameObject outputBindingObject = ConstraintProvider.FindTimelineBindingObjectForAsset(clip, timelineClip);
             PlayableDirector outputDirector = null;
             TrackAsset outputTrack = timelineClip.GetParentTrack();
             if (outputTrack != null)
@@ -154,9 +163,10 @@ namespace KimodoBridge.Editor
                 externalConstraint?.RetargetAvatar,
                 resolvedModelName,
                 outputBindingObject);
+            KimodoPlayableClipGenerationSettings settings = KimodoPlayableClipGenerationSettings.instance;
             return new KimodoEditorGenerateRequest
             {
-                Prompt = prompt,
+                Prompt = settings.ResolvePrompt(prompt),
                 ModelName = resolvedModelName,
                 TextEncoderMode = clip.textEncoderMode,
                 TargetFrameCount = targetFrameCount,
@@ -176,10 +186,11 @@ namespace KimodoBridge.Editor
                     generatedClip,
                     modelName),
                 OutputPlan = outputPlanSnapshot,
-                ModelsRoot = KimodoPlayableClipGenerationSettings.instance.LocalModelsPath?.Trim() ?? string.Empty,
-                GenerationTimeoutSeconds = KimodoPlayableClipGenerationSettings.instance.GenerationTimeoutSeconds,
+                ModelsRoot = settings.LocalModelsPath?.Trim() ?? string.Empty,
+                GenerationTimeoutSeconds = settings.GenerationTimeoutSeconds,
                 Token = token,
                 HasSyntheticAutoBeginConstraint = hasSyntheticAutoBeginConstraint,
+                DenseRootPath = denseRootPath,
                 ConstraintSamples = constraintSamples,
                 TimelineClipSnapshot = timelineClip,
                 ResetTimelineTimeScaleAfterGeneration =
@@ -329,11 +340,6 @@ namespace KimodoBridge.Editor
                 return;
             }
             KimodoEditorClipWritebackService.TryDeleteGeneratedAnimationClipAsset(clip);
-        }
-
-        public static IReadOnlyList<KimodoConstraintMarkerBase> GetLatestConstraintMarkers()
-        {
-            return KimodoEditorConstraintProvider.LatestMarkers;
         }
 
         private static void ApplyGeneratedMetadata(KimodoPlayableClip clip, string prompt, string motionJson)
@@ -562,6 +568,7 @@ namespace KimodoBridge.Editor
         private static void ResolveArdyInitialHistory(
             KimodoPlayableClip clip,
             KimodoMotionModelProfile profile,
+            TimelineClip timelineClipOverride,
             out ArdyEditorHistorySource source)
         {
             source = null;
@@ -570,7 +577,7 @@ namespace KimodoBridge.Editor
                 return;
             }
 
-            TimelineClip timelineClip = KimodoTimelineClipResolver.FindTimelineClipForAsset(clip);
+            TimelineClip timelineClip = timelineClipOverride ?? KimodoTimelineClipResolver.FindTimelineClipForAsset(clip);
             if (timelineClip == null ||
                 !KimodoInOutConstraintAdapter.TryResolveTimelineContext(
                     timelineClip,

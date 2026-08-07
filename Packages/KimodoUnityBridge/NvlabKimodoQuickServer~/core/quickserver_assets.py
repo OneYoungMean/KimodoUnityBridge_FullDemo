@@ -3,8 +3,10 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
+import multiprocessing
 import os
 from pathlib import Path
+from queue import Empty
 import shutil
 import urllib.error
 import urllib.request
@@ -42,6 +44,15 @@ LEGACY_GGUF_ENV_VARS = (
     "KIMODO_GGUF_EMBED_MODEL",
     "KIMODO_FORCE_GGUF",
 )
+
+
+class DownloadCancelledError(RuntimeError):
+    pass
+
+
+def raise_if_download_cancelled(cancel_event: threading.Event | None) -> None:
+    if cancel_event is not None and cancel_event.is_set():
+        raise DownloadCancelledError("Download canceled.")
 
 
 class LoggerLike(Protocol):
@@ -145,7 +156,11 @@ def resolve_text_encoder_runtime(
     has_accelerator = device != "cpu"
     motion_device = device if has_accelerator else "cpu"
 
-    if resolved_mode == TEXT_ENCODER_MODE_HIGH_PRECISION:
+    # Apple Silicon/MPS cannot reliably load the dynamic INT8 bundles produced
+    # on x86 CPUs (for example, AMD/FBGEMM). Always use the portable FP16
+    # encoder route on Metal; it may still run on CPU when the memory budget or
+    # kernel probe does not allow MPS execution.
+    if resolved_mode == TEXT_ENCODER_MODE_HIGH_PRECISION or device == "mps":
         use_accelerator = (
             has_accelerator
             and fp16_accelerator_available
@@ -200,10 +215,13 @@ def force_text_encoder_cpu(
     return TextEncoderRuntimeDecision(
         mode=decision.mode,
         motion_device=decision.motion_device,
+        # NF4 has no CPU layout, so preserve the existing NF4 -> INT8 fallback.
+        # MPS deliberately selects FP16; keep that route instead of switching
+        # back to an x86-generated INT8 bundle.
         encoder_route=(
-            ENCODER_ROUTE_FP16
-            if decision.mode == TEXT_ENCODER_MODE_HIGH_PRECISION
-            else ENCODER_ROUTE_INT8
+            ENCODER_ROUTE_INT8
+            if decision.encoder_route == ENCODER_ROUTE_NF4
+            else decision.encoder_route
         ),
         encoder_device="cpu",
         reason=reason,
@@ -883,11 +901,16 @@ def _suppress_huggingface_progress():
         enable_progress_bars()
 
 
-def _make_logged_progress_callback(logger: LoggerLike, label: str):
+def _make_logged_progress_callback(
+    logger: LoggerLike,
+    label: str,
+    cancel_event: threading.Event | None = None,
+):
     log_lock = threading.Lock()
 
     class _LoggedProgressCallback:
         def __init__(self, filename: str, file_size: int):
+            raise_if_download_cancelled(cancel_event)
             self.filename = str(filename)
             self.file_size = max(0, int(file_size or 0))
             self.downloaded = 0
@@ -920,6 +943,7 @@ def _make_logged_progress_callback(logger: LoggerLike, label: str):
             self._log(f"[DOWNLOAD] {label}: {self.filename} {self._status_text()}")
 
         def update(self, size: int):
+            raise_if_download_cancelled(cancel_event)
             self.downloaded += int(size)
             self._maybe_log(final=False)
 
@@ -938,7 +962,13 @@ def _make_logged_progress_callback(logger: LoggerLike, label: str):
     return _LoggedProgressCallback
 
 
-def download_via_modelscope(asset: AssetSpec, target_dir: Path, logger: LoggerLike) -> None:
+def download_via_modelscope(
+    asset: AssetSpec,
+    target_dir: Path,
+    logger: LoggerLike,
+    cancel_event: threading.Event | None = None,
+) -> None:
+    raise_if_download_cancelled(cancel_event)
     repo_id = _download_site_repo_id(asset, DownloadSite.MODELSCOPE)
     if not repo_id:
         raise RuntimeError(f"Missing ModelScope repo id for {asset.label}.")
@@ -946,32 +976,75 @@ def download_via_modelscope(asset: AssetSpec, target_dir: Path, logger: LoggerLi
     from modelscope import snapshot_download as ms_snapshot_download
 
     try:
-        progress_callbacks = [_make_logged_progress_callback(logger, asset.label)]
+        progress_callbacks = [_make_logged_progress_callback(logger, asset.label, cancel_event)]
         with _suppress_modelscope_tqdm():
             ms_snapshot_download(
                 model_id=repo_id,
                 local_dir=str(target_dir),
                 progress_callbacks=progress_callbacks,
             )
+        raise_if_download_cancelled(cancel_event)
+    except DownloadCancelledError:
+        raise
     except Exception as exc:
         raise RuntimeError(f"Failed to download {asset.label} via ModelScope: {exc}") from exc
 
 
-def download_via_huggingface(asset: AssetSpec, target_dir: Path) -> None:
+def _download_huggingface_worker(repo_id: str, target_dir: str, errors) -> None:
+    try:
+        from huggingface_hub import snapshot_download as hf_snapshot_download
+
+        with _suppress_huggingface_progress():
+            hf_snapshot_download(repo_id=repo_id, local_dir=target_dir)
+    except BaseException as exc:
+        errors.put(f"{type(exc).__name__}: {exc}")
+
+
+def download_via_huggingface(
+    asset: AssetSpec,
+    target_dir: Path,
+    cancel_event: threading.Event | None = None,
+) -> None:
+    raise_if_download_cancelled(cancel_event)
     repo_id = _download_site_repo_id(asset, DownloadSite.HUGGINGFACE)
     if not repo_id:
         raise RuntimeError(f"Missing Hugging Face repo id for {asset.label}.")
 
-    from huggingface_hub import snapshot_download as hf_snapshot_download
+    if cancel_event is None:
+        from huggingface_hub import snapshot_download as hf_snapshot_download
 
+        try:
+            with _suppress_huggingface_progress():
+                hf_snapshot_download(repo_id=repo_id, local_dir=str(target_dir))
+        except Exception as exc:
+            raise RuntimeError(f"Failed to download {asset.label} via HuggingFace: {exc}") from exc
+        return
+
+    context = multiprocessing.get_context("spawn")
+    errors = context.Queue()
+    process = context.Process(target=_download_huggingface_worker, args=(repo_id, str(target_dir), errors))
     try:
-        with _suppress_huggingface_progress():
-            hf_snapshot_download(
-                repo_id=repo_id,
-                local_dir=str(target_dir),
-            )
-    except Exception as exc:
-        raise RuntimeError(f"Failed to download {asset.label} via HuggingFace: {exc}") from exc
+        process.start()
+        while process.is_alive():
+            if cancel_event.wait(0.1):
+                process.terminate()
+                process.join(timeout=5)
+                raise DownloadCancelledError("Download canceled.")
+        process.join()
+        try:
+            error = errors.get(timeout=1.0)
+        except Empty:
+            error = ""
+        if error or process.exitcode:
+            error = error or f"exit code {process.exitcode}"
+            raise RuntimeError(f"Failed to download {asset.label} via HuggingFace: {error}")
+        raise_if_download_cancelled(cancel_event)
+    finally:
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=5)
+        errors.close()
+        errors.join_thread()
 
 
 def ensure_asset_present(
@@ -983,7 +1056,9 @@ def ensure_asset_present(
     *,
     force_site: DownloadSite | None = None,
     allow_download: bool = True,
+    cancel_event: threading.Event | None = None,
 ) -> None:
+    raise_if_download_cancelled(cancel_event)
     if asset_is_ready(asset, target_dir):
         logger.log(f"[OK] {asset.label} already present: {target_dir}")
         return
@@ -1011,16 +1086,18 @@ def ensure_asset_present(
             f"repo={selected_repo_id}"
         )
         if selected_site == DownloadSite.HUGGINGFACE:
-            download_via_huggingface(asset, target_dir)
+            download_via_huggingface(asset, target_dir, cancel_event)
         else:
-            download_via_modelscope(asset, target_dir, logger)
+            download_via_modelscope(asset, target_dir, logger, cancel_event)
     else:
         logger.log(
             f"[INFO] {asset.label}: probing download sites before transfer "
             f"(timeout={DOWNLOAD_PROBE_TIMEOUT_SECONDS:.1f}s)"
         )
         huggingface_result = probe_download_site(asset, DownloadSite.HUGGINGFACE, DOWNLOAD_PROBE_TIMEOUT_SECONDS)
+        raise_if_download_cancelled(cancel_event)
         modelscope_result = probe_download_site(asset, DownloadSite.MODELSCOPE, DOWNLOAD_PROBE_TIMEOUT_SECONDS)
+        raise_if_download_cancelled(cancel_event)
         logger.log(f"[PROBE] {asset.label}: {_probe_summary(huggingface_result)}")
         logger.log(f"[PROBE] {asset.label}: {_probe_summary(modelscope_result)}")
         try:
@@ -1035,10 +1112,11 @@ def ensure_asset_present(
             f"repo={selected_repo_id or '<missing>'}"
         )
         if selected_site == DownloadSite.HUGGINGFACE:
-            download_via_huggingface(asset, target_dir)
+            download_via_huggingface(asset, target_dir, cancel_event)
         else:
-            download_via_modelscope(asset, target_dir, logger)
+            download_via_modelscope(asset, target_dir, logger, cancel_event)
 
+    raise_if_download_cancelled(cancel_event)
     if not asset_is_ready(asset, target_dir):
         raise RuntimeError(f"Downloaded asset is incomplete: {target_dir}")
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TimelineInject;
 using UnityEditor.Timeline;
 using UnityEngine;
 using UnityEngine.Playables;
@@ -9,27 +10,35 @@ namespace KimodoBridge.Editor
 {
     internal sealed class KimodoEditorConstraintProvider
     {
-        private static readonly List<KimodoConstraintMarkerBase> LatestMarkerSnapshot = new List<KimodoConstraintMarkerBase>();
-        private readonly List<KimodoConstraintMarkerBase> markerBuffer = new List<KimodoConstraintMarkerBase>();
-
-        public static IReadOnlyList<KimodoConstraintMarkerBase> LatestMarkers => LatestMarkerSnapshot;
-
         public KimodoInOutConstraintResult BuildConstraintDataOrThrow(
             KimodoPlayableClip clip,
             int? generationFramesOverride = null,
             bool disableTimelineInOut = false,
             bool deferNormalization = false,
             bool enableAutoBeginAnchor = true,
-            double sampleTimeOffsetSeconds = 0.0)
+            double sampleTimeOffsetSeconds = 0.0,
+            TimelineClip timelineClipOverride = null)
         {
-            TimelineClip sourceClip = KimodoTimelineClipResolver.FindTimelineClipForAsset(clip);
+            TimelineClip sourceClip = timelineClipOverride ?? KimodoTimelineClipResolver.FindTimelineClipForAsset(clip);
             if (sourceClip == null)
             {
-                UpdateConstraintReferences(null);
                 return new KimodoInOutConstraintResult();
             }
 
-            UpdateConstraintReferences(sourceClip);
+            int generationFrames = generationFramesOverride ?? clip.generationFrames;
+            var splinePathSamples = new List<KimodoMarkerSampleResult>();
+            bool denseSplinePath = false;
+            if (!KimodoSplinePathEditorBridge.TryBuildConstraintSamples(
+                    clip,
+                    sourceClip,
+                    generationFrames,
+                    KimodoMotionModelProfiles.ResolveGenerationFrameRate(clip.bridgeModelName),
+                    out splinePathSamples,
+                    out denseSplinePath,
+                    out string splinePathError))
+            {
+                throw new InvalidOperationException($"Build spline path constraints failed: {splinePathError}");
+            }
 
             bool ok = KimodoInOutConstraintAdapter.TryBuildConstraints(
                 sourceClip,
@@ -39,17 +48,30 @@ namespace KimodoBridge.Editor
                 // Mode=None prevents boundary sampling; true keeps manual-marker normalization independent of the In toggle.
                 disableTimelineInOut || clip.enableInConstraint,
                 !disableTimelineInOut && clip.enableOutConstraint,
-                generationFramesOverride ?? clip.generationFrames,
+                generationFrames,
                 sampleTimeOffsetSeconds,
                 out KimodoInOutConstraintResult result,
-                out string error);
+                out string error,
+                splinePathSamples);
 
             if (!ok)
             {
                 throw new InvalidOperationException($"Build constraints failed: {error}");
             }
 
-            return result ?? new KimodoInOutConstraintResult();
+            result ??= new KimodoInOutConstraintResult();
+            if (splinePathSamples.Count > 0)
+            {
+                float frameRate = KimodoMotionModelProfiles.ResolveGenerationFrameRate(clip.bridgeModelName);
+                result.DenseRootPath = denseSplinePath;
+                result.ConstraintsJson = KimodoConstraintJsonExporter.ToConstraintsJson(
+                    result.CombinedSamples,
+                    clipStartSeconds: 0.0,
+                    clipDurationSeconds: KimodoInOutConstraintTools.ResolveConstraintClipDurationSeconds(generationFrames, frameRate),
+                    exportFps: frameRate,
+                    denseRootPath: denseSplinePath);
+            }
+            return result;
         }
 
         public TimelineClip FindTimelineClipForAsset(PlayableAsset asset)
@@ -57,9 +79,11 @@ namespace KimodoBridge.Editor
             return KimodoTimelineClipResolver.FindTimelineClipForAsset(asset);
         }
 
-        public GameObject FindTimelineBindingObjectForAsset(PlayableAsset asset)
+        public GameObject FindTimelineBindingObjectForAsset(
+            PlayableAsset asset,
+            TimelineClip timelineClipOverride = null)
         {
-            TimelineClip sourceClip = FindTimelineClipForAsset(asset);
+            TimelineClip sourceClip = timelineClipOverride ?? FindTimelineClipForAsset(asset);
             if (sourceClip == null)
             {
                 return null;
@@ -98,48 +122,6 @@ namespace KimodoBridge.Editor
             }
 
             return null;
-        }
-
-        private void UpdateConstraintReferences(TimelineClip sourceClip)
-        {
-            markerBuffer.Clear();
-            if (sourceClip == null)
-            {
-                LatestMarkerSnapshot.Clear();
-                return;
-            }
-
-            TrackAsset track = sourceClip.GetParentTrack();
-            if (track == null)
-            {
-                return;
-            }
-
-            double minTime = sourceClip.start;
-            double maxTime = sourceClip.end;
-            foreach (IMarker marker in track.GetMarkers())
-            {
-                if (marker is not KimodoConstraintMarkerBase kimodoMarker)
-                {
-                    continue;
-                }
-
-                if (!kimodoMarker.constraintEnabled)
-                {
-                    continue;
-                }
-
-                if (kimodoMarker.time < minTime || kimodoMarker.time > maxTime)
-                {
-                    continue;
-                }
-
-                markerBuffer.Add(kimodoMarker);
-            }
-
-            markerBuffer.Sort((a, b) => a.time.CompareTo(b.time));
-            LatestMarkerSnapshot.Clear();
-            LatestMarkerSnapshot.AddRange(markerBuffer);
         }
     }
 }
