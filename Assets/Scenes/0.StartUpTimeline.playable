@@ -10,341 +10,11 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260730_235331_824
+  m_Name: AnimationPlayableAsset of ARDY_Playable_20260807_085501_805
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: b5367d6d5467642478a8ec0eb22b9246, type: 2}
+  m_Clip: {fileID: 7400000, guid: 8828800fba7db0642a3042ab19b7ee52, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
-  m_EulerAngles: {x: 0, y: 0, z: 0}
-  m_UseTrackMatchFields: 1
-  m_MatchTargetFields: 63
-  m_RemoveStartOffset: 0
-  m_ApplyFootIK: 1
-  m_Loop: 0
-  m_Version: 1
-  m_Rotation: {x: 0, y: 0, z: 0, w: 1}
-  bridgeModelName: Kimodo-SOMA-RP-v1
-  textEncoderMode: 0
-  motionPrompt: Walk And Say Hello
-  generationFrames: 150
-  diffusionSteps: 100
-  textWeight: 1
-  randomSeed: 1
-  seed: 42
-  customRetargetAvatar: {fileID: 0}
-  inOutConstraintMode: 0
-  enableInConstraint: 1
-  enableOutConstraint: 1
-  ardyAutoHistory: 1
-  ardyHistoryWeight: 1
-  ardyTargetMaxSpeed: 1.25
-  ardyTargetMaxAcceleration: 1.5
-  showConstraint: 1
-  autoBeginAnchor: 1
-  isGenerated: 1
-  lastGeneratedPrompt: Walk And Say Hello
-  ardyMotionCachePath: 
-  ardyMotionRepFingerprint: 
-  ardyResolvedSeeds: 
-  autoRetargetOnBinding: 1
-  curveFilterOptions:
-    enabled: 1
-    positionError: 0.25
-    rotationError: 0.25
-    floatError: 0.25
-    ensureQuaternionContinuity: 1
-  frameCount: 152
-  jointCount: 77
-  fps: 30
---- !u!114 &-7852422542190409337
-MonoBehaviour:
-  m_ObjectHideFlags: 1
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d21dcc2386d650c4597f3633c75a1f98, type: 3}
-  m_Name: Animation Track (3)
-  m_EditorClassIdentifier: 
-  m_Version: 3
-  m_AnimClip: {fileID: 0}
-  m_Locked: 0
-  m_Muted: 0
-  m_CustomPlayableFullTypename: 
-  m_Curves: {fileID: 0}
-  m_Parent: {fileID: 11400000}
-  m_Children: []
-  m_Clips:
-  - m_Version: 1
-    m_Start: 0
-    m_ClipIn: 0
-    m_Asset: {fileID: 8987801175638256851}
-    m_Duration: 5.066666603088379
-    m_TimeScale: 1
-    m_ParentTrack: {fileID: -7852422542190409337}
-    m_EaseInDuration: 0
-    m_EaseOutDuration: 0
-    m_BlendInDuration: -1
-    m_BlendOutDuration: -1
-    m_MixInCurve:
-      serializedVersion: 2
-      m_Curve:
-      - serializedVersion: 3
-        time: 0
-        value: 0
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      - serializedVersion: 3
-        time: 1
-        value: 1
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      m_PreInfinity: 2
-      m_PostInfinity: 2
-      m_RotationOrder: 4
-    m_MixOutCurve:
-      serializedVersion: 2
-      m_Curve:
-      - serializedVersion: 3
-        time: 0
-        value: 1
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      - serializedVersion: 3
-        time: 1
-        value: 0
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      m_PreInfinity: 2
-      m_PostInfinity: 2
-      m_RotationOrder: 4
-    m_BlendInCurveMode: 0
-    m_BlendOutCurveMode: 0
-    m_ExposedParameterNames: []
-    m_AnimationCurves: {fileID: 0}
-    m_Recordable: 0
-    m_PostExtrapolationMode: 1
-    m_PreExtrapolationMode: 1
-    m_PostExtrapolationTime: Infinity
-    m_PreExtrapolationTime: 0
-    m_DisplayName: Walk And Say Hello
-  m_Markers:
-    m_Objects: []
-  m_InfiniteClipPreExtrapolation: 0
-  m_InfiniteClipPostExtrapolation: 0
-  m_InfiniteClipOffsetPosition: {x: 0, y: 0, z: 0}
-  m_InfiniteClipOffsetEulerAngles: {x: 0, y: 0, z: 0}
-  m_InfiniteClipTimeOffset: 0
-  m_InfiniteClipRemoveOffset: 0
-  m_InfiniteClipApplyFootIK: 1
-  mInfiniteClipLoop: 0
-  m_MatchTargetFields: 63
-  m_Position: {x: 0, y: 0, z: 0}
-  m_EulerAngles: {x: 0, y: 0, z: 0}
-  m_AvatarMask: {fileID: 0}
-  m_ApplyAvatarMask: 1
-  m_TrackOffset: 1
-  m_InfiniteClip: {fileID: 0}
-  m_OpenClipOffsetRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_Rotation: {x: 0, y: 0, z: 0, w: 1}
-  m_ApplyOffsets: 0
---- !u!114 &-7750879865495967840
-MonoBehaviour:
-  m_ObjectHideFlags: 1
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260731_172048_781
-  m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: ed843d6dedf0f0f47885674ca77b5c36, type: 2}
-  m_Position: {x: 0, y: 0, z: 0}
-  m_EulerAngles: {x: 0, y: 0, z: 0}
-  m_UseTrackMatchFields: 1
-  m_MatchTargetFields: 63
-  m_RemoveStartOffset: 0
-  m_ApplyFootIK: 1
-  m_Loop: 0
-  m_Version: 1
-  m_Rotation: {x: 0, y: 0, z: 0, w: 1}
-  bridgeModelName: Kimodo-SOMA-RP-v1
-  textEncoderMode: 0
-  motionPrompt: Walk And Say Hello
-  generationFrames: 152
-  diffusionSteps: 100
-  textWeight: 1
-  randomSeed: 1
-  seed: 1371112421
-  customRetargetAvatar: {fileID: 0}
-  inOutConstraintMode: 0
-  enableInConstraint: 1
-  enableOutConstraint: 1
-  ardyAutoHistory: 1
-  ardyHistoryWeight: 1
-  ardyTargetMaxSpeed: 1.25
-  ardyTargetMaxAcceleration: 1.5
-  showConstraint: 1
-  autoBeginAnchor: 1
-  isGenerated: 1
-  lastGeneratedPrompt: Walk And Say Hello
-  ardyMotionCachePath: 
-  ardyMotionRepFingerprint: 
-  ardyResolvedSeeds: 
-  autoRetargetOnBinding: 1
-  curveFilterOptions:
-    enabled: 1
-    positionError: 0.25
-    rotationError: 0.25
-    floatError: 0.25
-    ensureQuaternionContinuity: 1
-  frameCount: 152
-  jointCount: 77
-  fps: 30
---- !u!114 &-3135218140996954443
-MonoBehaviour:
-  m_ObjectHideFlags: 1
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d21dcc2386d650c4597f3633c75a1f98, type: 3}
-  m_Name: Animation Track (2)
-  m_EditorClassIdentifier: 
-  m_Version: 3
-  m_AnimClip: {fileID: 0}
-  m_Locked: 0
-  m_Muted: 0
-  m_CustomPlayableFullTypename: 
-  m_Curves: {fileID: 0}
-  m_Parent: {fileID: 11400000}
-  m_Children: []
-  m_Clips:
-  - m_Version: 1
-    m_Start: 0
-    m_ClipIn: 0
-    m_Asset: {fileID: -2284704467975153099}
-    m_Duration: 5.066666603088379
-    m_TimeScale: 1
-    m_ParentTrack: {fileID: -3135218140996954443}
-    m_EaseInDuration: 0
-    m_EaseOutDuration: 0
-    m_BlendInDuration: -1
-    m_BlendOutDuration: -1
-    m_MixInCurve:
-      serializedVersion: 2
-      m_Curve:
-      - serializedVersion: 3
-        time: 0
-        value: 0
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      - serializedVersion: 3
-        time: 1
-        value: 1
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      m_PreInfinity: 2
-      m_PostInfinity: 2
-      m_RotationOrder: 4
-    m_MixOutCurve:
-      serializedVersion: 2
-      m_Curve:
-      - serializedVersion: 3
-        time: 0
-        value: 1
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      - serializedVersion: 3
-        time: 1
-        value: 0
-        inSlope: 0
-        outSlope: 0
-        tangentMode: 0
-        weightedMode: 0
-        inWeight: 0
-        outWeight: 0
-      m_PreInfinity: 2
-      m_PostInfinity: 2
-      m_RotationOrder: 4
-    m_BlendInCurveMode: 0
-    m_BlendOutCurveMode: 0
-    m_ExposedParameterNames: []
-    m_AnimationCurves: {fileID: 0}
-    m_Recordable: 0
-    m_PostExtrapolationMode: 1
-    m_PreExtrapolationMode: 1
-    m_PostExtrapolationTime: Infinity
-    m_PreExtrapolationTime: 0
-    m_DisplayName: Walk And Say Hello
-  m_Markers:
-    m_Objects: []
-  m_InfiniteClipPreExtrapolation: 0
-  m_InfiniteClipPostExtrapolation: 0
-  m_InfiniteClipOffsetPosition: {x: 0, y: 0, z: 0}
-  m_InfiniteClipOffsetEulerAngles: {x: 0, y: 0, z: 0}
-  m_InfiniteClipTimeOffset: 0
-  m_InfiniteClipRemoveOffset: 0
-  m_InfiniteClipApplyFootIK: 1
-  mInfiniteClipLoop: 0
-  m_MatchTargetFields: 63
-  m_Position: {x: 0, y: 0, z: 0}
-  m_EulerAngles: {x: 0, y: 0, z: 0}
-  m_AvatarMask: {fileID: 0}
-  m_ApplyAvatarMask: 1
-  m_TrackOffset: 1
-  m_InfiniteClip: {fileID: 0}
-  m_OpenClipOffsetRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_Rotation: {x: 0, y: 0, z: 0, w: 1}
-  m_ApplyOffsets: 0
---- !u!114 &-2284704467975153099
-MonoBehaviour:
-  m_ObjectHideFlags: 1
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of ARDY_Playable_20260731_172703_651
-  m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: 21397c56ffc1c7b449b272244e7d0ea2, type: 2}
-  m_Position: {x: 0, y: 0, z: 0}
-  m_EulerAngles: {x: 0, y: 0, z: 0}
+  m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
   m_MatchTargetFields: 63
   m_RemoveStartOffset: 0
@@ -372,7 +42,7 @@ MonoBehaviour:
   autoBeginAnchor: 1
   isGenerated: 1
   lastGeneratedPrompt: Walk And Say Hello
-  ardyMotionCachePath: C:\nvlab\KimodoUnityBridge_FullDemo\Library\Kimodo\ArdyKmb\timeline-final-57034c2a0c2d4fbaa66d5dddf772b5a0.kmb
+  ardyMotionCachePath: C:\nvlab\KimodoUnityBridge_FullDemo\Library\Kimodo\ArdyKmb\timeline-final-423ddb2a28a449acaac9274d2963db4f.kmb
   ardyMotionRepFingerprint: ardy-core-rp-20fps-h40:nfpt4:motionrep-v1
   ardyResolvedSeeds: 2a000000
   autoRetargetOnBinding: 1
@@ -382,9 +52,74 @@ MonoBehaviour:
     rotationError: 0.25
     floatError: 0.25
     ensureQuaternionContinuity: 1
-  frameCount: 102
+  frameCount: 300
   jointCount: 27
   fps: 20
+  splinePathEnabled: 0
+  splineKnots: []
+  splineWaypointCount: 8
+  splineDensePath: 1
+  splineIncludeHeading: 1
+--- !u!114 &-7750879865495967840
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
+  m_Name: AnimationPlayableAsset of ARDY_Playable_20260807_085458_163
+  m_EditorClassIdentifier: 
+  m_Clip: {fileID: 7400000, guid: 2d51dac22760dfb49a3de29990a2152a, type: 2}
+  m_Position: {x: 0, y: 0, z: 0}
+  m_EulerAngles: {x: -0, y: 0, z: 0}
+  m_UseTrackMatchFields: 1
+  m_MatchTargetFields: 63
+  m_RemoveStartOffset: 0
+  m_ApplyFootIK: 1
+  m_Loop: 0
+  m_Version: 1
+  m_Rotation: {x: 0, y: 0, z: 0, w: 1}
+  bridgeModelName: ARDY-Core-RP-20FPS-Horizon40
+  textEncoderMode: 1
+  motionPrompt: Walk And Say Hello
+  generationFrames: 152
+  diffusionSteps: 10
+  textWeight: 1
+  randomSeed: 1
+  seed: 42
+  customRetargetAvatar: {fileID: 0}
+  inOutConstraintMode: 0
+  enableInConstraint: 1
+  enableOutConstraint: 1
+  ardyAutoHistory: 1
+  ardyHistoryWeight: 1
+  ardyTargetMaxSpeed: 1.25
+  ardyTargetMaxAcceleration: 1.5
+  showConstraint: 1
+  autoBeginAnchor: 1
+  isGenerated: 1
+  lastGeneratedPrompt: Walk And Say Hello
+  ardyMotionCachePath: C:\nvlab\KimodoUnityBridge_FullDemo\Library\Kimodo\ArdyKmb\timeline-final-c3570fae691b413996932a778aa78c58.kmb
+  ardyMotionRepFingerprint: ardy-core-rp-20fps-h40:nfpt4:motionrep-v1
+  ardyResolvedSeeds: 2a000000
+  autoRetargetOnBinding: 1
+  curveFilterOptions:
+    enabled: 1
+    positionError: 0.25
+    rotationError: 0.25
+    floatError: 0.25
+    ensureQuaternionContinuity: 1
+  frameCount: 300
+  jointCount: 27
+  fps: 20
+  splinePathEnabled: 0
+  splineKnots: []
+  splineWaypointCount: 8
+  splineDensePath: 1
+  splineIncludeHeading: 1
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -401,8 +136,6 @@ MonoBehaviour:
   m_Tracks:
   - {fileID: 4920200649922621575}
   - {fileID: 3483828814348025209}
-  - {fileID: -3135218140996954443}
-  - {fileID: -7852422542190409337}
   m_FixedDuration: 0
   m_EditorSettings:
     m_Framerate: 60
@@ -434,7 +167,7 @@ MonoBehaviour:
     m_Start: 0
     m_ClipIn: 0
     m_Asset: {fileID: -7750879865495967840}
-    m_Duration: 5.066666603088379
+    m_Duration: 14.983333333333333
     m_TimeScale: 1
     m_ParentTrack: {fileID: 3483828814348025209}
     m_EaseInDuration: 0
@@ -544,7 +277,7 @@ MonoBehaviour:
     m_Start: 0
     m_ClipIn: 0
     m_Asset: {fileID: -9198596875558902217}
-    m_Duration: 5.066666603088379
+    m_Duration: 14.983333333333333
     m_TimeScale: 1
     m_ParentTrack: {fileID: 4920200649922621575}
     m_EaseInDuration: 0
@@ -629,58 +362,3 @@ MonoBehaviour:
   m_OpenClipOffsetRotation: {x: 0, y: 0, z: 0, w: 1}
   m_Rotation: {x: 0, y: 0, z: 0, w: 1}
   m_ApplyOffsets: 0
---- !u!114 &8987801175638256851
-MonoBehaviour:
-  m_ObjectHideFlags: 1
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of ARDY_Playable_20260731_172714_908
-  m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: c18a15b61b9e28444af9c57a14429360, type: 2}
-  m_Position: {x: 0, y: 0, z: 0}
-  m_EulerAngles: {x: 0, y: 0, z: 0}
-  m_UseTrackMatchFields: 1
-  m_MatchTargetFields: 63
-  m_RemoveStartOffset: 0
-  m_ApplyFootIK: 1
-  m_Loop: 0
-  m_Version: 1
-  m_Rotation: {x: 0, y: 0, z: 0, w: 1}
-  bridgeModelName: ARDY-Core-RP-20FPS-Horizon40
-  textEncoderMode: 1
-  motionPrompt: Walk And Say Hello
-  generationFrames: 152
-  diffusionSteps: 10
-  textWeight: 1
-  randomSeed: 1
-  seed: 981592307
-  customRetargetAvatar: {fileID: 0}
-  inOutConstraintMode: 0
-  enableInConstraint: 1
-  enableOutConstraint: 1
-  ardyAutoHistory: 1
-  ardyHistoryWeight: 1
-  ardyTargetMaxSpeed: 1.25
-  ardyTargetMaxAcceleration: 1.5
-  showConstraint: 1
-  autoBeginAnchor: 1
-  isGenerated: 1
-  lastGeneratedPrompt: Walk And Say Hello
-  ardyMotionCachePath: C:\nvlab\KimodoUnityBridge_FullDemo\Library\Kimodo\ArdyKmb\timeline-final-ddd6b6b1e5644b9081ad9554fba9f2b6.kmb
-  ardyMotionRepFingerprint: ardy-core-rp-20fps-h40:nfpt4:motionrep-v1
-  ardyResolvedSeeds: f3e8813a
-  autoRetargetOnBinding: 1
-  curveFilterOptions:
-    enabled: 1
-    positionError: 0.25
-    rotationError: 0.25
-    floatError: 0.25
-    ensureQuaternionContinuity: 1
-  frameCount: 102
-  jointCount: 27
-  fps: 20

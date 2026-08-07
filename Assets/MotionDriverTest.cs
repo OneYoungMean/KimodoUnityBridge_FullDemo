@@ -7,10 +7,6 @@ namespace KimodoBridge
     [AddComponentMenu("Kimodo/Runtime Motion Driver Test")]
     public sealed class MotionDriverTest : MonoBehaviour
     {
-        [SerializeField, HideInInspector] private KimodoRuntimeMotionDriver driver;
-        [SerializeField] private List<KimodoRuntimeMotionDriver> drivers =
-            new List<KimodoRuntimeMotionDriver>();
-
         [Header("Prompt")]
         [SerializeField] private string prompt = "a person waves hello";
 
@@ -54,15 +50,6 @@ namespace KimodoBridge
             public KimodoRuntimeMotionDriver driver;
             public Vector3 position;
             public GameObject marker;
-        }
-
-        private void Reset()
-        {
-            KimodoRuntimeMotionDriver localDriver = GetComponent<KimodoRuntimeMotionDriver>();
-            if (localDriver != null && drivers.Count == 0)
-            {
-                drivers.Add(localDriver);
-            }
         }
 
         private void OnGUI()
@@ -268,7 +255,7 @@ namespace KimodoBridge
             IReadOnlyList<KimodoRuntimeMotionDriver> targets = ResolveDrivers();
             if (targets.Count == 0)
             {
-                GUILayout.Label("No Motion Driver is assigned.");
+                GUILayout.Label("No Motion Driver was found in the scene.");
                 GUI.DragWindow(new Rect(0f, 0f, windowRect.width, 24f));
                 return;
             }
@@ -440,18 +427,17 @@ namespace KimodoBridge
         private IReadOnlyList<KimodoRuntimeMotionDriver> ResolveDrivers()
         {
             resolvedDrivers.Clear();
-            for (int i = 0; i < drivers.Count; i++)
+            KimodoRuntimeMotionDriver[] sceneDrivers =
+                UnityEngine.Object.FindObjectsByType<KimodoRuntimeMotionDriver>(
+                    FindObjectsInactive.Exclude,
+                    FindObjectsSortMode.None);
+            for (int i = 0; i < sceneDrivers.Length; i++)
             {
-                KimodoRuntimeMotionDriver target = drivers[i];
-                if (target != null && !resolvedDrivers.Contains(target))
+                KimodoRuntimeMotionDriver target = sceneDrivers[i];
+                if (target != null && target.isActiveAndEnabled)
                 {
                     resolvedDrivers.Add(target);
                 }
-            }
-
-            if (resolvedDrivers.Count == 0 && driver != null)
-            {
-                resolvedDrivers.Add(driver);
             }
             return resolvedDrivers;
         }

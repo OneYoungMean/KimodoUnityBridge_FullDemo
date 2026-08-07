@@ -21,7 +21,7 @@ MonoBehaviour:
   keepCpuForceExperimental: 0
   writeResampledTimelineCacheClips: 0
   enableDebugLog: 0
-  enableKimodoStaticGraph: 0
+  enableKimodoStaticGraph: 1
   setupWizardCompleted: 1
   quickServerPath: 
-  advancedCurveFilterFoldout: 1
+  advancedCurveFilterFoldout: 0

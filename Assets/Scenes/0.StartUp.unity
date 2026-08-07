@@ -1595,7 +1595,7 @@ PrefabInstance:
     - target: {fileID: 6813105585252192619, guid: d8b476b4d67cdd14e879ed35af8944a3,
         type: 3}
       propertyPath: m_Name
-      value: UnityChanSSU Ardy
+      value: UnityChanSSU
       objectReference: {fileID: 0}
     - target: {fileID: 6813105585252192619, guid: d8b476b4d67cdd14e879ed35af8944a3,
         type: 3}
@@ -1992,12 +1992,6 @@ GameObject:
     type: 3}
   m_PrefabInstance: {fileID: 606457126}
   m_PrefabAsset: {fileID: 0}
---- !u!95 &606457128 stripped
-Animator:
-  m_CorrespondingSourceObject: {fileID: 458339633809165826, guid: d8b476b4d67cdd14e879ed35af8944a3,
-    type: 3}
-  m_PrefabInstance: {fileID: 606457126}
-  m_PrefabAsset: {fileID: 0}
 --- !u!114 &606457129
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2044,7 +2038,7 @@ GameObject:
   m_Component:
   - component: {fileID: 637462462}
   m_Layer: 0
-  m_Name: Ardy
+  m_Name: target
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -2063,8 +2057,8 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 1164803883}
   - {fileID: 606457130}
+  - {fileID: 1164803883}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &850020958
@@ -2077,7 +2071,7 @@ GameObject:
   m_Component:
   - component: {fileID: 850020959}
   m_Layer: 0
-  m_Name: Kimodo
+  m_Name: origin
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -3387,7 +3381,7 @@ PrefabInstance:
     - target: {fileID: 919132149155446097, guid: 7d8036a1ee3cf92448e065741f691bf5,
         type: 3}
       propertyPath: m_Name
-      value: T-Pose Ardy
+      value: T-Pose
       objectReference: {fileID: 0}
     - target: {fileID: 1092408308860062549, guid: 7d8036a1ee3cf92448e065741f691bf5,
         type: 3}
@@ -3876,6 +3870,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5866666021909216657, guid: 7d8036a1ee3cf92448e065741f691bf5,
         type: 3}
+      propertyPath: m_Avatar
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 5866666021909216657, guid: 7d8036a1ee3cf92448e065741f691bf5,
+        type: 3}
       propertyPath: m_Controller
       value: 
       objectReference: {fileID: 0}
@@ -4194,12 +4193,6 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 7d8036a1ee3cf92448e065741f691bf5, type: 3}
---- !u!95 &1164803882 stripped
-Animator:
-  m_CorrespondingSourceObject: {fileID: 5866666021909216657, guid: 7d8036a1ee3cf92448e065741f691bf5,
-    type: 3}
-  m_PrefabInstance: {fileID: 1164803881}
-  m_PrefabAsset: {fileID: 0}
 --- !u!4 &1164803883 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 7d8036a1ee3cf92448e065741f691bf5,
@@ -4464,10 +4457,6 @@ PlayableDirector:
     value: {fileID: 1582890368}
   - key: {fileID: 3483828814348025209, guid: 8a279ba485b94644f830a786c274b392, type: 2}
     value: {fileID: 871937518}
-  - key: {fileID: -3135218140996954443, guid: d829537a7d0528f4abf8fe3a72dacdac, type: 2}
-    value: {fileID: 1164803882}
-  - key: {fileID: -7852422542190409337, guid: d829537a7d0528f4abf8fe3a72dacdac, type: 2}
-    value: {fileID: 606457128}
   m_ExposedReferences:
     m_References: []
 --- !u!4 &1355828158
@@ -5919,6 +5908,11 @@ PrefabInstance:
         type: 3}
       propertyPath: m_LocalRotation.z
       value: 0.00000075315916
+      objectReference: {fileID: 0}
+    - target: {fileID: 5866666021909216657, guid: 7d8036a1ee3cf92448e065741f691bf5,
+        type: 3}
+      propertyPath: m_Avatar
+      value: 
       objectReference: {fileID: 0}
     - target: {fileID: 5866666021909216657, guid: 7d8036a1ee3cf92448e065741f691bf5,
         type: 3}
