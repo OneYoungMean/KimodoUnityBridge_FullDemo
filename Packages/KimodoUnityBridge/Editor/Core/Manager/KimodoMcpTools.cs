@@ -18,11 +18,16 @@ namespace KimodoBridge.Editor
     /// Framework-neutral entry points for MCP adapters. A concrete MCP package only needs to
     /// forward the tool name and JSON arguments to <see cref="Invoke"/>.
     /// </summary>
-    public static class KimodoMcpTools
+    public static partial class KimodoMcpTools
     {
         public const string ListCharactersTool = "kimodo_list_characters";
+        public const string ListModelsTool = "kimodo_list_models";
+        public const string HelpTool = "kimodo_help";
+        public const string ReinstallServerTool = "kimodo_reinstall_server";
         public const string GenerateAnimationAssetTool = "kimodo_generate_animation_asset";
         public const string GenerateTimelineAnimationTool = "kimodo_generate_timeline_animation";
+        public const string OpenTimelineSessionTool = "kimodo_open_timeline_session";
+        public const string CloseTimelineSessionTool = "kimodo_close_timeline_session";
         public const string GetGenerationTool = "kimodo_get_generation";
         public const string CancelGenerationTool = "kimodo_cancel_generation";
 
@@ -41,6 +46,24 @@ namespace KimodoBridge.Editor
                         Properties(
                             Optional("include_project_assets", "boolean", "Also scan prefab/model assets under Assets."),
                             Optional("max_results", "integer", "Maximum returned characters; defaults to 100."))),
+                    Tool(ListModelsTool,
+                        "List every model and text encoder configuration currently viable on the Kimodo QuickServer.",
+                        Properties()),
+                    Tool(HelpTool,
+                        "Return the Kimodo QuickServer built-in protocol reference.",
+                        Properties()),
+                    Tool(ReinstallServerTool,
+                        "Stop, reinstall the packaged Kimodo QuickServer runtime, then activate the project default model with high performance text encoding.",
+                        Properties()),
+                    Tool(OpenTimelineSessionTool,
+                        "Create and load a temporary TimelineAsset for a Session; completed AnimationClip generations are inserted in order.",
+                        Properties(
+                            Required("director_ref", "string", "Scene PlayableDirector or GameObject GlobalObjectId."),
+                            Required("character_ref", "string", "Scene humanoid character GlobalObjectId."),
+                            Optional("start_seconds", "number", "First insertion time; defaults to 0."))),
+                    Tool(CloseTimelineSessionTool,
+                        "Close a Timeline Session, clear its Timeline Window selection, and delete its temporary TimelineAsset. Sessions with running generations cannot close.",
+                        Properties(Required("timeline_session_id", "string", "Timeline Session id returned by kimodo_open_timeline_session."))),
                     Tool(GenerateAnimationAssetTool,
                         "Generate an AnimationClip asset for a humanoid character from a text prompt.",
                         Properties(
@@ -48,12 +71,15 @@ namespace KimodoBridge.Editor
                             Required("prompt", "string", "Motion prompt."),
                             Optional("duration_seconds", "number", "Duration in seconds; defaults to 5."),
                             Optional("model", "string", "Kimodo model name; defaults to Project Settings."),
+                            Enum("text_encoder_model", "high_performance", "high_precision"),
                             Optional("seed", "integer", "Deterministic seed; omitted chooses a random seed."),
                             Optional("diffusion_steps", "integer", "Diffusion steps; omitted uses the model default."),
                             Optional("text_weight", "number", "Prompt weight in [0,4]; defaults to 1."),
                             Enum("output_mode", "humanoid_muscle", "character_bone", "model_bone"),
                             Optional("output_folder", "string", "Unity folder under Assets; defaults to Assets/KimodoGeneratedClips."),
                             Optional("asset_name", "string", "Output asset name without extension."),
+                            Optional("timeline_session_id", "string", "Optional Timeline Session id that receives the completed AnimationClip."),
+                            Optional("analysis_options", "object", "Optional analysis object; set keyframes.enabled=true to return screenshot keyframes."),
                             OptionalArray("pose_refs", "string", "Scene humanoid GameObject or Animator GlobalObjectIds used as pose constraints."),
                             OptionalArray("times", "number", "Pose times in seconds; omitted distributes poses from the first through the last generated frame."),
                             OptionalEnumArray("constraint_types", "Constraint type per pose; omitted defaults every pose to fullbody.", "fullbody", "root2d"))),
@@ -67,10 +93,12 @@ namespace KimodoBridge.Editor
                             Optional("start_seconds", "number", "Timeline clip start; defaults to 0."),
                             Optional("duration_seconds", "number", "Timeline clip duration; defaults to 5."),
                             Optional("model", "string", "Kimodo model name; defaults to Project Settings."),
+                            Enum("text_encoder_model", "high_performance", "high_precision"),
                             Optional("seed", "integer", "Deterministic seed; omitted chooses a random seed."),
                             Optional("diffusion_steps", "integer", "Diffusion steps; omitted uses the model default."),
                             Optional("text_weight", "number", "Prompt weight in [0,4]; defaults to 1."),
                             Optional("use_constraints", "boolean", "Use enabled Timeline constraints; defaults to true."),
+                            Optional("analysis_options", "object", "Optional analysis object; set keyframes.enabled=true to return screenshot keyframes."),
                             OptionalArray("pose_refs", "string", "Scene humanoid GameObject or Animator GlobalObjectIds used as pose constraints."),
                             OptionalArray("times", "number", "Pose times in seconds; omitted distributes poses from the first through the last generated frame."),
                             OptionalEnumArray("constraint_types", "Constraint type per pose; omitted defaults every pose to fullbody.", "fullbody", "root2d"))),
@@ -92,6 +120,16 @@ namespace KimodoBridge.Editor
             {
                 case ListCharactersTool:
                     return ListCharacters(argumentsJson);
+                case ListModelsTool:
+                    return ListModels(argumentsJson);
+                case HelpTool:
+                    return GetServerHelp(argumentsJson);
+                case ReinstallServerTool:
+                    return ReinstallServer(argumentsJson);
+                case OpenTimelineSessionTool:
+                    return OpenTimelineSession(argumentsJson);
+                case CloseTimelineSessionTool:
+                    return CloseTimelineSession(argumentsJson);
                 case GenerateAnimationAssetTool:
                     return GenerateAnimationAsset(argumentsJson);
                 case GenerateTimelineAnimationTool:
@@ -158,6 +196,78 @@ namespace KimodoBridge.Editor
             });
         }
 
+        public static string ListModels(string argumentsJson = "{}")
+        {
+            return Execute(argumentsJson, _ =>
+            {
+                EnsureCanManageServer();
+                KimodoPlayableClipGenerationSettings settings = KimodoPlayableClipGenerationSettings.instance;
+                JObject response = KimodoBridgeService.Shared.ListModelConfigurationsAsync(
+                    ResolveModelName(null),
+                    KimodoTextEncoderModeProtocol.ToProtocolValue(settings.DefaultTextEncoderMode),
+                    settings.LocalModelsPath?.Trim() ?? string.Empty,
+                    null,
+                    CancellationToken.None).GetAwaiter().GetResult();
+                var result = new JObject(response);
+                result.Remove("status");
+                result["count"] = (result["configs"] as JArray)?.Count ?? 0;
+                return Ok(result);
+            });
+        }
+
+        public static string GetServerHelp(string argumentsJson = "{}")
+        {
+            return Execute(argumentsJson, _ =>
+            {
+                EnsureCanManageServer();
+                JObject response = KimodoBridgeService.Shared.GetServerHelpAsync(
+                    null,
+                    CancellationToken.None).GetAwaiter().GetResult();
+                var result = new JObject(response);
+                result.Remove("status");
+                return Ok(result);
+            });
+        }
+
+        public static string ReinstallServer(string argumentsJson = "{}")
+        {
+            return Execute(argumentsJson, _ =>
+            {
+                EnsureCanManageServer();
+                KimodoPlayableClipGenerationSettings settings = KimodoPlayableClipGenerationSettings.instance;
+                settings.DefaultTextEncoderMode = KimodoTextEncoderMode.HighPerformance;
+                settings.SaveSettings();
+                string modelName = ResolveModelName(null);
+                string modelsRoot = settings.LocalModelsPath?.Trim() ?? string.Empty;
+
+                using (KimodoBridgeServerTool.EnterRuntimeMaintenanceScope())
+                {
+                    KimodoBridgeService.Shared.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
+                    if (!KimodoBridgeServerTool.ReinstallRuntimeRoot())
+                    {
+                        throw new InvalidOperationException("Failed to reinstall runtime root from package template.");
+                    }
+                }
+
+                JObject activation = KimodoBridgeService.Shared.ActivateRuntimeAsync(
+                    modelName,
+                    KimodoTextEncoderModeProtocol.HighPerformance,
+                    modelsRoot,
+                    null,
+                    CancellationToken.None).GetAwaiter().GetResult();
+                return Ok(new JObject
+                {
+                    ["reinstalled"] = true,
+                    ["runtime_root"] = KimodoBridgeServerTool.ResolveRuntimeRootOrThrow(),
+                    ["model"] = activation.Value<string>("model") ?? modelName,
+                    ["text_encoder_model"] = activation.Value<string>("text_encoder_mode") ?? KimodoTextEncoderModeProtocol.HighPerformance,
+                    ["text_encoder_route"] = activation.Value<string>("text_encoder_route") ?? string.Empty,
+                    ["text_encoder_device"] = activation.Value<string>("text_encoder_device") ?? string.Empty,
+                    ["runtime_device"] = activation.Value<string>("runtime_device") ?? string.Empty
+                });
+            });
+        }
+
         public static string GenerateAnimationAsset(string argumentsJson)
         {
             return Execute(argumentsJson, arguments =>
@@ -167,8 +277,11 @@ namespace KimodoBridge.Editor
                 ResolvedCharacter character = ResolveCharacter(RequiredStringValue(arguments, "character_ref"));
                 string outputMode = ParseOutputMode(arguments.Value<string>("output_mode"));
                 string modelName = ResolveModelName(arguments.Value<string>("model"));
+                KimodoTextEncoderMode textEncoderMode = ResolveTextEncoderMode(arguments.Value<string>("text_encoder_model"));
                 float frameRate = ResolveFrameRate(modelName);
                 float duration = PositiveFloat(arguments, "duration_seconds", 5f);
+                TimelineReservation timelineReservation = PrepareTimelineReservation(arguments, character, duration);
+                string analysisOptionsJson = ParseAnalysisOptionsJson(arguments);
                 int frameCount = Math.Max(1, KimodoFrameTimeUtility.SecondsToFrameCount(duration, frameRate));
                 int seed = arguments.Value<int?>("seed") ?? (Guid.NewGuid().GetHashCode() & int.MaxValue);
                 int steps = ResolveDiffusionSteps(arguments, modelName);
@@ -195,7 +308,7 @@ namespace KimodoBridge.Editor
                 {
                     Prompt = prompt,
                     ModelName = modelName,
-                    TextEncoderMode = KimodoPlayableClipGenerationSettings.instance.DefaultTextEncoderMode,
+                    TextEncoderMode = textEncoderMode,
                     TargetFrameCount = frameCount,
                     TargetFrameRate = frameRate,
                     DiffusionSteps = steps,
@@ -206,6 +319,7 @@ namespace KimodoBridge.Editor
                         0.0,
                         duration,
                         frameRate),
+                    AnalysisOptionsJson = analysisOptionsJson,
                     ModelsRoot = KimodoPlayableClipGenerationSettings.instance.LocalModelsPath?.Trim() ?? string.Empty,
                     GenerationTimeoutSeconds = KimodoPlayableClipGenerationSettings.instance.GenerationTimeoutSeconds,
                     CreateTargetClip = () => KimodoEditorClipWritebackService.CreateGeneratedAnimationClipAsset(assetName, outputFolder),
@@ -224,7 +338,12 @@ namespace KimodoBridge.Editor
                     character.Target,
                     $"mcp-asset:{KimodoUnityObjectIdUtility.NameKey(character.Target)}",
                     KimodoEditorCommandKind.GenerateAnimationAsset,
-                    async (session, token) => await ExecuteAssetGenerationAsync(request, character.Target, session, token),
+                    async (session, token) => await ExecuteAssetGenerationAsync(
+                        request,
+                        character.Target,
+                        session,
+                        token,
+                        timelineReservation),
                     out EditorGenerateSession generation,
                     out string error);
                 if (!started)
@@ -232,13 +351,23 @@ namespace KimodoBridge.Editor
                     throw new InvalidOperationException(error);
                 }
 
-                Remember(character.Target, generation);
-                return Started(generation, new JObject
+                CommitTimelineReservation(timelineReservation);
+                Remember(character.Target, generation, timelineReservation);
+                var startedResponse = new JObject
                 {
                     ["character"] = character.Name,
                     ["output_mode"] = outputMode,
+                    ["model"] = modelName,
+                    ["text_encoder_model"] = KimodoTextEncoderModeProtocol.ToProtocolValue(textEncoderMode),
                     ["seed"] = seed
-                });
+                };
+                if (timelineReservation != null)
+                {
+                    startedResponse["timeline_session_id"] = timelineReservation.Session.Id.ToString("D");
+                    startedResponse["timeline_start_seconds"] = timelineReservation.StartSeconds;
+                    startedResponse["timeline_duration_seconds"] = timelineReservation.DurationSeconds;
+                }
+                return Started(generation, startedResponse);
             });
         }
 
@@ -268,6 +397,7 @@ namespace KimodoBridge.Editor
                 double start = NonNegativeDouble(arguments, "start_seconds", 0.0);
                 double duration = PositiveDouble(arguments, "duration_seconds", 5.0);
                 string modelName = ResolveModelName(arguments.Value<string>("model"));
+                KimodoTextEncoderMode textEncoderMode = ResolveTextEncoderMode(arguments.Value<string>("text_encoder_model"));
                 float frameRate = ResolveFrameRate(modelName);
                 int frameCount = Math.Max(1, KimodoFrameTimeUtility.SecondsToFrameCount(duration, frameRate));
                 Avatar originAvatar = KimodoPlayableClipGenerationHostService.ResolveOriginRetargetAvatar(modelName);
@@ -284,6 +414,7 @@ namespace KimodoBridge.Editor
                     duration);
                 int seed = arguments.Value<int?>("seed") ?? (Guid.NewGuid().GetHashCode() & int.MaxValue);
                 bool useConstraints = arguments.Value<bool?>("use_constraints") ?? true;
+                string analysisOptionsJson = ParseAnalysisOptionsJson(arguments);
 
                 Undo.RegisterCompleteObjectUndo(new UnityEngine.Object[] { timelineAsset, track }, "Kimodo MCP Generate Timeline Animation");
                 TimelineClip timelineClip = track.CreateClip<KimodoPlayableClip>();
@@ -297,7 +428,7 @@ namespace KimodoBridge.Editor
 
                 playableClip.motionPrompt = prompt;
                 playableClip.bridgeModelName = modelName;
-                playableClip.textEncoderMode = KimodoPlayableClipGenerationSettings.instance.DefaultTextEncoderMode;
+                playableClip.textEncoderMode = textEncoderMode;
                 playableClip.diffusionSteps = ResolveDiffusionSteps(arguments, modelName);
                 playableClip.textWeight = Mathf.Clamp(arguments.Value<float?>("text_weight") ?? 1f, 0f, 4f);
                 playableClip.randomSeed = false;
@@ -309,12 +440,14 @@ namespace KimodoBridge.Editor
                 EditorUtility.SetDirty(timelineAsset);
                 AssetDatabase.SaveAssets();
 
-                KimodoExternalConstraintRequest externalConstraint = useConstraints && poseConstraints.Count == 0
+                KimodoExternalConstraintRequest externalConstraint = useConstraints && poseConstraints.Count == 0 &&
+                    string.IsNullOrWhiteSpace(analysisOptionsJson)
                     ? null
                     : new KimodoExternalConstraintRequest
                     {
                         Enabled = true,
                         ConstraintsJson = string.Empty,
+                        AnalysisOptionsJson = analysisOptionsJson,
                         RetargetAvatar = character.Avatar,
                         IncludeTimelineConstraints = useConstraints,
                         ConstraintSamples = poseConstraints
@@ -340,6 +473,8 @@ namespace KimodoBridge.Editor
                 {
                     ["timeline_clip_ref"] = GetObjectReference(playableClip),
                     ["track_ref"] = GetObjectReference(track),
+                    ["model"] = modelName,
+                    ["text_encoder_model"] = KimodoTextEncoderModeProtocol.ToProtocolValue(textEncoderMode),
                     ["seed"] = seed
                 });
             });
@@ -351,7 +486,7 @@ namespace KimodoBridge.Editor
             {
                 Guid requestId = RequiredRequestId(arguments);
                 JobRecord record = GetJob(requestId);
-                JObject status = BuildStatus(record.Session);
+                JObject status = BuildStatus(record);
                 status["target_alive"] = record.Target != null;
                 return Ok(status);
             });
@@ -367,7 +502,7 @@ namespace KimodoBridge.Editor
                 bool canceled = EditorGenerateSessionRunner.Cancel(
                     requestId,
                     string.IsNullOrWhiteSpace(reason) ? "Generation canceled by MCP." : reason);
-                JObject status = BuildStatus(record.Session);
+                JObject status = BuildStatus(record);
                 status["canceled"] = canceled;
                 return Ok(status);
             });
@@ -837,7 +972,10 @@ namespace KimodoBridge.Editor
             return target == null ? string.Empty : GlobalObjectId.GetGlobalObjectIdSlow(target).ToString();
         }
 
-        private static void Remember(UnityEngine.Object target, EditorGenerateSession session)
+        private static void Remember(
+            UnityEngine.Object target,
+            EditorGenerateSession session,
+            TimelineReservation timelineReservation = null)
         {
             lock (JobsLock)
             {
@@ -846,7 +984,7 @@ namespace KimodoBridge.Editor
                     Guid oldest = Jobs.OrderBy(pair => pair.Value.Session.StartedAtUtc).First().Key;
                     Jobs.Remove(oldest);
                 }
-                Jobs[session.RequestId] = new JobRecord(target, session);
+                Jobs[session.RequestId] = new JobRecord(target, session, timelineReservation);
             }
         }
 
@@ -870,8 +1008,9 @@ namespace KimodoBridge.Editor
             }
         }
 
-        private static JObject BuildStatus(EditorGenerateSession session)
+        private static JObject BuildStatus(JobRecord record)
         {
+            EditorGenerateSession session = record.Session;
             var result = new JObject
             {
                 ["request_id"] = session.RequestId.ToString("D"),
@@ -891,6 +1030,35 @@ namespace KimodoBridge.Editor
                     : string.Empty;
                 result["seed"] = generated.Seed;
                 result["prompt"] = generated.Prompt ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(generated.AnalysisJson))
+                {
+                    try
+                    {
+                        result["analysis"] = JToken.Parse(generated.AnalysisJson);
+                    }
+                    catch
+                    {
+                        result["analysis"] = new JObject
+                        {
+                            ["warnings"] = new JArray("Returned analysis metadata could not be parsed.")
+                        };
+                    }
+                }
+            }
+            if (record.TimelineReservation != null)
+            {
+                TimelineReservation reservation = record.TimelineReservation;
+                result["timeline_session_id"] = reservation.Session.Id.ToString("D");
+                result["timeline_start_seconds"] = reservation.StartSeconds;
+                result["timeline_duration_seconds"] = reservation.DurationSeconds;
+                if (reservation.TimelineClip != null)
+                {
+                    result["timeline_clip_asset_ref"] = GetObjectReference(reservation.TimelineClip.asset);
+                }
+                if (reservation.AnalysisTrack != null)
+                {
+                    result["analysis_track_ref"] = GetObjectReference(reservation.AnalysisTrack);
+                }
             }
             return result;
         }
@@ -959,6 +1127,27 @@ namespace KimodoBridge.Editor
                 : modelName);
         }
 
+        internal static KimodoTextEncoderMode ResolveTextEncoderMode(string textEncoderModel)
+        {
+            if (string.IsNullOrWhiteSpace(textEncoderModel))
+            {
+                return KimodoPlayableClipGenerationSettings.instance.DefaultTextEncoderMode;
+            }
+
+            string normalized = textEncoderModel.Trim().ToLowerInvariant().Replace('-', '_');
+            if (normalized == KimodoTextEncoderModeProtocol.HighPerformance)
+            {
+                return KimodoTextEncoderMode.HighPerformance;
+            }
+            if (normalized == KimodoTextEncoderModeProtocol.HighPrecision)
+            {
+                return KimodoTextEncoderMode.HighPrecision;
+            }
+
+            throw new InvalidOperationException(
+                $"text_encoder_model must be '{KimodoTextEncoderModeProtocol.HighPerformance}' or '{KimodoTextEncoderModeProtocol.HighPrecision}'.");
+        }
+
         private static float ResolveFrameRate(string modelName)
         {
             return KimodoMotionModelProfiles.TryGetArdy(modelName, out KimodoMotionModelProfile profile)
@@ -1011,6 +1200,18 @@ namespace KimodoBridge.Editor
             if (EditorApplication.isPlayingOrWillChangePlaymode)
             {
                 throw new InvalidOperationException("Kimodo animation asset generation is available in Edit Mode only.");
+            }
+        }
+
+        private static void EnsureCanManageServer()
+        {
+            if (EditorApplication.isCompiling || EditorApplication.isUpdating)
+            {
+                throw new InvalidOperationException("Unity is compiling or importing assets. Retry when the Editor is ready.");
+            }
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                throw new InvalidOperationException("Kimodo server maintenance is available in Edit Mode only.");
             }
         }
 
@@ -1091,14 +1292,19 @@ namespace KimodoBridge.Editor
 
         private sealed class JobRecord
         {
-            public JobRecord(UnityEngine.Object target, EditorGenerateSession session)
+            public JobRecord(
+                UnityEngine.Object target,
+                EditorGenerateSession session,
+                TimelineReservation timelineReservation)
             {
                 Target = target;
                 Session = session;
+                TimelineReservation = timelineReservation;
             }
 
             public UnityEngine.Object Target { get; }
             public EditorGenerateSession Session { get; }
+            public TimelineReservation TimelineReservation { get; }
         }
 
         private readonly struct ResolvedCharacter

@@ -121,6 +121,73 @@ namespace KimodoBridge
                 reconnect: false);
         }
 
+        internal Task<BridgeProtocolResponse> GetHelpAsync(
+            string host,
+            int port,
+            CancellationToken token)
+        {
+            return SendRequestAsync(
+                host,
+                port,
+                new JObject { ["cmd"] = "help" },
+                null,
+                null,
+                token,
+                reconnect: true);
+        }
+
+        internal Task<BridgeProtocolResponse> ListModelConfigurationsAsync(
+            string host,
+            int port,
+            string model,
+            string textEncoderMode,
+            string modelsRoot,
+            CancellationToken token)
+        {
+            return SendRequestAsync(
+                host,
+                port,
+                new JObject
+                {
+                    ["cmd"] = "runtime.list_models",
+                    ["model"] = string.IsNullOrWhiteSpace(model) ? null : model,
+                    ["text_encoder_mode"] = string.IsNullOrWhiteSpace(textEncoderMode)
+                        ? KimodoTextEncoderModeProtocol.HighPrecision
+                        : textEncoderMode,
+                    ["models_root"] = modelsRoot ?? string.Empty
+                },
+                null,
+                null,
+                token,
+                reconnect: true);
+        }
+
+        internal Task<BridgeProtocolResponse> ActivateRuntimeAsync(
+            string host,
+            int port,
+            string model,
+            string textEncoderMode,
+            string modelsRoot,
+            CancellationToken token)
+        {
+            return SendRequestAsync(
+                host,
+                port,
+                new JObject
+                {
+                    ["cmd"] = "runtime.activate",
+                    ["model"] = string.IsNullOrWhiteSpace(model) ? null : model,
+                    ["text_encoder_mode"] = string.IsNullOrWhiteSpace(textEncoderMode)
+                        ? KimodoTextEncoderModeProtocol.HighPerformance
+                        : textEncoderMode,
+                    ["models_root"] = modelsRoot ?? string.Empty
+                },
+                null,
+                null,
+                token,
+                reconnect: true);
+        }
+
         internal Task<BridgeProtocolResponse> GenerateAsync(
             string host,
             int port,
@@ -212,6 +279,17 @@ namespace KimodoBridge
             if (constraintsJson != null)
             {
                 payload["constraints_json"] = constraintsJson;
+            }
+            if (!string.IsNullOrWhiteSpace(request.analysis_options_json))
+            {
+                try
+                {
+                    payload["analysis_options"] = JToken.Parse(request.analysis_options_json);
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException($"analysis_options must be a JSON object: {ex.Message}");
+                }
             }
             if (!request.ardy_session_update_only && request.simulate_free_vram_gb.HasValue)
             {
