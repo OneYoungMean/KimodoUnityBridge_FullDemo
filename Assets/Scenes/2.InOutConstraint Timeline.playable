@@ -250,6 +250,66 @@ MonoBehaviour:
   splineWaypointCount: 8
   splineDensePath: 1
   splineIncludeHeading: 1
+--- !u!114 &-4706260662131357100
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
+  m_Name: KimodoPlayableClip(Clone)(Clone)(Clone)(Clone)(Clone)(Clone)(Clone)(Clone)
+  m_EditorClassIdentifier: 
+  m_Clip: {fileID: -203655887218126122, guid: f725eeacdb86d674cb4103f6d7c92ed1, type: 3}
+  m_Position: {x: 0, y: 0, z: 0}
+  m_EulerAngles: {x: 0, y: 0, z: 0}
+  m_UseTrackMatchFields: 1
+  m_MatchTargetFields: 63
+  m_RemoveStartOffset: 1
+  m_ApplyFootIK: 1
+  m_Loop: 0
+  m_Version: 1
+  m_Rotation: {x: 0, y: 0, z: 0, w: 1}
+  bridgeModelName: Kimodo-SOMA-RP-v1
+  textEncoderMode: 0
+  motionPrompt: a man walk and say hello
+  generationFrames: 150
+  diffusionSteps: 100
+  textWeight: 1
+  randomSeed: 0
+  seed: 42
+  customRetargetAvatar: {fileID: 0}
+  inOutConstraintMode: 0
+  enableInConstraint: 1
+  enableOutConstraint: 1
+  ardyAutoHistory: 1
+  ardyHistoryWeight: 1
+  ardyTargetMaxSpeed: 1.25
+  ardyTargetMaxAcceleration: 1.5
+  showConstraint: 1
+  autoBeginAnchor: 1
+  isGenerated: 0
+  lastGeneratedPrompt: 
+  ardyMotionCachePath: 
+  ardyMotionRepFingerprint: 
+  ardyResolvedSeeds: 
+  autoRetargetOnBinding: 1
+  curveFilterOptions:
+    enabled: 1
+    positionError: 0.25
+    rotationError: 0.25
+    floatError: 0.25
+    ensureQuaternionContinuity: 1
+  frameCount: 0
+  jointCount: 0
+  fps: 30
+  splinePathEnabled: 0
+  splineKnots: []
+  splineWaypointCount: 8
+  splineDensePath: 1
+  splineIncludeHeading: 1
 --- !u!114 &-2480792138071523433
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -360,7 +420,7 @@ MonoBehaviour:
   generationFrames: 150
   diffusionSteps: 100
   textWeight: 1
-  randomSeed: 1
+  randomSeed: 0
   seed: 1946028926
   customRetargetAvatar: {fileID: 0}
   inOutConstraintMode: 2
@@ -385,66 +445,6 @@ MonoBehaviour:
     floatError: 0.25
     ensureQuaternionContinuity: 1
   frameCount: 151
-  jointCount: 77
-  fps: 30
-  splinePathEnabled: 0
-  splineKnots: []
-  splineWaypointCount: 8
-  splineDensePath: 1
-  splineIncludeHeading: 1
---- !u!114 &3386943100684594735
-MonoBehaviour:
-  m_ObjectHideFlags: 1
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260807_090010_893
-  m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: 806c596f9c3b84c41bad21ce72fb6943, type: 2}
-  m_Position: {x: 0, y: 0, z: 0}
-  m_EulerAngles: {x: -0, y: 0, z: 0}
-  m_UseTrackMatchFields: 1
-  m_MatchTargetFields: 63
-  m_RemoveStartOffset: 1
-  m_ApplyFootIK: 1
-  m_Loop: 0
-  m_Version: 1
-  m_Rotation: {x: 0, y: 0, z: 0, w: 1}
-  bridgeModelName: Kimodo-SOMA-RP-v1
-  textEncoderMode: 0
-  motionPrompt: a man walk and say hello
-  generationFrames: 150
-  diffusionSteps: 100
-  textWeight: 1
-  randomSeed: 0
-  seed: 42
-  customRetargetAvatar: {fileID: 0}
-  inOutConstraintMode: 1
-  enableInConstraint: 1
-  enableOutConstraint: 1
-  ardyAutoHistory: 1
-  ardyHistoryWeight: 1
-  ardyTargetMaxSpeed: 1.25
-  ardyTargetMaxAcceleration: 1.5
-  showConstraint: 1
-  autoBeginAnchor: 1
-  isGenerated: 1
-  lastGeneratedPrompt: a man walk and say hello
-  ardyMotionCachePath: 
-  ardyMotionRepFingerprint: 
-  ardyResolvedSeeds: 
-  autoRetargetOnBinding: 1
-  curveFilterOptions:
-    enabled: 1
-    positionError: 0.25
-    rotationError: 0.25
-    floatError: 0.25
-    ensureQuaternionContinuity: 1
-  frameCount: 136
   jointCount: 77
   fps: 30
   splinePathEnabled: 0
@@ -614,9 +614,9 @@ MonoBehaviour:
   - m_Version: 1
     m_Start: 6
     m_ClipIn: 0.000000000000000027755575615628914
-    m_Asset: {fileID: 3386943100684594735}
+    m_Asset: {fileID: -7161852873170264433}
     m_Duration: 4.533333269755046
-    m_TimeScale: 1
+    m_TimeScale: 0.21323529710819164
     m_ParentTrack: {fileID: 3483828814348025209}
     m_EaseInDuration: 0
     m_EaseOutDuration: 0
@@ -816,7 +816,7 @@ MonoBehaviour:
   - m_Version: 1
     m_Start: 6
     m_ClipIn: 0.000000000000000027755575615628914
-    m_Asset: {fileID: -7161852873170264433}
+    m_Asset: {fileID: -4706260662131357100}
     m_Duration: 4.533333269755046
     m_TimeScale: 0.21323529710819164
     m_ParentTrack: {fileID: 4920200649922621575}

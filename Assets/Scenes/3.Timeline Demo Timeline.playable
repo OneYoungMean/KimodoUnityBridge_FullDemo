@@ -394,13 +394,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Time: 2.3833
   constraintEnabled: 1
-  useOverride: 0
+  useOverride: 1
   sampleData:
     constraintType: right-foot
     sampleTime: 2.3833
     rigType: 0
     hasRootHeading: 0
-    kimodoRootPosition: {x: -1.5185245, y: 1.0509342, z: 9.368837}
+    kimodoRootPosition: {x: -1.5185245, y: 1.0509342, z: 7.57}
     rootHeading: {x: 0.1426762, y: 0.9897694}
     rootTargetMaxSpeed: 1.25
     rootTargetMaxAcceleration: 1.5
@@ -504,9 +504,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260807_072622_180
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260807_162955_548
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: 42b3c26a002856f4fa0102725c2c7ddd, type: 2}
+  m_Clip: {fileID: 7400000, guid: 2788d54c649d4f14687b75fa7a8b2198, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -518,7 +518,7 @@ MonoBehaviour:
   m_Rotation: {x: 0, y: 0, z: 0, w: 1}
   bridgeModelName: Kimodo-SOMA-RP-v1
   textEncoderMode: 1
-  motionPrompt: 'run and  kick right foot '
+  motionPrompt: 'cross bar and  kick right foot '
   generationFrames: 150
   diffusionSteps: 100
   textWeight: 1
@@ -533,10 +533,9 @@ MonoBehaviour:
   ardyTargetMaxSpeed: 1.25
   ardyTargetMaxAcceleration: 1.5
   showConstraint: 1
-  splinePathEnabled: 0
   autoBeginAnchor: 1
   isGenerated: 1
-  lastGeneratedPrompt: run and  kick right foot
+  lastGeneratedPrompt: cross bar and  kick right foot
   ardyMotionCachePath: 
   ardyMotionRepFingerprint: 
   ardyResolvedSeeds: 
@@ -550,6 +549,11 @@ MonoBehaviour:
   frameCount: 149
   jointCount: 77
   fps: 30
+  splinePathEnabled: 0
+  splineKnots: []
+  splineWaypointCount: 8
+  splineDensePath: 1
+  splineIncludeHeading: 1
 --- !u!114 &-2807316597933768438
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -970,7 +974,6 @@ MonoBehaviour:
   ardyTargetMaxSpeed: 1.25
   ardyTargetMaxAcceleration: 1.5
   showConstraint: 1
-  splinePathEnabled: 0
   autoBeginAnchor: 1
   isGenerated: 1
   lastGeneratedPrompt: "\u53F3\u624B\u6309\u95E8\u94C3"
@@ -987,6 +990,11 @@ MonoBehaviour:
   frameCount: 149
   jointCount: 77
   fps: 30
+  splinePathEnabled: 0
+  splineKnots: []
+  splineWaypointCount: 8
+  splineDensePath: 1
+  splineIncludeHeading: 1
 --- !u!114 &-620307563089755545
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -1239,7 +1247,6 @@ MonoBehaviour:
   ardyTargetMaxSpeed: 1.25
   ardyTargetMaxAcceleration: 1.5
   showConstraint: 1
-  splinePathEnabled: 0
   autoBeginAnchor: 1
   isGenerated: 1
   lastGeneratedPrompt: a woman sit on the desk
@@ -1256,6 +1263,11 @@ MonoBehaviour:
   frameCount: 149
   jointCount: 77
   fps: 30
+  splinePathEnabled: 0
+  splineKnots: []
+  splineWaypointCount: 8
+  splineDensePath: 1
+  splineIncludeHeading: 1
 --- !u!114 &1237194040967625775
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -2194,7 +2206,6 @@ MonoBehaviour:
   ardyTargetMaxSpeed: 1.25
   ardyTargetMaxAcceleration: 1.5
   showConstraint: 1
-  splinePathEnabled: 0
   autoBeginAnchor: 1
   isGenerated: 1
   lastGeneratedPrompt: stand up
@@ -2211,6 +2222,11 @@ MonoBehaviour:
   frameCount: 150
   jointCount: 77
   fps: 30
+  splinePathEnabled: 0
+  splineKnots: []
+  splineWaypointCount: 8
+  splineDensePath: 1
+  splineIncludeHeading: 1
 --- !u!114 &7992148704367507427
 MonoBehaviour:
   m_ObjectHideFlags: 1
