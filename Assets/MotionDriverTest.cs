@@ -20,11 +20,13 @@ namespace KimodoBridge
         [SerializeField] private float rootHeadingZ = 1f;
         [SerializeField] private float constraintTimeSeconds = 1f;
 
-        [Header("Mouse Root Goal")]
+        [Header("Mouse Root2D Constraint")]
         [SerializeField] private Camera clickCamera;
         [SerializeField] private LayerMask clickMask = ~0;
         [SerializeField][Min(0.01f)] private float clickRayDistance = 1000f;
         [SerializeField][Min(0f)] private float clickTargetRadius = 1f;
+        [SerializeField][Min(0.01f)] private float clickMaxSpeedMetersPerSecond = 1.25f;
+        [SerializeField][Min(0.01f)] private float clickMaxAccelerationMetersPerSecond2 = 1.5f;
         [SerializeField][Min(0f)] private float clickArrivalThresholdMeters = 0.1f;
         [SerializeField] private bool clickIncludeHeading = true;
         [SerializeField][Min(0.01f)] private float clickTargetMarkerDiameter = 0.2f;
@@ -99,15 +101,22 @@ namespace KimodoBridge
             {
                 KimodoRuntimeMotionDriver target = targets[i];
                 Vector3 targetPoint = targetPoints[i];
-                target.SetRootGoal(
-                    targetPoint,
-                    ResolveRootGoalRotation(target, rayCamera, targetPoint),
-                    durationSeconds);
+                Vector2? worldHeading = clickIncludeHeading
+                    ? ResolveCameraFacingHeading(rayCamera, targetPoint)
+                    : (Vector2?)null;
+                target.SetRoot2DTarget(
+                    targetPoint.x,
+                    targetPoint.z,
+                    clickMaxSpeedMetersPerSecond,
+                    clickMaxAccelerationMetersPerSecond2,
+                    clickArrivalThresholdMeters,
+                    includeHeading: clickIncludeHeading,
+                    worldHeading: worldHeading);
                 target.ApplyStagedConstraints();
                 ShowTargetMarker(target, targetPoint, i);
             }
             lastResult =
-                $"Mouse RootGoal center=({hit.point.x:0.###}, {hit.point.y:0.###}, {hit.point.z:0.###}), radius={clickTargetRadius:0.###}, targets={targets.Count}, duration={durationSeconds:0.###}s.";
+                $"Mouse Root2DTarget center=({hit.point.x:0.###}, {hit.point.z:0.###}), radius={clickTargetRadius:0.###}, targets={targets.Count}, maxSpeed={clickMaxSpeedMetersPerSecond:0.###}, maxAcceleration={clickMaxAccelerationMetersPerSecond2:0.###}.";
         }
 
         private static Vector3 ResolveCameraPlanarAxis(Camera rayCamera)
@@ -132,20 +141,6 @@ namespace KimodoBridge
 
             toCamera.Normalize();
             return new Vector2(toCamera.x, toCamera.z);
-        }
-
-        private Quaternion ResolveRootGoalRotation(
-            KimodoRuntimeMotionDriver target,
-            Camera rayCamera,
-            Vector3 targetPoint)
-        {
-            if (!clickIncludeHeading)
-            {
-                return target.transform.rotation;
-            }
-
-            Vector2 heading = ResolveCameraFacingHeading(rayCamera, targetPoint);
-            return Quaternion.LookRotation(new Vector3(heading.x, 0f, heading.y), Vector3.up);
         }
 
         private static List<Vector3> BuildSymmetricCircleTargets(
@@ -195,7 +190,7 @@ namespace KimodoBridge
         private void ShowTargetMarker(KimodoRuntimeMotionDriver target, Vector3 targetPosition, int index)
         {
             GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            marker.name = $"Root Goal {index + 1}";
+            marker.name = $"Root2D Constraint {index + 1}";
             if (marker.TryGetComponent(out Collider markerCollider))
             {
                 markerCollider.enabled = false;
@@ -350,6 +345,12 @@ namespace KimodoBridge
             clickTargetRadius = Mathf.Max(
                 0f,
                 DrawFloatField("Formation Radius", clickTargetRadius));
+            clickMaxSpeedMetersPerSecond = Mathf.Max(
+                0.01f,
+                DrawFloatField("Target Max Speed", clickMaxSpeedMetersPerSecond));
+            clickMaxAccelerationMetersPerSecond2 = Mathf.Max(
+                0.01f,
+                DrawFloatField("Target Max Accel", clickMaxAccelerationMetersPerSecond2));
             clickArrivalThresholdMeters = Mathf.Max(
                 0f,
                 DrawFloatField("Arrival Threshold", clickArrivalThresholdMeters));
@@ -357,7 +358,7 @@ namespace KimodoBridge
             clickTargetMarkerDiameter = Mathf.Max(
                 0.01f,
                 DrawFloatField("Constraint Marker Size", clickTargetMarkerDiameter));
-            GUILayout.Label("Click outside this window to submit a complete world Root Goal.");
+            GUILayout.Label("Click outside this window to submit a world Root2D constraint.");
             constraintTimeSeconds = DrawFloatField("Constraint Time", constraintTimeSeconds);
             rootWorldX = DrawFloatField("World X", rootWorldX);
             rootWorldZ = DrawFloatField("World Z", rootWorldZ);
@@ -366,8 +367,13 @@ namespace KimodoBridge
 
             if (GUILayout.Button("Queue World Root2D"))
             {
-                ForEachDriver(target => target.SetRoot2D(rootWorldX, rootWorldZ));
-                lastResult = $"SetRoot2D({rootWorldX:0.###}, {rootWorldZ:0.###})";
+                ForEachDriver(target =>
+                {
+                    target.SetRoot2D(rootWorldX, rootWorldZ, constraintTimeSeconds);
+                    target.ApplyStagedConstraints();
+                });
+                lastResult =
+                    $"SetRoot2D({rootWorldX:0.###}, {rootWorldZ:0.###}, duration={constraintTimeSeconds:0.###})";
             }
 
             if (GUILayout.Button("Queue World Root+Heading"))
@@ -376,9 +382,11 @@ namespace KimodoBridge
                     rootWorldX,
                     rootWorldZ,
                     rootHeadingX,
-                    rootHeadingZ));
+                    rootHeadingZ,
+                    constraintTimeSeconds));
+                ForEachDriver(target => target.ApplyStagedConstraints());
                 lastResult =
-                    $"SetRoot2D({rootWorldX:0.###}, {rootWorldZ:0.###}, {rootHeadingX:0.###}, {rootHeadingZ:0.###})";
+                    $"SetRoot2D({rootWorldX:0.###}, {rootWorldZ:0.###}, {rootHeadingX:0.###}, {rootHeadingZ:0.###}, duration={constraintTimeSeconds:0.###})";
             }
 
         }

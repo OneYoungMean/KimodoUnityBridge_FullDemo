@@ -147,7 +147,6 @@ MonoBehaviour:
   modelName: ARDY-Core-RP-20FPS-Horizon40
   textEncoderMode: 1
   forceCpu: 0
-  startupTimeoutMinutes: 30
   defaultPrompt: idle
   generationFrames: 150
   diffusionSteps: 10
@@ -155,10 +154,10 @@ MonoBehaviour:
   fixedSeed: 42
   segmentIntervalSeconds: 5
   ardyPlaybackReserveSeconds: 1
-  ardyAdaptivePlaybackReserve: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
-  ardyDenseRootPath: 0
+  ardyMaxSpeed: 1.25
+  ardyMaxAcceleration: 1.5
   loopHint: 1
   segmentOverlapHeadSettings:
     mode: 1
@@ -1829,18 +1828,17 @@ MonoBehaviour:
   modelName: ARDY-Core-RP-20FPS-Horizon40
   textEncoderMode: 1
   forceCpu: 0
-  startupTimeoutMinutes: 30
-  defaultPrompt: idle
+  defaultPrompt: a person walk and run
   generationFrames: 150
   diffusionSteps: 10
   randomSeed: 1
   fixedSeed: 42
   segmentIntervalSeconds: 5
   ardyPlaybackReserveSeconds: 1
-  ardyAdaptivePlaybackReserve: 1
-  ardyAutoHistory: 1
-  ardyHistoryWeight: 1
-  ardyDenseRootPath: 0
+  ardyAutoHistory: 0
+  ardyHistoryWeight: 0.748
+  ardyMaxSpeed: 1.25
+  ardyMaxAcceleration: 1.5
   loopHint: 1
   segmentOverlapHeadSettings:
     mode: 1
@@ -2281,16 +2279,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ac0fdbec35deb2542b6d7be9b4415252, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  driver: {fileID: 3291267630888402257}
-  drivers:
-  - {fileID: 3291267630888402257}
-  - {fileID: 821815588}
-  - {fileID: 1699232382}
-  - {fileID: 1574027557}
-  - {fileID: 5153537}
-  - {fileID: 1464951260}
-  - {fileID: 1363098293}
-  - {fileID: 1514062698}
   prompt: a man walk around
   durationSeconds: 5
   rootWorldX: 0
@@ -3014,7 +3002,6 @@ MonoBehaviour:
   modelName: ARDY-Core-RP-20FPS-Horizon40
   textEncoderMode: 1
   forceCpu: 0
-  startupTimeoutMinutes: 30
   defaultPrompt: idle
   generationFrames: 150
   diffusionSteps: 10
@@ -3022,10 +3009,10 @@ MonoBehaviour:
   fixedSeed: 42
   segmentIntervalSeconds: 5
   ardyPlaybackReserveSeconds: 1
-  ardyAdaptivePlaybackReserve: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
-  ardyDenseRootPath: 0
+  ardyMaxSpeed: 1.25
+  ardyMaxAcceleration: 1.5
   loopHint: 1
   segmentOverlapHeadSettings:
     mode: 1
@@ -3110,7 +3097,6 @@ MonoBehaviour:
   modelName: ARDY-Core-RP-20FPS-Horizon40
   textEncoderMode: 1
   forceCpu: 0
-  startupTimeoutMinutes: 30
   defaultPrompt: idle
   generationFrames: 150
   diffusionSteps: 10
@@ -3118,10 +3104,10 @@ MonoBehaviour:
   fixedSeed: 42
   segmentIntervalSeconds: 5
   ardyPlaybackReserveSeconds: 1
-  ardyAdaptivePlaybackReserve: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
-  ardyDenseRootPath: 0
+  ardyMaxSpeed: 1.25
+  ardyMaxAcceleration: 1.5
   loopHint: 1
   segmentOverlapHeadSettings:
     mode: 1
@@ -3206,7 +3192,6 @@ MonoBehaviour:
   modelName: ARDY-Core-RP-20FPS-Horizon40
   textEncoderMode: 1
   forceCpu: 0
-  startupTimeoutMinutes: 30
   defaultPrompt: idle
   generationFrames: 150
   diffusionSteps: 10
@@ -3214,10 +3199,10 @@ MonoBehaviour:
   fixedSeed: 42
   segmentIntervalSeconds: 5
   ardyPlaybackReserveSeconds: 1
-  ardyAdaptivePlaybackReserve: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
-  ardyDenseRootPath: 0
+  ardyMaxSpeed: 1.25
+  ardyMaxAcceleration: 1.5
   loopHint: 1
   segmentOverlapHeadSettings:
     mode: 1
@@ -3296,7 +3281,6 @@ MonoBehaviour:
   modelName: ARDY-Core-RP-20FPS-Horizon40
   textEncoderMode: 1
   forceCpu: 0
-  startupTimeoutMinutes: 30
   defaultPrompt: idle
   generationFrames: 150
   diffusionSteps: 10
@@ -3304,10 +3288,10 @@ MonoBehaviour:
   fixedSeed: 42
   segmentIntervalSeconds: 5
   ardyPlaybackReserveSeconds: 1
-  ardyAdaptivePlaybackReserve: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
-  ardyDenseRootPath: 0
+  ardyMaxSpeed: 1.25
+  ardyMaxAcceleration: 1.5
   loopHint: 1
   segmentOverlapHeadSettings:
     mode: 1
@@ -3609,18 +3593,17 @@ MonoBehaviour:
   modelName: ARDY-Core-RP-20FPS-Horizon40
   textEncoderMode: 1
   forceCpu: 0
-  startupTimeoutMinutes: 30
-  defaultPrompt: idle
+  defaultPrompt: a person walk and run
   generationFrames: 150
   diffusionSteps: 10
   randomSeed: 1
   fixedSeed: 42
   segmentIntervalSeconds: 5
   ardyPlaybackReserveSeconds: 1
-  ardyAdaptivePlaybackReserve: 1
-  ardyAutoHistory: 1
-  ardyHistoryWeight: 1
-  ardyDenseRootPath: 0
+  ardyAutoHistory: 0
+  ardyHistoryWeight: 0.748
+  ardyMaxSpeed: 1.25
+  ardyMaxAcceleration: 1.5
   loopHint: 1
   segmentOverlapHeadSettings:
     mode: 1
@@ -5023,18 +5006,17 @@ MonoBehaviour:
   modelName: ARDY-Core-RP-20FPS-Horizon40
   textEncoderMode: 1
   forceCpu: 0
-  startupTimeoutMinutes: 30
-  defaultPrompt: idle
+  defaultPrompt: a person walk and run
   generationFrames: 150
   diffusionSteps: 10
   randomSeed: 1
   fixedSeed: 42
   segmentIntervalSeconds: 5
   ardyPlaybackReserveSeconds: 1
-  ardyAdaptivePlaybackReserve: 1
-  ardyAutoHistory: 1
-  ardyHistoryWeight: 1
-  ardyDenseRootPath: 0
+  ardyAutoHistory: 0
+  ardyHistoryWeight: 0.748
+  ardyMaxSpeed: 1.25
+  ardyMaxAcceleration: 1.5
   loopHint: 1
   segmentOverlapHeadSettings:
     mode: 1
