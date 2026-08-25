@@ -20,6 +20,7 @@ namespace KimodoBridge.Editor
         private SerializedProperty diffusionSteps;
         private SerializedProperty randomProp;
         private SerializedProperty seed;
+        private SerializedProperty generateLoopProp;
         private SerializedProperty inOutConstraintModeProp;
         private SerializedProperty enableInConstraint;
         private SerializedProperty enableOutConstraint;
@@ -63,6 +64,7 @@ namespace KimodoBridge.Editor
             showAdvancedFoldout = KimodoPlayableClipGenerationSettings.instance.AdvancedCurveFilterFoldout;
             PullBridgeStatusSnapshot();
             SyncRequestHandleState();
+            KimodoConstraintSelectionPreviewTool.SchedulePreviewUpdate();
         }
 
         private void ApplyProjectPromptDefault()
@@ -106,6 +108,7 @@ namespace KimodoBridge.Editor
             diffusionSteps = serializedObject.FindProperty("diffusionSteps");
             randomProp = serializedObject.FindProperty("randomSeed");
             seed = serializedObject.FindProperty("seed");
+            generateLoopProp = serializedObject.FindProperty("generateLoop");
             inOutConstraintModeProp = serializedObject.FindProperty("inOutConstraintMode");
             enableInConstraint = serializedObject.FindProperty("enableInConstraint");
             enableOutConstraint = serializedObject.FindProperty("enableOutConstraint");
@@ -143,7 +146,7 @@ namespace KimodoBridge.Editor
             InitializeSerializedBindings();
             serializedObject.UpdateIfRequiredOrScript();
             motionPrompt.stringValue = prompt ?? string.Empty;
-            generationFrames.intValue = Mathf.Clamp(generationFramesValue, KimodoPlayableClip.MIN_FRAMES, KimodoPlayableClip.MAX_FRAMES);
+            generationFrames.intValue = Mathf.Clamp(generationFramesValue, KimodoMotionModelProfiles.MinGenerationFrames, KimodoMotionModelProfiles.MaxGenerationFrames);
             diffusionSteps.intValue = Mathf.Clamp(diffusionStepsValue, 0, 1000);
             randomProp.boolValue = randomSeedEnabled;
             seed.intValue = seedValue;
@@ -210,7 +213,7 @@ namespace KimodoBridge.Editor
             {
                 EditorGUILayout.PropertyField(
                     ardyAutoHistory,
-                    new GUIContent("Auto History", "Adapt the history window from upcoming motion constraints."));
+                    new GUIContent("Auto History", "0-1 m/s = 0.225; 1-10 m/s grows exponentially to 1; above 10 m/s = 1."));
                 if (!ardyAutoHistory.hasMultipleDifferentValues &&
                     !ardyAutoHistory.boolValue &&
                     ardyHistoryWeight != null)
@@ -242,6 +245,21 @@ namespace KimodoBridge.Editor
                     }
                 }
             }
+            if (generateLoopProp != null)
+            {
+                EditorGUILayout.PropertyField(
+                    generateLoopProp,
+                    new GUIContent("Generate Loop", "Generate a normal baseline, constrain its first pose at the end, then generate an extended motion and keep its middle section."));
+                if (!generateLoopProp.hasMultipleDifferentValues &&
+                    generateLoopProp.boolValue &&
+                    hasTimelineDuration &&
+                    timelineClip.duration * 2.0 > 10.0)
+                {
+                    EditorGUILayout.HelpBox(
+                        "Loop generation exceeds the 600-frame limit and will fall back to normal generation.",
+                        MessageType.Warning);
+                }
+            }
             if (showConstraint != null)
             {
                 bool wasShown = showConstraint.boolValue;
@@ -254,7 +272,7 @@ namespace KimodoBridge.Editor
                     if (showConstraint.boolValue && !showConstraint.hasMultipleDifferentValues)
                     {
                         refreshClicked = GUILayout.Button(
-                            new GUIContent("Refresh", "Clear cached poses and force constraint re-sampling."),
+                            new GUIContent("Refresh", "Force constraint re-sampling."),
                             EditorStyles.miniButton,
                             GUILayout.Width(54f));
                     }
@@ -268,11 +286,9 @@ namespace KimodoBridge.Editor
                       previousInOutMode != inOutConstraintModeProp.enumValueIndex));
                 if (refreshClicked || wasReEnabled)
                 {
-                    KimodoConstraintSelectionPreviewTool.ForceRefresh();
+                    KimodoConstraintSelectionPreviewTool.SchedulePreviewUpdate();
                 }
             }
-            KimodoConstraintSelectionPreviewTool.ScheduleRefresh();
-
             DrawSplinePathSection(timelineClip);
 
             DrawConstraintReferenceList();
@@ -284,12 +300,15 @@ namespace KimodoBridge.Editor
                 EditorCompilationStateGate.IsCompilingOrReloading;
             GUI.enabled = !disableGenerate;
             int selectedGenerateClipCount = KimodoPlayableClipGenerationExecutionService.GetSelectedPlayableClipCount(clip);
+            bool generateLoop = generateLoopProp != null && generateLoopProp.boolValue;
             string generateLabel = selectedGenerateClipCount > 1
-                ? $"Generate {selectedGenerateClipCount} Clips & Bake"
-                : "Generate & Bake";
+                ? $"Generate {selectedGenerateClipCount} {(generateLoop ? "Loop " : string.Empty)}Clips & Bake"
+                : generateLoop ? "Generate Loop & Bake" : "Generate & Bake";
             string generateTooltip = selectedGenerateClipCount > 1
                 ? "Generate the selected Timeline clips one at a time in Timeline order."
-                : "Generate only this Timeline clip.";
+                : generateLoop
+                    ? "Generate a baseline motion, then regenerate with an automatic terminal FullBody constraint and keep the middle section."
+                    : "Generate only this Timeline clip.";
             if (GUILayout.Button(new GUIContent(generateLabel, generateTooltip), GUILayout.Height(32)))
             {
                 serializedObject.ApplyModifiedProperties();
@@ -302,18 +321,18 @@ namespace KimodoBridge.Editor
                     isGenerating = true;
                     lastError = string.Empty;
                     lastStatus = string.IsNullOrWhiteSpace(error) ? "Queued generation..." : error;
+                    KimodoTimelinePreviewRefreshUtility.RefreshEditorWorkflow(RefreshReason.ContentsModified);
                 }
                 else
                 {
                     lastError = error;
                 }
             }
-            if (isArdy &&
-                KimodoPlayableClipGenerationExecutionService.TryGetSelectedArdyClipCount(
+            if (KimodoPlayableClipGenerationExecutionService.TryGetSelectedCompatibleClipCount(
                     clip,
                     out int connectedClipCount))
             {
-                bool hasConnectedPlan = KimodoPlayableClipGenerationExecutionService.TryGetConnectedArdyClipCount(
+                bool hasConnectedPlan = KimodoPlayableClipGenerationExecutionService.TryGetConnectedClipCount(
                     clip,
                     out _,
                     out string connectedReason);
@@ -323,12 +342,12 @@ namespace KimodoBridge.Editor
                         new GUIContent(
                             connectedLabel,
                             hasConnectedPlan
-                                ? "Generate all compatible head-to-tail ARDY clips in one server request, then slice and bake them in Unity."
+                                ? "Generate all compatible clips in one server request, then slice and bake them in Unity."
                                 : connectedReason),
                         GUILayout.Height(28)))
                 {
                     serializedObject.ApplyModifiedProperties();
-                    bool accepted = KimodoPlayableClipGenerationExecutionService.TryStartGenerateConnectedArdy(
+                    bool accepted = KimodoPlayableClipGenerationExecutionService.TryStartGenerateConnected(
                         clip,
                         out _,
                         out string error);
@@ -336,7 +355,8 @@ namespace KimodoBridge.Editor
                     {
                         isGenerating = true;
                         lastError = string.Empty;
-                        lastStatus = "Queued connected ARDY generation...";
+                        lastStatus = "Queued connected Timeline generation...";
+                        KimodoTimelinePreviewRefreshUtility.RefreshEditorWorkflow(RefreshReason.ContentsModified);
                     }
                     else
                     {
@@ -347,7 +367,7 @@ namespace KimodoBridge.Editor
             GUI.enabled = isGenerating;
             if (GUILayout.Button(new GUIContent("Cancel", "Cancel the current generation command for this clip."), GUILayout.Height(24)))
             {
-                EditorGenerateSessionRunner.Cancel(clip);
+                KimodoEditorGenerationJobService.Cancel(clip);
             }
             GUI.enabled = true;
 
@@ -469,7 +489,7 @@ namespace KimodoBridge.Editor
         private void DrawConstraintReferenceList()
         {
             EditorGUILayout.LabelField("Constraint References", EditorStyles.miniBoldLabel);
-            List<KimodoConstraintMarkerBase> references = CollectConstraintReferences();
+            List<KimodoConstraintMarker> references = CollectConstraintReferences();
             if (references.Count == 0)
             {
                 EditorGUILayout.LabelField("(none)", EditorStyles.miniLabel);
@@ -478,7 +498,7 @@ namespace KimodoBridge.Editor
             {
                 for (int i = 0; i < references.Count; i++)
                 {
-                    KimodoConstraintMarkerBase marker = references[i];
+                    KimodoConstraintMarker marker = references[i];
                     if (marker == null)
                     {
                         continue;
@@ -489,19 +509,19 @@ namespace KimodoBridge.Editor
                         EditorGUILayout.ObjectField(
                             new GUIContent($"{marker.ConstraintType} @ {marker.time:F3}s"),
                             marker,
-                            typeof(KimodoConstraintMarkerBase),
+                            typeof(KimodoConstraintMarker),
                             true);
                     }
                 }
             }
         }
 
-        private List<KimodoConstraintMarkerBase> CollectConstraintReferences()
+        private List<KimodoConstraintMarker> CollectConstraintReferences()
         {
             TimelineClip timelineClip = KimodoTimelineClipResolver.FindTimelineClipForAsset(clip);
             TrackAsset track = timelineClip != null ? timelineClip.GetParentTrack() : null;
             return track == null
-                ? new List<KimodoConstraintMarkerBase>()
+                ? new List<KimodoConstraintMarker>()
                 : KimodoTimelineConstraintMarkerSampler.CollectMarkersForClip(track, timelineClip);
         }
 
@@ -552,7 +572,7 @@ namespace KimodoBridge.Editor
 
             if (loopProp != null)
             {
-                EditorGUILayout.PropertyField(loopProp, new GUIContent("Loop", "Loop this clip when timeline playback exceeds clip duration."));
+                EditorGUILayout.PropertyField(loopProp, new GUIContent("Is Loop", "Loop this clip when timeline playback exceeds clip duration."));
             }
 
             KimodoTimelinePreviewRefreshUtility.DrawAnimationPlayableAssetClipOffsetSettings(
@@ -599,7 +619,7 @@ namespace KimodoBridge.Editor
             KimodoTextEncoderMode encoderMode = clip != null
                 ? clip.textEncoderMode
                 : KimodoTextEncoderMode.HighPerformance;
-            string modelName = clip == null ? KimodoPlayableClip.DefaultBridgeModelName : KimodoPlayableClip.NormalizeBridgeModelName(clip.bridgeModelName);
+            string modelName = clip == null ? KimodoMotionModelProfiles.DefaultModelName : KimodoMotionModelProfiles.NormalizeName(clip.bridgeModelName);
             string modelsRootOverride = KimodoPlayableClipGenerationSettings.instance.LocalModelsPath?.Trim();
             if (!KimodoBridgeServerTool.TryGetModelMissingSetupMinutes(runtimeRoot, encoderMode, modelName, modelsRootOverride, out int minutes))
             {
@@ -657,7 +677,7 @@ namespace KimodoBridge.Editor
 
         private void SyncRequestHandleState()
         {
-            if (clip == null || !EditorGenerateSessionRunner.TryGet(clip, out EditorGenerateSession handle) || handle == null)
+            if (clip == null || !KimodoEditorGenerationJobService.TryGet(clip, out KimodoEditorGenerationJobSession handle) || handle == null)
             {
                 isGenerating = false;
                 return;
@@ -666,25 +686,25 @@ namespace KimodoBridge.Editor
             isGenerating = handle.IsRunning;
             switch (handle.Status)
             {
-                case KimodoEditorRequestStatus.Running:
+                case KimodoEditorGenerationJobStatus.Running:
                     lastStatus = string.IsNullOrWhiteSpace(handle.Message) ? "Generating and baking..." : handle.Message;
                     lastError = string.Empty;
                     break;
-                case KimodoEditorRequestStatus.Completed:
+                case KimodoEditorGenerationJobStatus.Completed:
                     lastStatus = string.IsNullOrWhiteSpace(handle.Message) ? "Generation complete." : handle.Message;
                     lastError = string.Empty;
-                    if (handle.Payload is KimodoEditorGenerateResult generateResult &&
+                    if (handle.Payload is KimodoEditorGenerationResult generateResult &&
                         !string.IsNullOrWhiteSpace(generateResult.ConstraintsPath))
                     {
                         lastConstraintsPath = generateResult.ConstraintsPath;
                     }
 
                     break;
-                case KimodoEditorRequestStatus.Failed:
+                case KimodoEditorGenerationJobStatus.Failed:
                     lastStatus = "Generation failed.";
                     lastError = handle.Error;
                     break;
-                case KimodoEditorRequestStatus.Canceled:
+                case KimodoEditorGenerationJobStatus.Canceled:
                     lastStatus = string.IsNullOrWhiteSpace(handle.Message) ? "Generation canceled." : handle.Message;
                     lastError = string.Empty;
                     break;
@@ -732,10 +752,10 @@ namespace KimodoBridge.Editor
                 EditorGUILayout.LabelField("ARDY Motion Limits", EditorStyles.boldLabel);
                 EditorGUILayout.PropertyField(
                     ardyTargetMaxSpeed,
-                    new GUIContent("Max Speed", "Maximum root speed used by ARDY Auto History for a future Full-Body target."));
+                    new GUIContent("Max Speed", "Maximum root speed used to plan ARDY Full-Body root targets."));
                 EditorGUILayout.PropertyField(
                     ardyTargetMaxAcceleration,
-                    new GUIContent("Max Acceleration", "Maximum root acceleration used by ARDY Auto History for a future Full-Body target."));
+                    new GUIContent("Max Acceleration", "Maximum root acceleration used to plan ARDY Full-Body root targets."));
             }
 
             EditorGUILayout.Space(4f);
@@ -827,7 +847,7 @@ namespace KimodoBridge.Editor
                 Undo.RecordObject(clip, "Reset Kimodo Clip");
                 clip.ResetGeneration();
                 EditorUtility.SetDirty(clip);
-                EditorGenerateSessionRunner.Clear(clip);
+                KimodoEditorGenerationJobService.Clear(clip);
                 lastStatus = string.Empty;
                 lastError = string.Empty;
             }

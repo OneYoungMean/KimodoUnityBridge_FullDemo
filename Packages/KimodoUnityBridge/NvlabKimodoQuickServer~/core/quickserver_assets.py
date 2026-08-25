@@ -60,11 +60,30 @@ class LoggerLike(Protocol):
 
 
 @dataclass(frozen=True)
-class MainModelSpec:
-    local_name: str
+class ModelSpec:
+    model_name: str
     modelscope_repo: str
     huggingface_repo: str
+    backend: str = "kimodo"
+    source_fps: float = 30.0
+    horizon_frames: int = 0
+    frames_per_token: int = 1
+    max_context_frames: int = 0
+    rig_profile: str = "somaskel77"
+    joint_count: int = 77
+    max_diffusion_steps: int = 1000
+    default_diffusion_steps: int = 100
+    cfg_text_weight: float = 2.0
+    cfg_constraint_weight: float = 2.0
+    motion_rep_fingerprint: str = ""
+    postprocess: bool = True
+    supports_streaming: bool = False
+    supports_timeline_segments: bool = True
     aliases: tuple[str, ...] = ()
+
+    @property
+    def local_name(self) -> str:
+        return self.model_name
 
 
 @dataclass(frozen=True)
@@ -107,24 +126,6 @@ class TextEncoderRuntimeDecision:
     def effective_vram_gb(self) -> float:
         """Compatibility alias; the value has always meant the routing budget."""
         return self.effective_free_vram_gb
-
-
-@dataclass(frozen=True)
-class MotionModelProfile:
-    model_name: str
-    modelscope_repo: str
-    backend: str
-    source_fps: float
-    horizon_frames: int
-    frames_per_token: int
-    max_context_frames: int
-    rig_profile: str
-    max_diffusion_steps: int
-    cfg_text_weight: float
-    cfg_constraint_weight: float
-    motion_rep_fingerprint: str
-    postprocess: bool
-    aliases: tuple[str, ...] = ()
 
 
 class DownloadSite(str, Enum):
@@ -270,52 +271,58 @@ PURGED_RUNTIME_ENV_VARS: tuple[str, ...] = (
 )
 
 
-MAIN_MODELS: tuple[MainModelSpec, ...] = (
-    MainModelSpec(
-        local_name="Kimodo-SOMA-RP-v1",
+MAIN_MODELS: tuple[ModelSpec, ...] = (
+    ModelSpec(
+        model_name="Kimodo-SOMA-RP-v1",
         modelscope_repo="nv-community/Kimodo-SOMA-RP-v1.1",
         huggingface_repo="nvidia/Kimodo-SOMA-RP-v1.1",
         aliases=("soma", "soma-rp", "kimodo-soma-rp"),
     ),
-    MainModelSpec(
-        local_name="Kimodo-SOMA-RP-v1.1",
+    ModelSpec(
+        model_name="Kimodo-SOMA-RP-v1.1",
         modelscope_repo="nv-community/Kimodo-SOMA-RP-v1.1",
         huggingface_repo="nvidia/Kimodo-SOMA-RP-v1.1",
     ),
-    MainModelSpec(
-        local_name="Kimodo-SMPLX-RP-v1",
+    ModelSpec(
+        model_name="Kimodo-SMPLX-RP-v1",
         modelscope_repo="nv-community/Kimodo-SMPLX-RP-v1",
         huggingface_repo="nvidia/Kimodo-SMPLX-RP-v1",
+        rig_profile="smplx22",
+        joint_count=22,
         aliases=("smplx", "smplx-rp", "kimodo-smplx-rp"),
     ),
-    MainModelSpec(
-        local_name="Kimodo-G1-RP-v1",
+    ModelSpec(
+        model_name="Kimodo-G1-RP-v1",
         modelscope_repo="nv-community/Kimodo-G1-RP-v1",
         huggingface_repo="nvidia/Kimodo-G1-RP-v1",
+        rig_profile="g1skel34",
+        joint_count=34,
         aliases=("g1", "g1-rp", "kimodo-g1-rp"),
     ),
-    MainModelSpec(
-        local_name="Kimodo-SOMA-SEED-v1",
+    ModelSpec(
+        model_name="Kimodo-SOMA-SEED-v1",
         modelscope_repo="nv-community/Kimodo-SOMA-SEED-v1",
         huggingface_repo="nvidia/Kimodo-SOMA-SEED-v1",
         aliases=("soma-seed", "kimodo-soma-seed"),
     ),
-    MainModelSpec(
-        local_name="Kimodo-SOMA-SEED-v1.1",
+    ModelSpec(
+        model_name="Kimodo-SOMA-SEED-v1.1",
         modelscope_repo="nv-community/Kimodo-SOMA-SEED-v1.1",
         huggingface_repo="nvidia/Kimodo-SOMA-SEED-v1.1",
     ),
-    MainModelSpec(
-        local_name="Kimodo-G1-SEED-v1",
+    ModelSpec(
+        model_name="Kimodo-G1-SEED-v1",
         modelscope_repo="nv-community/Kimodo-G1-SEED-v1",
         huggingface_repo="nvidia/Kimodo-G1-SEED-v1",
+        rig_profile="g1skel34",
+        joint_count=34,
         aliases=("g1-seed", "kimodo-g1-seed"),
     ),
 )
 
 
-def _build_main_model_registry() -> dict[str, MainModelSpec]:
-    registry: dict[str, MainModelSpec] = {}
+def _build_main_model_registry() -> dict[str, ModelSpec]:
+    registry: dict[str, ModelSpec] = {}
     for spec in MAIN_MODELS:
         for key in (spec.local_name, *spec.aliases):
             registry[str(key).lower()] = spec
@@ -324,80 +331,100 @@ def _build_main_model_registry() -> dict[str, MainModelSpec]:
 
 MAIN_MODEL_REGISTRY = _build_main_model_registry()
 
-ARDY_CORE_PROFILE = MotionModelProfile(
+ARDY_CORE_PROFILE = ModelSpec(
     model_name="ARDY-Core-RP-20FPS-Horizon40",
     modelscope_repo="nv-community/ARDY-Core-RP-20FPS-Horizon40",
+    huggingface_repo="nvidia/ARDY-Core-RP-20FPS-Horizon40",
     backend="ardy",
     source_fps=20.0,
     horizon_frames=40,
     frames_per_token=4,
     max_context_frames=200,
     rig_profile="cskel27",
+    joint_count=27,
     max_diffusion_steps=10,
+    default_diffusion_steps=10,
     cfg_text_weight=2.0,
     cfg_constraint_weight=2.0,
     motion_rep_fingerprint="ardy-core-rp-20fps-h40:nfpt4:motionrep-v1",
     postprocess=True,
+    supports_streaming=True,
     aliases=("ardy-core", "ardy-core40"),
 )
-ARDY_CORE8_PROFILE = MotionModelProfile(
+ARDY_CORE8_PROFILE = ModelSpec(
     model_name="ARDY-Core-RP-20FPS-Horizon8",
     modelscope_repo="nv-community/ARDY-Core-RP-20FPS-Horizon8",
+    huggingface_repo="nvidia/ARDY-Core-RP-20FPS-Horizon8",
     backend="ardy",
     source_fps=20.0,
     horizon_frames=8,
     frames_per_token=4,
     max_context_frames=200,
     rig_profile="cskel27",
+    joint_count=27,
     max_diffusion_steps=10,
+    default_diffusion_steps=10,
     cfg_text_weight=2.0,
     cfg_constraint_weight=2.0,
     motion_rep_fingerprint="ardy-core-rp-20fps-h8:nfpt4:motionrep-v1",
     postprocess=True,
+    supports_streaming=True,
     aliases=("ardy-core8",),
 )
-ARDY_G1_PROFILE = MotionModelProfile(
+ARDY_G1_PROFILE = ModelSpec(
     model_name="ARDY-G1-RP-25FPS-Horizon52",
     modelscope_repo="nv-community/ARDY-G1-RP-25FPS-Horizon52",
+    huggingface_repo="nvidia/ARDY-G1-RP-25FPS-Horizon52",
     backend="ardy",
     source_fps=25.0,
     horizon_frames=52,
     frames_per_token=4,
     max_context_frames=248,
     rig_profile="g1skel34",
+    joint_count=34,
     max_diffusion_steps=10,
+    default_diffusion_steps=10,
     cfg_text_weight=2.0,
     cfg_constraint_weight=2.0,
     motion_rep_fingerprint="ardy-g1-rp-25fps-h52:nfpt4:motionrep-v1",
     postprocess=False,
+    supports_streaming=True,
     aliases=("ardy-g1", "ardy-g152"),
 )
-ARDY_G18_PROFILE = MotionModelProfile(
+ARDY_G18_PROFILE = ModelSpec(
     model_name="ARDY-G1-RP-25FPS-Horizon8",
     modelscope_repo="nv-community/ARDY-G1-RP-25FPS-Horizon8",
+    huggingface_repo="nvidia/ARDY-G1-RP-25FPS-Horizon8",
     backend="ardy",
     source_fps=25.0,
     horizon_frames=8,
     frames_per_token=4,
     max_context_frames=248,
     rig_profile="g1skel34",
+    joint_count=34,
     max_diffusion_steps=10,
+    default_diffusion_steps=10,
     cfg_text_weight=2.0,
     cfg_constraint_weight=2.0,
     motion_rep_fingerprint="ardy-g1-rp-25fps-h8:nfpt4:motionrep-v1",
     postprocess=False,
+    supports_streaming=True,
     aliases=("ardy-g18",),
 )
-MOTION_MODEL_PROFILES: tuple[MotionModelProfile, ...] = (
+MOTION_MODEL_PROFILES: tuple[ModelSpec, ...] = (
     ARDY_CORE_PROFILE,
     ARDY_CORE8_PROFILE,
     ARDY_G1_PROFILE,
     ARDY_G18_PROFILE,
 )
-MOTION_MODEL_PROFILE_REGISTRY = {
+ALL_MODEL_SPECS = MAIN_MODELS + MOTION_MODEL_PROFILES
+MODEL_SPEC_REGISTRY = {
     key.lower(): profile
-    for profile in MOTION_MODEL_PROFILES
+    for profile in ALL_MODEL_SPECS
     for key in (profile.model_name, *profile.aliases)
+}
+MOTION_MODEL_PROFILE_REGISTRY = {
+    key: profile for key, profile in MODEL_SPEC_REGISTRY.items() if profile.backend == "ardy"
 }
 
 INT8_ASSET = AssetSpec(
@@ -496,7 +523,11 @@ def resolve_main_model(requested_name: str | None) -> ResolvedModel:
     raise ValueError(f"Unsupported model alias: {raw_name}")
 
 
-def resolve_motion_model_profile(requested_name: str | None) -> MotionModelProfile | None:
+def resolve_model_spec(requested_name: str | None) -> ModelSpec | None:
+    return MODEL_SPEC_REGISTRY.get(str(requested_name or "").strip().lower())
+
+
+def resolve_motion_model_profile(requested_name: str | None) -> ModelSpec | None:
     return MOTION_MODEL_PROFILE_REGISTRY.get(str(requested_name or "").strip().lower())
 
 
@@ -1070,25 +1101,24 @@ def ensure_asset_present(
         raise RuntimeError("Injected download network failure once.")
 
     logger.log(f"[STEP] Downloading {asset.label}: {asset.local_dir_name}")
+    resuming_incomplete_download = target_dir.exists()
+    if resuming_incomplete_download:
+        logger.log(
+            f"[INFO] {asset.label}: incomplete local download detected; checking download sites before resuming."
+        )
     target_dir.mkdir(parents=True, exist_ok=True)
-    selected_site: DownloadSite
-    selected_repo_id: str
+    candidate_sites: tuple[DownloadSite, ...]
 
     if force_site is not None:
-        selected_site = force_site
-        selected_repo_id = _download_site_repo_id(asset, selected_site)
-        if not selected_repo_id:
+        if not _download_site_repo_id(asset, force_site):
             raise RuntimeError(
-                f"Forced download site '{selected_site.value}' is unavailable for {asset.label}: missing repo id."
+                f"Forced download site '{force_site.value}' is unavailable for {asset.label}: missing repo id."
             )
         logger.log(
-            f"[INFO] {asset.label}: forced download site={selected_site.value} "
-            f"repo={selected_repo_id}"
+            f"[INFO] {asset.label}: forced download site={force_site.value} "
+            f"repo={_download_site_repo_id(asset, force_site)}"
         )
-        if selected_site == DownloadSite.HUGGINGFACE:
-            download_via_huggingface(asset, target_dir, cancel_event)
-        else:
-            download_via_modelscope(asset, target_dir, logger, cancel_event)
+        candidate_sites = (force_site,)
     else:
         logger.log(
             f"[INFO] {asset.label}: probing download sites before transfer "
@@ -1100,25 +1130,55 @@ def ensure_asset_present(
         raise_if_download_cancelled(cancel_event)
         logger.log(f"[PROBE] {asset.label}: {_probe_summary(huggingface_result)}")
         logger.log(f"[PROBE] {asset.label}: {_probe_summary(modelscope_result)}")
-        try:
-            selection = _select_download_site_from_probe_results(huggingface_result, modelscope_result)
-        except RuntimeError as exc:
-            raise RuntimeError(f"Download site probe failed for {asset.label}: {exc}") from exc
-
-        selected_site = selection.selected_site
-        selected_repo_id = _download_site_repo_id(asset, selected_site)
-        logger.log(
-            f"[INFO] {asset.label}: selected download site={selected_site.value} "
-            f"repo={selected_repo_id or '<missing>'}"
+        probe_results = (huggingface_result, modelscope_result)
+        candidate_sites = tuple(
+            result.site
+            for result in sorted(probe_results, key=lambda result: (not result.ok, result.elapsed_ms))
+            if result.repo_id
         )
-        if selected_site == DownloadSite.HUGGINGFACE:
-            download_via_huggingface(asset, target_dir, cancel_event)
-        else:
-            download_via_modelscope(asset, target_dir, logger, cancel_event)
+        if not candidate_sites:
+            raise RuntimeError(f"No download site is configured for {asset.label}.")
+        if not any(result.ok for result in probe_results):
+            logger.log(
+                f"[WARN] {asset.label}: no site passed the short network probe; "
+                "trying both sources because a resumable transfer may still succeed."
+            )
+        logger.log(
+            f"[INFO] {asset.label}: download candidates="
+            + " -> ".join(f"{site.value} ({_download_site_repo_id(asset, site)})" for site in candidate_sites)
+        )
 
-    raise_if_download_cancelled(cancel_event)
-    if not asset_is_ready(asset, target_dir):
-        raise RuntimeError(f"Downloaded asset is incomplete: {target_dir}")
+    download_errors: list[str] = []
+    selected_site: DownloadSite | None = None
+    selected_repo_id = ""
+    for index, site in enumerate(candidate_sites):
+        repo_id = _download_site_repo_id(asset, site)
+        logger.log(f"[INFO] {asset.label}: attempting download site={site.value} repo={repo_id}")
+        try:
+            if site == DownloadSite.HUGGINGFACE:
+                download_via_huggingface(asset, target_dir, cancel_event)
+            else:
+                download_via_modelscope(asset, target_dir, logger, cancel_event)
+            raise_if_download_cancelled(cancel_event)
+            if not asset_is_ready(asset, target_dir):
+                raise RuntimeError(f"Downloaded asset is incomplete: {target_dir}")
+            selected_site = site
+            selected_repo_id = repo_id
+            break
+        except DownloadCancelledError:
+            raise
+        except Exception as exc:
+            download_errors.append(f"{site.value}={type(exc).__name__}: {exc}")
+            if index + 1 < len(candidate_sites):
+                logger.log(
+                    f"[WARN] {asset.label}: download via {site.value} failed; "
+                    f"switching to {candidate_sites[index + 1].value}."
+                )
+
+    if selected_site is None:
+        raise RuntimeError(
+            f"Failed to download {asset.label} via all candidate sites: " + "; ".join(download_errors)
+        )
 
     logger.log(f"[OK] {asset.label} ready via {selected_site.value}: {selected_repo_id}")
     download_counter[0] += 1

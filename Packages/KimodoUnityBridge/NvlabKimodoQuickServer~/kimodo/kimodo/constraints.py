@@ -68,6 +68,9 @@ def transform_constraints_to_origin(constraints_lst: list, transform) -> None:
 
     translation, yaw = transform
     for constraint in constraints_lst:
+        if hasattr(constraint, "transform_to_origin"):
+            constraint.transform_to_origin(transform)
+            continue
         root_attribute = _root_2d_attribute(constraint)
         root_2d = getattr(constraint, root_attribute)
         device = root_2d.device
@@ -107,24 +110,27 @@ def transform_constraints_to_origin(constraints_lst: list, transform) -> None:
 def normalize_constraints_to_anchor(constraints_lst: list):
     """Move Kimodo or ARDY constraints into one planar anchor space.
 
-    The earliest constrained frame wins. At that frame the priority is fullbody,
-    end/foot, then root2d; input order breaks ties. Y is intentionally preserved.
+    The earliest constrained frame wins. At that frame the composition order is
+    FullBody, Root2D, then end-effectors; input order breaks ties. Y is preserved.
     Returns the planar ``(x, z)`` translation and yaw needed to restore output.
     """
     candidates = []
     priority = {
-        "fullbody": 3,
-        "end-effector": 2,
-        "left-hand": 2,
-        "right-hand": 2,
-        "left-foot": 2,
-        "right-foot": 2,
-        "root2d": 1,
+        "clip": 1,
+        "fullbody": 2,
+        "root2d": 3,
+        "end-effector": 4,
+        "left-hand": 4,
+        "right-hand": 4,
+        "left-foot": 4,
+        "right-foot": 4,
     }
     for order, constraint in enumerate(constraints_lst or []):
         if len(constraint.frame_indices) == 0:
             continue
         rank = priority.get(getattr(constraint, "name", ""), 0)
+        if getattr(constraint, "name", "") == "clip" and not getattr(constraint, "root_position", False):
+            rank = 0
         if rank:
             candidates.append((int(constraint.frame_indices.min().item()), -rank, order, constraint))
     if not candidates:
@@ -271,7 +277,7 @@ class Root2DConstraintSet:
 
         return cls(
             skeleton,
-            frame_indices=torch.tensor(dico["frame_indices"]),
+            frame_indices=torch.tensor(dico["frame_indices"], device=device, dtype=torch.long),
             smooth_root_2d=torch.tensor(dico["smooth_root_2d"], device=device),
             global_root_heading=global_root_heading,
         )
@@ -343,16 +349,14 @@ class FullBodyConstraintSet:
 
         # global rotations are not used here
 
-        # as we use smooth root, also constraint the smooth root to get the same full body
-        # maybe keep storing the hips offset, if we smooth it ourselves
+        # FullBody establishes the base root. Root2D is sorted later and wins
+        # duplicate root samples in the sparse conditioning tensor.
         data_dict["smooth_root_2d"].append(self.smooth_root_2d)
         index_dict["smooth_root_2d"].append(self.frame_indices)
 
-        # constraint the y pos of the root
         data_dict["root_y_pos"].append(self.root_y_pos)
         index_dict["root_y_pos"].append(self.frame_indices)
 
-        # constraint the global heading
         data_dict["global_root_heading"].append(self.global_root_heading)
         index_dict["global_root_heading"].append(self.frame_indices)
 
@@ -401,8 +405,8 @@ class FullBodyConstraintSet:
     @classmethod
     def from_dict(cls, skeleton: SkeletonBase, dico: dict) -> "FullBodyConstraintSet":
         """Build a FullBodyConstraintSet from a dict (e.g. loaded from JSON)."""
-        frame_indices = torch.tensor(dico["frame_indices"])
         device = skeleton.device if hasattr(skeleton, "device") else "cpu"
+        frame_indices = torch.tensor(dico["frame_indices"], device=device, dtype=torch.long)
         local_rot = torch.tensor(dico["local_joints_rot"], device=device)
         local_rot_mats = axis_angle_to_matrix(local_rot)
         local_rot_mats = _convert_constraint_local_rots_to_skeleton(local_rot_mats, skeleton)
@@ -423,6 +427,138 @@ class FullBodyConstraintSet:
         )
 
 
+class ClipConstraintSet:
+    """Sparse per-frame pose conditioning decoded from a generic ClipConstraint.
+
+    Position channels require a constrained smooth root in Kimodo's motion representation. When
+    the root is free, retain selected rotations and let the model generate a compatible root/body.
+    """
+
+    name = "clip"
+
+    def __init__(
+        self,
+        skeleton: SkeletonBase,
+        frame_indices: Tensor,
+        global_joints_positions: Tensor,
+        global_joints_rots: Tensor,
+        position_axis_mask: Tensor,
+        rot_indices: Tensor,
+        *,
+        root_position_axes: Tensor,
+        root_heading: bool,
+    ) -> None:
+        if len(frame_indices) != len(global_joints_positions) or len(frame_indices) != len(global_joints_rots):
+            raise ValueError("ClipConstraint frame data must match frame_indices length.")
+        self.skeleton = skeleton
+        self.frame_indices = frame_indices.long()
+        self.global_joints_positions = global_joints_positions
+        self.global_joints_rots = global_joints_rots
+        if position_axis_mask.shape != (skeleton.nbjoints, 3):
+            raise ValueError("ClipConstraint joint position mask must have shape [joint_count, 3].")
+        if root_position_axes.shape != (3,):
+            raise ValueError("ClipConstraint root position mask must contain three axes.")
+        self.position_axis_mask = position_axis_mask.to(device=frame_indices.device, dtype=torch.bool)
+        self.rot_indices = rot_indices.to(device=frame_indices.device, dtype=torch.long)
+        self.root_position_axes = root_position_axes.to(device=frame_indices.device, dtype=torch.bool)
+        self.root_position = bool(self.root_position_axes.any())
+        self.root_heading = bool(root_heading)
+        self.smooth_root_2d = global_joints_positions[:, skeleton.root_idx, [0, 2]]
+        self.root_y_pos = global_joints_positions[:, skeleton.root_idx, 1]
+        self.root_positions = global_joints_positions[:, skeleton.root_idx]
+        local_reference = self.root_positions.clone()
+        local_reference[..., 1] = 0.0
+        self.local_joints_positions = global_joints_positions - local_reference[:, None, :]
+        self.global_root_heading = compute_global_heading(global_joints_positions, skeleton)
+
+    def update_constraints(self, data_dict: dict, index_dict: dict) -> None:
+        crop_frames = torch.arange(len(self.frame_indices), device=self.frame_indices.device)
+        root_axes = self.root_position_axes.nonzero(as_tuple=False).flatten()
+        if len(root_axes):
+            real = create_pairs(self.frame_indices, root_axes)
+            crop = create_pairs(crop_frames, root_axes)
+            data_dict["clip_root_positions"].append(self.root_positions[tuple(crop.T)])
+            index_dict["clip_root_positions"].append(real)
+
+            selected_joint_axes = self.position_axis_mask.nonzero(as_tuple=False)
+            if len(selected_joint_axes):
+                frame_rows = crop_frames.repeat_interleave(len(selected_joint_axes))
+                joint_axes = selected_joint_axes.repeat(len(crop_frames), 1)
+                indices = torch.cat(
+                    [self.frame_indices.repeat_interleave(len(selected_joint_axes))[:, None], joint_axes],
+                    dim=1,
+                )
+                values = self.local_joints_positions[
+                    frame_rows,
+                    joint_axes[:, 0],
+                    joint_axes[:, 1],
+                ]
+                data_dict["clip_local_joints_positions"].append(values)
+                index_dict["clip_local_joints_positions"].append(indices)
+        if self.root_heading:
+            data_dict["global_root_heading"].append(self.global_root_heading)
+            index_dict["global_root_heading"].append(self.frame_indices)
+        if len(self.rot_indices):
+            real = create_pairs(self.frame_indices, self.rot_indices)
+            crop = create_pairs(crop_frames, self.rot_indices)
+            data_dict["global_joints_rots"].append(self.global_joints_rots[tuple(crop.T)])
+            index_dict["global_joints_rots"].append(real)
+
+    def crop_move(self, start: int, end: int) -> "ClipConstraintSet":
+        mask = (self.frame_indices >= start) & (self.frame_indices < end)
+        return ClipConstraintSet(
+            self.skeleton,
+            self.frame_indices[mask] - start,
+            self.global_joints_positions[mask],
+            self.global_joints_rots[mask],
+            self.position_axis_mask,
+            self.rot_indices,
+            root_position_axes=self.root_position_axes,
+            root_heading=self.root_heading,
+        )
+
+    def transform_to_origin(self, transform) -> None:
+        translation, yaw = transform
+        device = self.global_joints_positions.device
+        dtype = self.global_joints_positions.dtype
+        local_translation = translation.to(device=device, dtype=dtype)
+        local_yaw = yaw.to(device=device, dtype=dtype)
+        rotation = RotateFeatures((-local_yaw).reshape(1))
+        rotation_3d = rotation.corrective_mat_Y[0]
+        rotation_3d_t = rotation.corrective_mat_Y_T[0]
+        offset = torch.zeros(3, device=device, dtype=dtype)
+        offset[[0, 2]] = local_translation
+        self.global_joints_positions = (self.global_joints_positions - offset) @ rotation_3d_t
+        self.global_joints_rots = rotation_3d @ self.global_joints_rots
+        self.root_positions = self.global_joints_positions[:, self.skeleton.root_idx]
+        self.smooth_root_2d = self.root_positions[:, [0, 2]]
+        self.root_y_pos = self.root_positions[:, 1]
+        local_reference = self.root_positions.clone()
+        local_reference[..., 1] = 0.0
+        self.local_joints_positions = self.global_joints_positions - local_reference[:, None, :]
+        self.global_root_heading = compute_global_heading(self.global_joints_positions, self.skeleton)
+
+    def to(
+        self,
+        device: Optional[Union[str, torch.device]] = None,
+        dtype: Optional[torch.dtype] = None,
+    ) -> "ClipConstraintSet":
+        self.frame_indices = _tensor_to(self.frame_indices, device, dtype)
+        self.global_joints_positions = _tensor_to(self.global_joints_positions, device, dtype)
+        self.global_joints_rots = _tensor_to(self.global_joints_rots, device, dtype)
+        self.position_axis_mask = _tensor_to(self.position_axis_mask, device, None)
+        self.rot_indices = _tensor_to(self.rot_indices, device, None)
+        self.root_position_axes = _tensor_to(self.root_position_axes, device, None)
+        self.root_positions = _tensor_to(self.root_positions, device, dtype)
+        self.local_joints_positions = _tensor_to(self.local_joints_positions, device, dtype)
+        self.smooth_root_2d = _tensor_to(self.smooth_root_2d, device, dtype)
+        self.root_y_pos = _tensor_to(self.root_y_pos, device, dtype)
+        self.global_root_heading = _tensor_to(self.global_root_heading, device, dtype)
+        if device is not None and hasattr(self.skeleton, "to"):
+            self.skeleton = self.skeleton.to(device)
+        return self
+
+
 class EndEffectorConstraintSet:
     """Constraint set fixing selected end-effector positions and rotations on given frames."""
 
@@ -440,14 +576,31 @@ class EndEffectorConstraintSet:
         to_crop: bool = False,
     ) -> None:
         self.skeleton = skeleton
-        self.frame_indices = frame_indices
+        # Keep every indexing tensor on the same device as the motion/model.
+        # JSON deserialization creates frame_indices on CPU by default, while
+        # inference commonly runs on CUDA.  Mixing them in create_pairs (which
+        # internally calls torch.stack/cat) raises a CPU/CUDA device error.
+        device = getattr(skeleton, "device", global_joints_positions.device)
+        self.frame_indices = frame_indices.to(device=device, dtype=torch.long)
+        global_joints_positions = global_joints_positions.to(device=device)
+        global_joints_rots = global_joints_rots.to(device=device)
+        if smooth_root_2d is not None:
+            smooth_root_2d = smooth_root_2d.to(device=device)
         self.joint_names = joint_names
 
         # joint_names are constant for all the frames
         rot_joint_names, pos_joint_names = self.skeleton.expand_joint_names(self.joint_names)
         # indexing works for motion_rep with smooth root only (contains pelvis index)
-        self.pos_indices = torch.tensor([self.skeleton.bone_index[jname] for jname in pos_joint_names])
-        self.rot_indices = torch.tensor([self.skeleton.bone_index[jname] for jname in rot_joint_names])
+        self.pos_indices = torch.tensor(
+            [self.skeleton.bone_index[jname] for jname in pos_joint_names],
+            device=device,
+            dtype=torch.long,
+        )
+        self.rot_indices = torch.tensor(
+            [self.skeleton.bone_index[jname] for jname in rot_joint_names],
+            device=device,
+            dtype=torch.long,
+        )
 
         # if we pass the full smooth root 3D as input
         if smooth_root_2d is not None and smooth_root_2d.shape[-1] == 3:
@@ -511,18 +664,9 @@ class EndEffectorConstraintSet:
         data_dict["global_joints_rots"].append(self.global_joints_rots[tuple(rot_indices_crop.T)])
         index_dict["global_joints_rots"].append(rot_indices_real)
 
-        # as we use smooth root, also constraint the smooth root to get the same full body
-        # maybe keep storing the hips offset, if we smooth it ourselves
-        data_dict["smooth_root_2d"].append(self.smooth_root_2d)
-        index_dict["smooth_root_2d"].append(self.frame_indices)
-
-        # constraint the y pos of the root
-        data_dict["root_y_pos"].append(self.root_y_pos)
-        index_dict["root_y_pos"].append(self.frame_indices)
-
-        # constraint the global heading
-        data_dict["global_root_heading"].append(self.global_root_heading)
-        index_dict["global_root_heading"].append(self.frame_indices)
+        # Limb constraints are world-space targets. Their embedded root pose is
+        # reference data only; conditioning adds it as a fallback after
+        # FullBody/Root2D channels have been emitted.
 
     def crop_move(self, start: int, end: int) -> "EndEffectorConstraintSet":
         """Return a new EndEffectorConstraintSet for the cropped frame range [start, end)."""
@@ -583,8 +727,8 @@ class EndEffectorConstraintSet:
     @classmethod
     def from_dict(cls, skeleton: SkeletonBase, dico: dict) -> "EndEffectorConstraintSet":
         """Build an EndEffectorConstraintSet from a dict (e.g. loaded from JSON)."""
-        frame_indices = torch.tensor(dico["frame_indices"])
         device = skeleton.device if hasattr(skeleton, "device") else "cpu"
+        frame_indices = torch.tensor(dico["frame_indices"], device=device, dtype=torch.long)
         local_rot = torch.tensor(dico["local_joints_rot"], device=device)
         local_rot_mats = axis_angle_to_matrix(local_rot)
         local_rot_mats = _convert_constraint_local_rots_to_skeleton(local_rot_mats, skeleton)

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
-using UnityEditor.Animations;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -21,7 +20,6 @@ namespace KimodoBridge.Editor
         private const string MuscleCacheNameSuffix = "-muscle-cache";
         private const string BoneCacheNameMarker = "-bone-";
         private const string CacheNameSuffix = "-cache";
-        private const string GeneratedPreviewControllerFolder = GeneratedClipFolder + "/PreviewControllers";
 
         private static readonly HashSet<string> PendingProtectedClipPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static bool generatedClipTrimScheduled;
@@ -110,40 +108,6 @@ namespace KimodoBridge.Editor
             return false;
         }
 
-        public static bool TryCreateGeneratedPreviewAnimatorControllerAsset(
-            out AnimatorController controller,
-            out string assetPath,
-            out string error)
-        {
-            controller = null;
-            assetPath = string.Empty;
-            error = string.Empty;
-
-            try
-            {
-                EnsureFolderExists(GeneratedPreviewControllerFolder);
-                string controllerName = BuildGeneratedPreviewControllerName();
-                assetPath = AssetDatabase.GenerateUniqueAssetPath($"{GeneratedPreviewControllerFolder}/{controllerName}.controller");
-                controller = AnimatorController.CreateAnimatorControllerAtPath(assetPath);
-                if (controller == null)
-                {
-                    error = "Animator controller asset creation returned null.";
-                    return false;
-                }
-
-                EditorUtility.SetDirty(controller);
-                FlushWritebackAssets();
-                return true;
-            }
-            catch (Exception ex)
-            {
-                controller = null;
-                assetPath = string.Empty;
-                error = $"Create generated preview animator controller failed: {ex.Message}";
-                return false;
-            }
-        }
-
         public static bool TryLoadNamedClipCache(string cacheName, out AnimationClip cachedClip, out string error)
         {
             cachedClip = null;
@@ -207,7 +171,7 @@ namespace KimodoBridge.Editor
                     {
                         name = safeCacheName,
                         legacy = false,
-                        frameRate = frameRate > 0f ? frameRate : KimodoPlayableClip.FIXED_FRAME_RATE
+                        frameRate = frameRate > 0f ? frameRate : KimodoMotionModelProfiles.DefaultFrameRate
                     };
 
                     AssetDatabase.CreateAsset(cachedClip, cachePath);
@@ -312,7 +276,7 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            float frameRate = sourceClip.frameRate > 0f ? sourceClip.frameRate : KimodoPlayableClip.FIXED_FRAME_RATE;
+            float frameRate = sourceClip.frameRate > 0f ? sourceClip.frameRate : KimodoMotionModelProfiles.DefaultFrameRate;
             if (!TryGetOrCreateNamedClipCache(cacheName, frameRate, out cachedClip, out error))
             {
                 return false;
@@ -331,6 +295,34 @@ namespace KimodoBridge.Editor
                 error = $"Materialize generated clip cache failed: {ex.Message}";
                 return false;
             }
+        }
+
+        internal static AnimationClip CreateRawBoneWritebackClip(AnimationClip sourceClip)
+        {
+            if (sourceClip == null)
+            {
+                return null;
+            }
+
+            string sourceName = string.IsNullOrWhiteSpace(sourceClip.name) ? "KimodoRawBone" : sourceClip.name.Trim();
+            bool persist = KimodoPlayableClipGenerationSettings.instance.WriteResampledTimelineCacheClips;
+            AnimationClip rawBoneClip = persist
+                ? CreateGeneratedCacheAnimationClipAsset($"{sourceName}_RawBone")
+                : new AnimationClip
+                {
+                    hideFlags = HideFlags.HideAndDontSave,
+                    name = $"{sourceName}_RawBone"
+                };
+            KimodoEditorClipUtility.CopyClipData(sourceClip, rawBoneClip, forceNoLoopKeepY: true);
+            rawBoneClip.legacy = sourceClip.legacy;
+            rawBoneClip.frameRate = sourceClip.frameRate;
+            if (persist)
+            {
+                EditorUtility.SetDirty(rawBoneClip);
+                KimodoPlayableClipGenerationSettings.DebugLog(
+                    $"[Kimodo][Generate] Wrote raw Kimodo bone clip: '{AssetDatabase.GetAssetPath(rawBoneClip)}'.");
+            }
+            return rawBoneClip;
         }
 
         internal static bool TryDeleteUnreferencedNamedClipCaches(out NamedClipCacheCleanupSummary summary, out string error)
@@ -746,11 +738,6 @@ namespace KimodoBridge.Editor
             }
 
             return string.IsNullOrWhiteSpace(safeName) ? defaultName : safeName;
-        }
-
-        private static string BuildGeneratedPreviewControllerName()
-        {
-            return $"{GeneratedClipNamePrefix}Preview_{DateTime.Now:yyyyMMdd_HHmmss_fff}_{Guid.NewGuid():N}";
         }
 
         private static int CompareGeneratedClipPathsByAgeOldestFirst(string leftPath, string rightPath)

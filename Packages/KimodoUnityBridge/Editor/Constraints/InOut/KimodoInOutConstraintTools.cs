@@ -34,12 +34,6 @@ namespace KimodoBridge.Editor
                 return true;
             }
 
-            if (!KimodoRetargetCoreUtility.IsValidHumanoid(request.SourceAvatar))
-            {
-                error = "Source avatar is null/invalid/non-humanoid.";
-                return false;
-            }
-
             if (request.TimelineContext != null)
             {
                 // ponytail: Timeline already resolves clip ranges, blends and offsets.
@@ -49,6 +43,12 @@ namespace KimodoBridge.Editor
                     out endSample,
                     out warning,
                     out error);
+            }
+
+            if (!KimodoRetargetCoreUtility.IsValidHumanoid(request.SourceAvatar))
+            {
+                error = "Source avatar is null/invalid/non-humanoid.";
+                return false;
             }
 
             if (request.EnableBegin &&
@@ -99,7 +99,7 @@ namespace KimodoBridge.Editor
             warning = string.Empty;
             error = string.Empty;
             if (request.EnableBegin &&
-                !KimodoTimelineConstraintClipCache.TrySampleMarker(
+                !KimodoTimelineConstraintSampler.TrySampleMarker(
                     request.TimelineContext,
                     ResolveTimelineBoundaryTime(request, isBegin: true),
                     0.0,
@@ -112,7 +112,7 @@ namespace KimodoBridge.Editor
             }
 
             if (request.EnableEnd &&
-                !KimodoTimelineConstraintClipCache.TrySampleMarker(
+                !KimodoTimelineConstraintSampler.TrySampleMarker(
                     request.TimelineContext,
                     ResolveTimelineBoundaryTime(request, isBegin: false),
                     ResolveConstraintEndSampleTimeSeconds(
@@ -136,7 +136,7 @@ namespace KimodoBridge.Editor
         internal static double ResolveTimelineBoundaryTime(KimodoInOutConstraintRequest request, bool isBegin)
         {
             KimodoTimelineInOutConstraintContext context = request.TimelineContext;
-            float frameRate = KimodoTimelineConstraintClipCache.ResolveTimelineFrameRate(context);
+            float frameRate = KimodoTimelineConstraintSampler.ResolveTimelineFrameRate(context);
             double oneFrame = 1.0 / frameRate;
             if (request.Mode == KimodoInOutConstraintMode.Outside)
             {
@@ -164,29 +164,29 @@ namespace KimodoBridge.Editor
 
         internal static int ClampFrameCount(int generationFrames)
         {
-            return Mathf.Max(KimodoPlayableClip.MIN_FRAMES, generationFrames);
+            return Mathf.Max(KimodoMotionModelProfiles.MinGenerationFrames, generationFrames);
         }
 
         internal static int DurationSecondsToFrameCount(float durationSeconds)
         {
-            float minDurationSeconds = FrameCountToDurationSeconds(KimodoPlayableClip.MIN_FRAMES);
-            float maxDurationSeconds = FrameCountToDurationSeconds(KimodoPlayableClip.MAX_FRAMES);
+            float minDurationSeconds = FrameCountToDurationSeconds(KimodoMotionModelProfiles.MinGenerationFrames);
+            float maxDurationSeconds = FrameCountToDurationSeconds(KimodoMotionModelProfiles.MaxGenerationFrames);
             return Mathf.Clamp(
                 KimodoFrameTimeUtility.SecondsToFrameCount(
                     Mathf.Clamp(durationSeconds, minDurationSeconds, maxDurationSeconds),
-                    KimodoPlayableClip.FIXED_FRAME_RATE),
-                KimodoPlayableClip.MIN_FRAMES,
-                KimodoPlayableClip.MAX_FRAMES);
+                    KimodoMotionModelProfiles.DefaultFrameRate),
+                KimodoMotionModelProfiles.MinGenerationFrames,
+                KimodoMotionModelProfiles.MaxGenerationFrames);
         }
 
         internal static float FrameCountToDurationSeconds(int frameCount)
         {
-            return Mathf.Max(0, frameCount) / KimodoPlayableClip.FIXED_FRAME_RATE;
+            return Mathf.Max(0, frameCount) / KimodoMotionModelProfiles.DefaultFrameRate;
         }
 
         internal static double ResolveConstraintClipDurationSeconds(
             int frameCount,
-            float frameRate = KimodoPlayableClip.FIXED_FRAME_RATE)
+            float frameRate = KimodoMotionModelProfiles.DefaultFrameRate)
         {
             int safeFrameCount = Mathf.Max(1, frameCount);
             return safeFrameCount / Mathf.Max(1f, frameRate);
@@ -194,7 +194,7 @@ namespace KimodoBridge.Editor
 
         internal static double ResolveConstraintEndSampleTimeSeconds(
             int frameCount,
-            float frameRate = KimodoPlayableClip.FIXED_FRAME_RATE)
+            float frameRate = KimodoMotionModelProfiles.DefaultFrameRate)
         {
             int safeFrameCount = Mathf.Max(1, frameCount);
             return Math.Max(0.0, (safeFrameCount - 1) / Mathf.Max(1f, frameRate));
@@ -303,16 +303,14 @@ namespace KimodoBridge.Editor
                     clipSampleTime,
                     sourceAvatar,
                     null,
-                    null,
-                    KimodoPlayableClip.NormalizeBridgeModelName(modelName),
-                    forceRefresh: false,
+                    KimodoMotionModelProfiles.NormalizeName(modelName),
                     out KimodoMarkerSampleResult sampledPose,
                     out error))
             {
                 return false;
             }
 
-            sampledPose.constraintType = FullBodyConstraintType;
+            sampledPose.constraintMode = FullBodyConstraintType;
             sampledPose.sampleTime = exportedSampleTime;
             sample = sampledPose;
             return true;

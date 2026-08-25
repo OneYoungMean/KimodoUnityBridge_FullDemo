@@ -20,7 +20,16 @@ from typing import Any
 
 from . import kimodo_runtime as runtime_helpers
 from . import ardy_backend
+from . import animation_analysis
 from . import quickserver_assets as assets
+from core.protocol.kmb_motion import (
+    MAX_KMB_BYTES,
+    attachment_payload,
+    clip_slice,
+    encode_kmb1,
+    parse_constraints,
+    parse_kmb1,
+)
 from kimodo.frame_time import seconds_to_frame_count
 from .quickserver_setup import ProjectPaths, SetupLogger, discover_project_paths
 
@@ -28,6 +37,124 @@ from .quickserver_setup import ProjectPaths, SetupLogger, discover_project_paths
 SUPERVISOR_LOG_FILE_NAME = "bridge_server.log"
 DEFAULT_TASK_ID_PREFIX = "task"
 DEFAULT_RUNTIME_IDLE_UNLOAD_SEC = 900
+
+
+def _build_protocol_help(kimodo_root: str = "") -> dict[str, Any]:
+    return {
+        "protocol": "kimodo-quickserver-tcp",
+        "server_version": _read_quickserver_version(kimodo_root) if kimodo_root else "unknown",
+        "commands": [
+            {
+                "cmd": "help",
+                "description": "Return this built-in protocol reference without loading a model.",
+            },
+            {
+                "cmd": "runtime.list_models",
+                "description": "List every supported model and text encoder configuration for this server and device.",
+            },
+            {
+                "cmd": "session.open",
+                "description": "Open an isolated TCP generation session.",
+            },
+            {
+                "cmd": "session.close",
+                "description": "Close the current TCP generation session.",
+            },
+            {
+                "cmd": "generate",
+                "description": "Queue motion generation, or analyze KMB ClipConstraints when analysis_option.analysis_only is true. Choose model and text_encoder_mode from runtime.list_models for motion generation.",
+                "fields": [
+                    "prompt", "model", "text_encoder_mode", "duration", "constraints_json",
+                    "kmb_attachments", "attachment_byte_length", "analysis_option",
+                    "timeline_segments", "ardy_history_weight", "ardy_max_speed",
+                    "ardy_max_acceleration", "ardy_playback_reserve_seconds",
+                ],
+            },
+            {
+                "cmd": "cancel",
+                "description": "Cancel a queued or running generation by task_id.",
+            },
+            {
+                "cmd": "quit",
+                "description": "Stop the QuickServer process.",
+            },
+        ],
+    }
+
+
+def _build_model_configurations(
+    kimodo_root: str,
+    default_config: dict[str, Any],
+    runtime_profile: Any,
+) -> dict[str, Any]:
+    models_root, _ = assets.resolve_models_root(kimodo_root, default_config.get("models_root"))
+    free_vram_gb = max(0.0, float(getattr(runtime_profile, "free_vram_gb", 0.0) or 0.0))
+    detected_device = str(getattr(runtime_profile, "runtime_device", "cpu") or "cpu")
+    detected_device = detected_device if free_vram_gb >= assets.MOTION_MODEL_MIN_FREE_GB else "cpu"
+    nf4_available = bool(getattr(runtime_profile, "nf4_available", False)) and detected_device != "cpu"
+    int8_available = bool(getattr(runtime_profile, "int8_accelerator_available", False)) and detected_device != "cpu"
+    fp16_available = bool(getattr(runtime_profile, "fp16_accelerator_available", False)) and detected_device != "cpu"
+    default_model = str(default_config.get("model") or assets.DEFAULT_MODEL_NAME)
+    default_spec = assets.resolve_model_spec(default_model)
+    if default_spec is not None:
+        default_model = default_spec.model_name
+    else:
+        model_path = Path(default_model).expanduser()
+        if model_path.is_file() and model_path.name.lower() == "config.yaml":
+            model_path = model_path.parent
+        default_model = (
+            str(model_path.resolve())
+            if model_path.is_dir() and (model_path / "config.yaml").is_file()
+            else assets.resolve_main_model(default_model).local_name
+        )
+    default_encoder = assets.normalize_text_encoder_mode(default_config.get("text_encoder_mode"))
+    configs: list[dict[str, Any]] = []
+    for spec in assets.ALL_MODEL_SPECS:
+        model_name = spec.model_name
+        encoder_budget_gb = max(0.0, free_vram_gb - assets.motion_model_min_free_vram_gb(model_name))
+        for text_encoder_mode in (
+            assets.TEXT_ENCODER_MODE_HIGH_PERFORMANCE,
+            assets.TEXT_ENCODER_MODE_HIGH_PRECISION,
+        ):
+            decision = assets.resolve_text_encoder_runtime(
+                text_encoder_mode,
+                detected_device,
+                encoder_budget_gb,
+                nf4_available=nf4_available,
+                int8_accelerator_available=int8_available,
+                fp16_accelerator_available=fp16_available,
+            )
+            configs.append(
+                {
+                    "model": model_name,
+                    "backend": spec.backend,
+                    "source_fps": spec.source_fps,
+                    "joint_count": spec.joint_count,
+                    "max_diffusion_steps": spec.max_diffusion_steps,
+                    "default_diffusion_steps": spec.default_diffusion_steps,
+                    "horizon_frames": spec.horizon_frames,
+                    "frames_per_token": spec.frames_per_token,
+                    "max_context_frames": spec.max_context_frames,
+                    "motion_rep_fingerprint": spec.motion_rep_fingerprint,
+                    "supports_streaming": spec.supports_streaming,
+                    "supports_timeline_segments": spec.supports_timeline_segments,
+                    "text_encoder_model": text_encoder_mode,
+                    "runtime_device": decision.motion_device,
+                    "text_encoder_route": decision.encoder_route,
+                    "text_encoder_device": decision.encoder_device,
+                    "available": True,
+                    "default": model_name == default_model and text_encoder_mode == default_encoder,
+                }
+            )
+    return {
+        "status": "done",
+        "models_root": str(models_root),
+        "configs": configs,
+        "default": {
+            "model": default_model,
+            "text_encoder_model": default_encoder,
+        },
+    }
 
 
 def _publish_cancelled_task_to_client(task: dict[str, Any], message: str) -> None:
@@ -770,27 +897,24 @@ def _execute_generate(
     task_request: dict[str, Any],
     model: Any,
     cancel_event: threading.Event,
+    progress=None,
+    attachments: tuple[bytes, ...] = (),
 ) -> tuple[dict[str, Any], bytes | None]:
     if cancel_event.is_set():
         raise runtime_helpers.GenerateCancelledError("Generation canceled.")
+    if "loop" in task_request:
+        raise ValueError("The generate.loop protocol field has been removed.")
 
+    generate_kwargs = {"emit_progress": False}
+    if attachments:
+        generate_kwargs["attachments"] = attachments
     output, prompt = runtime_helpers._run_generate(
         task_request,
         model,
         cancel_event,
-        emit_progress=False,
+        **generate_kwargs,
     )
-
-    output_format = runtime_helpers._resolve_requested_output_format(task_request)
-    if output_format == "kmb_v1":
-        payload = runtime_helpers._build_generate_flatbuffer_payload(model, output, sample_index=0)
-        return {
-            "status": "done",
-            "output_format": "kmb_v1",
-            "byte_length": len(payload),
-        }, payload
-
-    return runtime_helpers._build_generate_response(model, output, prompt, sample_index=0), None
+    return runtime_helpers._finalize_generation_result(task_request, model, output, prompt)
 
 
 def _build_streaming_status_message(
@@ -894,9 +1018,9 @@ def _read_kmb_attachments(file, request: dict[str, Any]) -> tuple[bytes, ...]:
     manifest = request.get("kmb_attachments") or []
     if total == 0 and not manifest:
         return ()
-    if total <= 0 or total > ardy_backend.MAX_KMB_BYTES:
+    if total <= 0 or total > MAX_KMB_BYTES:
         raise ardy_backend.ArdyBackendError(
-            f"attachment_byte_length must be in [1, {ardy_backend.MAX_KMB_BYTES}]."
+            f"attachment_byte_length must be in [1, {MAX_KMB_BYTES}]."
         )
     if not isinstance(manifest, list):
         raise ardy_backend.ArdyBackendError("kmb_attachments must be an array.")
@@ -919,6 +1043,70 @@ def _read_kmb_attachments(file, request: dict[str, Any]) -> tuple[bytes, ...]:
     if expected_offset != total:
         raise ardy_backend.ArdyBackendError("KMB attachment manifest does not cover the binary request payload.")
     return tuple(result)
+
+
+def _is_analysis_only_request(request: dict[str, Any]) -> bool:
+    options = request.get("analysis_option")
+    return isinstance(options, dict) and options.get("analysis_only") is True
+
+
+def _execute_analysis_only(
+    request: dict[str, Any],
+    attachments: tuple[bytes, ...],
+) -> tuple[dict[str, Any], bytes]:
+    options = request.get("analysis_option")
+    if not isinstance(options, dict) or options.get("analysis_only") is not True:
+        raise ardy_backend.ArdyBackendError("analysis_option.analysis_only must be true.")
+
+    clips: list[dict[str, Any]] = []
+    manifest: list[dict[str, Any]] = []
+    output = bytearray()
+    for item in parse_constraints(request.get("constraints_json"), ardy_backend.ArdyBackendError):
+        if item.get("type") != "clip":
+            continue
+        payload = attachment_payload(item, attachments, ardy_backend.ArdyBackendError)
+        motion = parse_kmb1(payload, ardy_backend.ArdyBackendError)
+        start, end = clip_slice(item, motion, ardy_backend.ArdyBackendError)
+        dense_clip = encode_kmb1(motion, start, end)
+        offset = len(output)
+        output.extend(dense_clip)
+        manifest.append(
+            {
+                "index": len(manifest),
+                "offset": offset,
+                "byte_length": len(dense_clip),
+                "start_frame": 0,
+                "end_frame_exclusive": end - start,
+            }
+        )
+        clips.append(
+            {
+                "root_positions": motion.root_positions[start:end],
+                "local_rot_quats": motion.local_rot_quats[start:end],
+                "joint_names": list(motion.joint_names),
+                "joint_parents": list(motion.joint_parents),
+                "foot_contacts": motion.foot_contacts[start:end] if motion.foot_contacts is not None else None,
+                "model_name": motion.model_name,
+                "fps": motion.fps,
+            }
+        )
+
+    if not clips:
+        raise ardy_backend.ArdyBackendError("analysis_only requires one or more KMB ClipConstraints.")
+    if len(output) > MAX_KMB_BYTES:
+        raise ardy_backend.ArdyBackendError(
+            f"analysis_only KMB output exceeds the {MAX_KMB_BYTES}-byte limit."
+        )
+    return (
+        {
+            "status": "done",
+            "output_format": "kmb_attachments_v1",
+            "byte_length": len(output),
+            "kmb_attachments": manifest,
+            "analysis": animation_analysis.build_clip_constraint_analysis(clips, options),
+        },
+        bytes(output),
+    )
 
 
 def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger) -> int:
@@ -974,7 +1162,7 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
 
     state: dict[str, Any] = {
         "shutdown": False,
-        "owner_pid": max(0, int(args.watchpid or 0)),
+        "watch_pid": max(0, int(args.watchpid or 0)),
         "last_activity": time.time(),
         "active_runtime": {},
         "ardy_runtimes": {},
@@ -1220,7 +1408,7 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
             with state_lock:
                 if state["shutdown"]:
                     return
-                owner_pid = int(state.get("owner_pid") or 0)
+                watch_pid = int(state.get("watch_pid") or 0)
                 idle_seconds = time.time() - float(state.get("last_activity") or 0.0)
                 runtime_loaded = state["active_runtime"].get("model") is not None or any(
                     runtime.get("model") is not None for runtime in state["ardy_runtimes"].values()
@@ -1232,8 +1420,8 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                     for session in state["sessions"].values()
                 ) or int(state.get("active_command_count") or 0) > 0
 
-            if owner_pid > 0 and not _pid_is_running(owner_pid):
-                request_shutdown(f"owner pid {owner_pid} exited")
+            if watch_pid > 0 and not _pid_is_running(watch_pid):
+                request_shutdown(f"watch pid {watch_pid} exited")
                 return
 
             if idle_timeout_seconds > 0 and not work_in_flight and idle_seconds >= idle_timeout_seconds:
@@ -1339,7 +1527,13 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
         def execute() -> tuple[dict[str, Any], bytes | None]:
             profile = runtime.get("motion_profile")
             if profile is None or profile.backend != "ardy":
-                return _execute_generate(task["request"], runtime["model"], task["cancel_event"])
+                return _execute_generate(
+                    task["request"],
+                    runtime["model"],
+                    task["cancel_event"],
+                    report_progress,
+                    tuple(task.get("attachments") or ()),
+                )
             signature = str(runtime.get("runtime_signature") or "")
             existing = session.get("ardy_stream")
             existing_signature = str(session.get("ardy_stream_signature") or "")
@@ -1446,12 +1640,19 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                     finally:
                         text_encoder_execution_gate.release(encoder_key)
 
-                profile = assets.resolve_motion_model_profile(task["runtime_config"]["model"])
-                if profile is not None and profile.backend == "ardy":
-                    response, binary_payload = execute_task()
+                if _is_analysis_only_request(task["request"]):
+                    task["status_message"] = "Analyzing KMB ClipConstraints..."
+                    response, binary_payload = _execute_analysis_only(
+                        task["request"],
+                        tuple(task.get("attachments") or ()),
+                    )
                 else:
-                    with non_ardy_generation_gate:
+                    profile = assets.resolve_motion_model_profile(task["runtime_config"]["model"])
+                    if profile is not None and profile.backend == "ardy":
                         response, binary_payload = execute_task()
+                    else:
+                        with non_ardy_generation_gate:
+                            response, binary_payload = execute_task()
             except runtime_helpers.GenerateCancelledError as exc:
                 response = {"status": "cancelled", "message": str(exc)}
                 binary_payload = None
@@ -1666,7 +1867,13 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                         if session is None:
                             raise ValueError("The TCP Session is closed.")
 
-                        if cmd == "session.open":
+                        if cmd == "help":
+                            reply({"status": "done", **_build_protocol_help(kimodo_root)})
+                        elif cmd == "runtime.list_models":
+                            runtime_profile = runtime_helpers._runtime_self_check(None)
+                            list_config = _normalize_runtime_config(request, session["default_config"])
+                            reply(_build_model_configurations(kimodo_root, list_config, runtime_profile))
+                        elif cmd == "session.open":
                             if bound_session_id != default_session_id:
                                 reply({"status": "done", "session_id": bound_session_id})
                                 continue
@@ -1717,9 +1924,6 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                                 session["default_config"] = dict(active_config)
                                 if is_ardy_request:
                                     register_ardy_session_locked(session)
-                                owner_pid = int(request.get("owner_pid") or 0)
-                                if owner_pid > 0:
-                                    state["owner_pid"] = owner_pid
                                 if is_ardy_request and "duration" not in request:
                                     while session["queue"]:
                                         superseded = session["queue"].popleft()
@@ -1835,7 +2039,8 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                     continue
                 seen.add(id(runtime))
                 _unload_runtime_model(runtime, logger)
-        _remove_file(serverport_path)
+        # The next launcher validates and removes stale endpoints. Do not
+        # delete here: a replacement supervisor may already own this path.
         try:
             server.close()
         except Exception:

@@ -1,5 +1,4 @@
 using TimelineInject;
-using UnityEngine;
 using System.Collections.Generic;
 
 namespace KimodoBridge.Editor
@@ -9,7 +8,7 @@ namespace KimodoBridge.Editor
         public string ConstraintsJson;
         public bool Enabled;
         public bool IncludeTimelineConstraints;
-        public Avatar RetargetAvatar;
+        public string AnalysisOptionsJson;
         public List<KimodoMarkerSampleResult> ConstraintSamples = new List<KimodoMarkerSampleResult>();
     }
 }

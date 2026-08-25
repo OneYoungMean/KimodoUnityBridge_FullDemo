@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using KimodoUnityBridge;
 using TimelineInject;
 using UnityEngine;
 
@@ -58,10 +59,10 @@ namespace KimodoBridge
             return true;
         }
 
-        internal static bool TryBuildSkeletonCache(
+        internal static bool TryBuildRetargetSkeleton(
             Avatar avatar,
             string rootName,
-            out SkeletonCache cache,
+            out RetargetSkeleton cache,
             out string error)
         {
             cache = null;
@@ -75,7 +76,7 @@ namespace KimodoBridge
 
             if (!TryCreateVirtualSkeleton(
                     avatar,
-                    string.IsNullOrWhiteSpace(rootName) ? "KimodoSkeletonCache" : rootName,
+                    string.IsNullOrWhiteSpace(rootName) ? "KimodoRetargetSkeleton" : rootName,
                     animatorEnabled: true,
                     applyRootMotion: true,
                     out GameObject root,
@@ -85,7 +86,7 @@ namespace KimodoBridge
                 return false;
             }
 
-            return TryBuildOwnedSkeletonCache(avatar, root, animator, out cache, out error);
+            return TryBuildOwnedRetargetSkeleton(avatar, root, animator, out cache, out error);
         }
 
         internal static bool TryBuildSkeletonInstance(
@@ -95,7 +96,7 @@ namespace KimodoBridge
             out string error)
         {
             skeleton = null;
-            if (!TryBuildSkeletonCache(avatar, rootName, out SkeletonCache cache, out error))
+            if (!TryBuildRetargetSkeleton(avatar, rootName, out RetargetSkeleton cache, out error))
             {
                 return false;
             }
@@ -104,10 +105,10 @@ namespace KimodoBridge
             return true;
         }
 
-        internal static bool TryBuildOwnedSkeletonCache(
+        internal static bool TryBuildOwnedRetargetSkeleton(
             GameObject root,
             Animator animator,
-            out SkeletonCache cache,
+            out RetargetSkeleton cache,
             out string error)
         {
             cache = null;
@@ -126,7 +127,7 @@ namespace KimodoBridge
                 return false;
             }
 
-            return TryBuildOwnedSkeletonCache(avatar, root, animator, out cache, out error);
+            return TryBuildOwnedRetargetSkeleton(avatar, root, animator, out cache, out error);
         }
 
         internal static bool TryBuildOwnedSkeletonInstance(
@@ -136,7 +137,7 @@ namespace KimodoBridge
             out string error)
         {
             skeleton = null;
-            if (!TryBuildOwnedSkeletonCache(root, animator, out SkeletonCache cache, out error))
+            if (!TryBuildOwnedRetargetSkeleton(root, animator, out RetargetSkeleton cache, out error))
             {
                 return false;
             }
@@ -145,11 +146,11 @@ namespace KimodoBridge
             return true;
         }
 
-        private static bool TryBuildOwnedSkeletonCache(
+        private static bool TryBuildOwnedRetargetSkeleton(
             Avatar avatar,
             GameObject root,
             Animator animator,
-            out SkeletonCache cache,
+            out RetargetSkeleton cache,
             out string error)
         {
             cache = null;
@@ -177,9 +178,16 @@ namespace KimodoBridge
                 return false;
             }
 
-            cache = new SkeletonCache
+            if (!TryResolveHumanScale(avatar, root, out float humanScale, out error))
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+                return false;
+            }
+
+            cache = new RetargetSkeleton
             {
                 avatar = avatar,
+                humanScale = humanScale,
                 root = root,
                 skeletonRoot = root.transform,
                 rootLocalPosition = root.transform.localPosition,
@@ -188,7 +196,6 @@ namespace KimodoBridge
                 canonicalRootBoneName = canonicalRootBoneName,
                 animator = animator,
                 poseHandler = new HumanPoseHandler(avatar, root.transform),
-                humanScale = Mathf.Max(1e-6f, animator.humanScale),
                 bonePaths = bonePaths,
                 boneTransforms = boneTransforms,
                 bonePathMap = bonePathMap,
@@ -202,7 +209,52 @@ namespace KimodoBridge
             return true;
         }
 
-        internal static bool ValidateRetargetCache(SkeletonCache cache, out string error)
+        private static bool TryResolveHumanScale(
+            Avatar avatar,
+            GameObject root,
+            out float humanScale,
+            out string error)
+        {
+            humanScale = 1f;
+            error = string.Empty;
+            GameObject probe = null;
+            try
+            {
+                probe = UnityEngine.Object.Instantiate(root);
+                probe.name = "__KimodoHumanScaleProbe";
+                probe.hideFlags = HideFlags.HideAndDontSave;
+                probe.SetActive(true);
+                Animator scaleAnimator = probe.GetComponent<Animator>() ?? probe.AddComponent<Animator>();
+                scaleAnimator.avatar = avatar;
+                scaleAnimator.runtimeAnimatorController = null;
+                scaleAnimator.enabled = true;
+                scaleAnimator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                scaleAnimator.Rebind();
+                scaleAnimator.Update(0f);
+
+                humanScale = scaleAnimator.humanScale;
+                if (float.IsNaN(humanScale) || float.IsInfinity(humanScale) || humanScale <= 1e-6f)
+                {
+                    error = "Humanoid scale probe returned an invalid value.";
+                    return false;
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = $"Resolve humanoid scale failed: {ex.Message}";
+                return false;
+            }
+            finally
+            {
+                if (probe != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(probe);
+                }
+            }
+        }
+
+        internal static bool ValidateRetargetSkeleton(RetargetSkeleton cache, out string error)
         {
             error = string.Empty;
 
@@ -406,7 +458,7 @@ namespace KimodoBridge
         }
 
         internal static bool TryGetUniqueCachedTransformByName(
-            SkeletonCache cache,
+            RetargetSkeleton cache,
             string name,
             out Transform result,
             out bool ambiguous)
@@ -515,92 +567,6 @@ namespace KimodoBridge
             }
 
             return map;
-        }
-
-        public static bool TryGetProfileRootJointTransform(
-            Dictionary<string, Transform> nameMap,
-            string modelName,
-            out Transform profileRootJoint)
-        {
-            profileRootJoint = null;
-            if (nameMap == null)
-            {
-                return false;
-            }
-
-            string profileRootJointName = KimodoRigProfileDatabase.GetProfileRootJointNameForModel(modelName);
-            if (string.IsNullOrWhiteSpace(profileRootJointName))
-            {
-                return false;
-            }
-
-            return nameMap.TryGetValue(profileRootJointName, out profileRootJoint) && profileRootJoint != null;
-        }
-
-        public static bool TryApplyMarkerSampleToTransformMap(
-            TimelineInject.KimodoMarkerSampleResult sample,
-            string modelName,
-            Transform root,
-            Dictionary<string, Transform> nameMap,
-            out string error)
-        {
-            error = string.Empty;
-
-            if (sample == null || root == null || nameMap == null)
-            {
-                error = "invalid sample or transform map";
-                return false;
-            }
-
-            string[] modelJointNames = KimodoRigProfileDatabase.GetJointNamesForModel(modelName);
-            if (modelJointNames == null || modelJointNames.Length == 0)
-            {
-                error = $"model joint layout not found for '{modelName}'";
-                return false;
-            }
-
-            root.position = sample.unityRootPos;
-            root.rotation = sample.unityRootRot;
-            int count = sample.localAxisAngles != null ? sample.localAxisAngles.Count : 0;
-            if (TryGetProfileRootJointTransform(nameMap, modelName, out Transform profileRootJoint))
-            {
-                profileRootJoint.position = sample.kimodoRootPosition;
-                if (count > 0)
-                {
-                    profileRootJoint.rotation = KimodoConstraintRotationUtility.AxisAngleVectorToQuaternion(sample.localAxisAngles[0]);
-                }
-            }
-
-            if (count == 0)
-            {
-                if (string.Equals(sample.constraintType, "root2d", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-
-                error = $"marker sample has no localAxisAngles for constraint '{sample.constraintType ?? string.Empty}' at time {sample.sampleTime:F3}";
-                return false;
-            }
-
-            int applyCount = Mathf.Min(modelJointNames.Length, count);
-            for (int i = 0; i < applyCount; i++)
-            {
-                string jointName = modelJointNames[i];
-                if (!nameMap.TryGetValue(jointName, out Transform t) || t == null)
-                {
-                    error = $"joint '{jointName}' missing on pose rig";
-                    return false;
-                }
-                if(t== profileRootJoint)
-                {
-                    continue;
-                }
-                t.localRotation = KimodoConstraintRotationUtility.AxisAngleVectorToQuaternion(sample.localAxisAngles[i]);
-            }
-
-
-
-            return true;
         }
 
         public static string CalculateTransformPath(Transform target, Transform root, string canonicalRootBoneName, Dictionary<Transform,string> allDic)

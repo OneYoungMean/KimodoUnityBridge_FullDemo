@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 namespace KimodoBridge
 {
-    public sealed class KimodoBridgeCommand : IKimodoGeneratePipeline
+    public sealed class KimodoBridgeCommand
     {
         public async Task<KimodoBridgeCommandResult> ExecuteAsync(
             KimodoBridgeCommandRequest request,
@@ -45,19 +45,7 @@ namespace KimodoBridge
 
             progress?.Invoke(KimodoBridgeCommandStage.Completed, "Generation backend completed.");
 
-            return new KimodoBridgeCommandResult
-            {
-                MotionJsonCompact = result.motionJsonCompact,
-                MotionData = result.motionData,
-                MotionFormat = result.motionFormat,
-                Message = result.message ?? string.Empty,
-                RawStatus = result.rawStatus ?? string.Empty,
-                MotionBytes = result.motionBytes,
-                MotionRepFingerprint = result.motionRepFingerprint ?? string.Empty,
-                ResolvedSeed = result.resolvedSeed,
-                StartFrame = result.startFrame,
-                EndFrameExclusive = result.endFrameExclusive
-            };
+            return KimodoBridgeCommandResult.From(result);
         }
 
         private static async Task<KimodoGenerationResultDto> ExecuteBridgeAsync(
@@ -67,48 +55,39 @@ namespace KimodoBridge
         {
             progress?.Invoke(KimodoBridgeCommandStage.InvokeBackend, "Invoking generation backend...");
 
-            KimodoBridgeGenerationResult bridgeResult;
-            KimodoBridgeService bridgeService = KimodoBridgeService.CreateOwned();
-            try
-            {
-                bridgeResult = await bridgeService.GenerateAsync(
-                    request.GenerationRequest,
-                    message => progress?.Invoke(KimodoBridgeCommandStage.InvokeBackend, message ?? string.Empty),
-                    token);
-            }
-            finally
-            {
-                await bridgeService.DisposeAsync();
-            }
-
-            return new KimodoGenerationResultDto
-            {
-                rawStatus = bridgeResult?.RawStatus ?? "done",
-                message = bridgeResult?.Message ?? "Bridge generation complete.",
-                motionJsonCompact = bridgeResult?.MotionJsonCompact,
-                motionData = bridgeResult?.MotionData,
-                motionBytes = bridgeResult?.MotionBytes,
-                motionFormat = bridgeResult?.MotionFormat,
-                motionRepFingerprint = bridgeResult?.MotionRepFingerprint,
-                resolvedSeed = bridgeResult?.ResolvedSeed,
-                startFrame = bridgeResult?.StartFrame ?? 0,
-                endFrameExclusive = bridgeResult?.EndFrameExclusive ?? 0
-            };
+            return await KimodoBridgeService.Shared.GenerateAsync(
+                request.GenerationRequest,
+                message => progress?.Invoke(KimodoBridgeCommandStage.InvokeBackend, message ?? string.Empty),
+                token);
         }
     }
 
-    public sealed class KimodoBridgeCommandResult
+    public sealed class KimodoBridgeCommandResult : KimodoGenerationResultDto
     {
-        public string MotionJsonCompact;
-        public KimodoRawMotionData MotionData;
-        public string MotionFormat;
-        public string Message;
-        public string RawStatus;
-        public byte[] MotionBytes;
-        public string MotionRepFingerprint;
-        public int? ResolvedSeed;
-        public int StartFrame;
-        public int EndFrameExclusive;
+        internal static KimodoBridgeCommandResult From(KimodoGenerationResultDto result)
+        {
+            if (result == null)
+            {
+                return null;
+            }
+
+            return new KimodoBridgeCommandResult
+            {
+                motionJsonCompact = result.motionJsonCompact,
+                motionData = result.motionData,
+                motionBytes = result.motionBytes,
+                kmbAttachments = result.kmbAttachments,
+                motionFormat = result.motionFormat,
+                rawStatus = result.rawStatus ?? "done",
+                message = result.message ?? "Bridge generation complete.",
+                motionRepFingerprint = result.motionRepFingerprint ?? string.Empty,
+                resolvedSeed = result.resolvedSeed,
+                startFrame = result.startFrame,
+                endFrameExclusive = result.endFrameExclusive,
+                ardyPlaybackReserveSeconds = result.ardyPlaybackReserveSeconds,
+                analysisJson = result.analysisJson
+            };
+        }
     }
 
     public enum KimodoBridgeCommandStage

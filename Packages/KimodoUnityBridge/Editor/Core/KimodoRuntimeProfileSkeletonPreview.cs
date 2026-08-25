@@ -37,8 +37,7 @@ namespace KimodoBridge.Editor
             ActiveDriverIds.Clear();
             if (Application.isPlaying)
             {
-                KimodoRuntimeMotionDriver[] drivers =
-                    Resources.FindObjectsOfTypeAll<KimodoRuntimeMotionDriver>();
+                KimodoRuntimeMotionDriver[] drivers = Resources.FindObjectsOfTypeAll<KimodoRuntimeMotionDriver>();
                 for (int i = 0; i < drivers.Length; i++)
                 {
                     KimodoRuntimeMotionDriver driver = drivers[i];
@@ -71,7 +70,7 @@ namespace KimodoBridge.Editor
         private static void UpdateDriver(int id, KimodoRuntimeMotionDriver driver)
         {
             Transform sourceRoot = driver.DebugProfileSkeletonRoot;
-            string modelName = KimodoPlayableClip.NormalizeBridgeModelName(driver.DebugModelName);
+            string modelName = KimodoMotionModelProfiles.NormalizeName(driver.DebugModelName);
             if (sourceRoot == null)
             {
                 DestroyEntry(id);
@@ -107,10 +106,7 @@ namespace KimodoBridge.Editor
             entry.Instance.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
         }
 
-        private static PreviewEntry CreateEntry(
-            KimodoRuntimeMotionDriver driver,
-            Transform sourceRoot,
-            string modelName)
+        private static PreviewEntry CreateEntry(KimodoRuntimeMotionDriver driver, Transform sourceRoot, string modelName)
         {
             string assetPath = AssetDatabase.GUIDToAssetPath(ResolveModelGuid(modelName));
             GameObject model = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
@@ -130,25 +126,14 @@ namespace KimodoBridge.Editor
             }
 
             bool sourceResolved = KimodoProfileSkeletonUtility.TryResolveProfileSkeleton(
-                modelName,
-                sourceRoot,
-                out _,
-                out _,
-                out Transform[] sourceJoints,
-                out string sourceError);
+                modelName, sourceRoot, out _, out _, out Transform[] sourceJoints, out string sourceError);
             bool previewResolved = KimodoProfileSkeletonUtility.TryResolveProfileSkeleton(
-                modelName,
-                instance.transform,
-                out _,
-                out _,
-                out Transform[] previewJoints,
-                out string previewError);
+                modelName, instance.transform, out _, out _, out Transform[] previewJoints, out string previewError);
             if (!sourceResolved || !previewResolved)
             {
                 Object.DestroyImmediate(instance);
                 Debug.LogWarning(
-                    $"[KimodoRuntimeMotionDriver] Debug profile skeleton mapping failed: " +
-                    $"{sourceError}{previewError}",
+                    $"[KimodoRuntimeMotionDriver] Debug profile skeleton mapping failed: {sourceError}{previewError}",
                     driver);
                 return null;
             }

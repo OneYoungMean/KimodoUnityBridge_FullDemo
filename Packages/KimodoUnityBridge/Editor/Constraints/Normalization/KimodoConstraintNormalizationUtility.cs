@@ -24,7 +24,7 @@ namespace KimodoBridge.Editor
                     sample != null &&
                     sample.sampleTime >= 0.0 &&
                     sample.sampleTime < anchorWindowSeconds &&
-                    IsAnchorConstraintType(sample.constraintType))
+                    IsAnchorConstraintType(sample.constraintMode))
                 {
                     return true;
                 }
@@ -54,10 +54,10 @@ namespace KimodoBridge.Editor
         internal static float ResolveHumanScale(Avatar avatar)
         {
             if (!KimodoRetargetCoreUtility.IsValidHumanoid(avatar) ||
-                !KimodoRetargetAvatarUtility.TryBuildSkeletonCache(
+                !KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(
                     avatar,
-                    "KimodoConstraintScaleProbe",
-                    out SkeletonCache cache,
+                    "KimodoRetargetClipScaleProbe",
+                    out RetargetSkeleton cache,
                     out _))
             {
                 return 1f;
@@ -72,17 +72,5 @@ namespace KimodoBridge.Editor
                 cache.Dispose();
             }
         }
-
-        internal static void NormalizeRootPose(
-            Vector3 anchorRootPosition,
-            Quaternion anchorRootRotation,
-            ref Vector3 rootPosition,
-            ref Quaternion rootRotation)
-        {
-            Quaternion inverseAnchor = Quaternion.Inverse(anchorRootRotation);
-            rootPosition = inverseAnchor * (rootPosition - anchorRootPosition);
-            rootRotation = inverseAnchor * rootRotation;
-        }
-
     }
 }

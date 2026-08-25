@@ -20,13 +20,10 @@ namespace KimodoBridge.Editor
         public bool EnableBegin;
         public bool EnableEnd;
         public Avatar SourceAvatar;
-        public string ModelName = KimodoPlayableClip.DefaultBridgeModelName;
-        public float SourceHumanScale = 1f;
-        public float KimodoHumanScale = 1f;
+        public string ModelName = KimodoMotionModelProfiles.DefaultModelName;
         public int GenerationFrames = 1;
         public bool AutoBeginAnchor;
         public bool DeferNormalization;
-        public bool IsLoop;
         public KimodoTimelineInOutConstraintContext TimelineContext;
         public List<KimodoMarkerSampleResult> ManualSamples = new List<KimodoMarkerSampleResult>();
     }
@@ -37,5 +34,6 @@ namespace KimodoBridge.Editor
         public string ConstraintsJson = string.Empty;
         public bool HasSyntheticAutoBeginConstraint;
         public bool DenseRootPath;
+        public KimodoMarkerSampleResult BeginBoundarySample;
     }
 }

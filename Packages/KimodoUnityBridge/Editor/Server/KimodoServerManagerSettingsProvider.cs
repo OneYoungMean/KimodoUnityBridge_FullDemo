@@ -143,6 +143,19 @@ namespace KimodoBridge.Editor
             }
 
             EditorGUILayout.LabelField("Server Version", KimodoServerRuntimeUtil.ReadQuickServerVersion(runtimeRoot));
+
+            EditorGUI.BeginChangeCheck();
+            bool autoSync = EditorGUILayout.Toggle(
+                new GUIContent(
+                    "Auto Sync Server",
+                    "When the packaged QuickServer is newer, synchronize it when the bridge starts. " +
+                    "Major sync removes all runtime contents; minor sync keeps models; patch sync keeps models and root .venv."),
+                settings.AutoSyncQuickServer);
+            if (EditorGUI.EndChangeCheck())
+            {
+                settings.AutoSyncQuickServer = autoSync;
+                settings.SaveSettings();
+            }
         }
 
         private void DrawStatusMessages()
@@ -302,16 +315,6 @@ namespace KimodoBridge.Editor
                 }
 
                 EditorGUI.BeginChangeCheck();
-                float timeoutSeconds = EditorGUILayout.FloatField(
-                    new GUIContent("Generate Timeout (sec)", "Global timeout used by Kimodo generation requests."),
-                    settings.GenerationTimeoutSeconds);
-                if (EditorGUI.EndChangeCheck())
-                {
-                    settings.GenerationTimeoutSeconds = timeoutSeconds;
-                    settings.SaveSettings();
-                }
-
-                EditorGUI.BeginChangeCheck();
                 bool keepCpuForceExperimental = EditorGUILayout.Toggle(
                     new GUIContent(
                         "Force CPU",
@@ -373,11 +376,7 @@ namespace KimodoBridge.Editor
                 RefreshModelList();
             }
 
-            EditorGUILayout.HelpBox(
-                selectedEncoderMode == KimodoTextEncoderMode.HighPrecision
-                    ? "High Precision: FP16 uses the accelerator at 18 GB effective VRAM; otherwise the encoder runs on CPU."
-                    : "High Performance on CUDA: NF4 uses the accelerator at 6 GB when supported; otherwise INT8 uses it at 8 GB or runs on CPU. Apple Metal/MPS always uses FP16.",
-                MessageType.Info);
+            EditorGUILayout.HelpBox(KimodoGenerationInspectorGui.GetRuntimePlacementHint(), MessageType.Info);
 
             if (KimodoBridgeServerTool.TryGetModelMissingSetupMinutes(
                 runtimeRoot,
@@ -858,9 +857,16 @@ namespace KimodoBridge.Editor
             }
         }
 
-        private static Task StartServerConnectionAsync(Action<string> progress)
+        private static async Task StartServerConnectionAsync(Action<string> progress)
         {
-            return KimodoBridgeService.Shared.WarmupAsync(progress, CancellationToken.None);
+            await KimodoBridgeService.Shared.WarmupAsync(progress, CancellationToken.None);
+
+            KimodoPlayableClipGenerationSettings settings = KimodoPlayableClipGenerationSettings.instance;
+            progress?.Invoke($"Preparing default model '{settings.DefaultBridgeModelName}'...");
+            await KimodoBridgeService.Shared.GenerateAsync(
+                KimodoSetupWizardWindow.CreateDefaultModelWarmupRequest(settings),
+                progress,
+                CancellationToken.None);
         }
 
         private static string SummarizeForUi(string message, int maxLength = 320)

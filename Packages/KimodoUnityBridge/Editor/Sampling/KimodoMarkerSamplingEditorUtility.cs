@@ -8,9 +8,8 @@ namespace KimodoBridge.Editor
     internal static class KimodoMarkerSamplingEditorUtility
     {
         public static bool TryWriteConstraintMarkerSample(
-            KimodoConstraintMarkerBase marker,
+            KimodoConstraintMarker marker,
             KimodoMarkerSampleResult sample,
-            bool keepOverrideEnabled,
             out string error)
         {
             error = string.Empty;
@@ -35,26 +34,68 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            bool changed = !AreSamplesEquivalent(marker.SampleData, normalized) ||
-                System.Math.Abs(marker.time - normalized.sampleTime) > 1e-9 ||
-                (keepOverrideEnabled && !marker.useOverride);
+            // Normalization preserves channel validity; a Scene drag is the
+            // explicit editor path that may promote newly changed channels.
+            if (sample.enableMask != null)
+            {
+                normalized.enableMask ??= new KimodoConstraintMask();
+                normalized.validMask ??= new KimodoConstraintMask();
+                KimodoConstraintMask sourceValid = KimodoConstraintMask.FromSample(sample);
+                normalized.enableMask.muscle |= sample.enableMask.muscle;
+                normalized.validMask.muscle |= sourceValid.muscle;
+                normalized.enableMask.rootTQ |= sample.enableMask.rootTQ;
+                normalized.validMask.rootTQ |= sourceValid.rootTQ;
+                normalized.enableMask.leftFootTQ |= sample.enableMask.leftFootTQ;
+                normalized.validMask.leftFootTQ |= sourceValid.leftFootTQ;
+                normalized.enableMask.rightFootTQ |= sample.enableMask.rightFootTQ;
+                normalized.validMask.rightFootTQ |= sourceValid.rightFootTQ;
+                normalized.enableMask.rootPosition |= sample.enableMask.rootPosition;
+                normalized.validMask.rootPosition |= sourceValid.rootPosition;
+                normalized.enableMask.rootHeading |= sample.enableMask.rootHeading;
+                normalized.validMask.rootHeading |= sourceValid.rootHeading;
+                normalized.enableMask.leftHand |= sample.enableMask.leftHand;
+                normalized.validMask.leftHand |= sourceValid.leftHand;
+                normalized.enableMask.rightHand |= sample.enableMask.rightHand;
+                normalized.validMask.rightHand |= sourceValid.rightHand;
+                normalized.enableMask.leftFoot |= sample.enableMask.leftFoot;
+                normalized.validMask.leftFoot |= sourceValid.leftFoot;
+                normalized.enableMask.rightFoot |= sample.enableMask.rightFoot;
+                normalized.validMask.rightFoot |= sourceValid.rightFoot;
+            }
+
+            // Scene edits author effector targets separately from the canonical pose.
+            // Normalization starts from the marker payload, so copy the edited
+            // world-space targets explicitly or a drag is lost on the next
+            // render.
+            if (sample.effectors != null &&
+                (!marker.autoSample || HasEffectors(sample.effectors)))
+            {
+                normalized.effectors = sample.effectors.Clone();
+            }
+
+            // Root2D handles edit the same canonical world-space payload as
+            // effectors. Preserve that edit explicitly because normalization
+            // starts from the marker's authored sample for non-AutoSample
+            // markers.
+            if (sample.rootOverride != null &&
+                (!marker.autoSample || KimodoConstraintMask.IsActive(sample, "rootposition")))
+            {
+                normalized.rootOverride = sample.rootOverride.Clone();
+            }
+
+            bool changed = !AreSamplesEquivalent(marker.SampleData, normalized);
             if (!changed)
             {
                 return true;
             }
 
             marker.SampleData = normalized;
-            marker.time = normalized.sampleTime;
-            if (keepOverrideEnabled)
-            {
-                marker.useOverride = true;
-            }
 
             MarkConstraintMarkerDirty(marker);
             return true;
         }
 
-        private static void MarkConstraintMarkerDirty(KimodoConstraintMarkerBase marker)
+        private static void MarkConstraintMarkerDirty(KimodoConstraintMarker marker)
         {
             if (marker == null)
             {
@@ -88,19 +129,40 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            return string.Equals(left.constraintType ?? string.Empty, right.constraintType ?? string.Empty, System.StringComparison.Ordinal) &&
-                System.Math.Abs(left.sampleTime - right.sampleTime) <= 1e-9 &&
-                left.rigType == right.rigType &&
-                left.hasRootHeading == right.hasRootHeading &&
-                Approximately(left.kimodoRootPosition, right.kimodoRootPosition) &&
-                Approximately(left.rootHeading, right.rootHeading) &&
-                Approximately(left.unityRootPos, right.unityRootPos) &&
-                Approximately(left.unityRootRot, right.unityRootRot) &&
-                left.hasEndEffectorTargetPosition == right.hasEndEffectorTargetPosition &&
-                Approximately(left.endEffectorTargetPositionRootLocal, right.endEffectorTargetPositionRootLocal) &&
-                StringListsEqual(left.jointNames, right.jointNames) &&
-                Vector3ListsEqual(left.localAxisAngles, right.localAxisAngles) &&
-                IntListsEqual(left.sampledJointIndices, right.sampledJointIndices);
+            return string.Equals(left.constraintMode ?? string.Empty, right.constraintMode ?? string.Empty, System.StringComparison.Ordinal) &&
+                string.Equals(SampleDataSignature(left), SampleDataSignature(right), System.StringComparison.Ordinal) &&
+                string.Equals(EffectorsSignature(left), EffectorsSignature(right), System.StringComparison.Ordinal) &&
+                string.Equals(Root2DOverrideSignature(left), Root2DOverrideSignature(right), System.StringComparison.Ordinal) &&
+                string.Equals(MaskSignature(left.enableMask), MaskSignature(right.enableMask), System.StringComparison.Ordinal) &&
+                string.Equals(MaskSignature(left.validMask), MaskSignature(right.validMask), System.StringComparison.Ordinal);
+        }
+
+        private static string SampleDataSignature(KimodoMarkerSampleResult sample)
+        {
+            return sample?.sampleData?.data != null ? string.Join(",", sample.sampleData.data) : string.Empty;
+        }
+
+        private static string MaskSignature(KimodoConstraintMask mask) =>
+            mask != null ? JsonUtility.ToJson(mask) : string.Empty;
+
+        private static string Root2DOverrideSignature(KimodoMarkerSampleResult sample)
+        {
+            return KimodoConstraintMask.IsActive(sample, "rootposition")
+                ? JsonUtility.ToJson(sample.root2DOverride)
+                : string.Empty;
+        }
+
+        private static string EffectorsSignature(KimodoMarkerSampleResult sample)
+        {
+            return sample?.effectors != null
+                ? JsonUtility.ToJson(sample.effectors)
+                : string.Empty;
+        }
+
+        private static bool HasEffectors(KimodoConstraintEffectors targets)
+        {
+            return targets?.leftHand != null || targets?.rightHand != null ||
+                targets?.leftFoot != null || targets?.rightFoot != null;
         }
 
         private static bool StringListsEqual(System.Collections.Generic.IReadOnlyList<string> left, System.Collections.Generic.IReadOnlyList<string> right)

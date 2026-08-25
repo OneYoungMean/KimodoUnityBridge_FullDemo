@@ -1,10 +1,12 @@
 {
   "name": "com.unity.kimodo_unity_motion_tools",
-  "displayName": "Kimodo Unity Motion Tools",
-  "version": "2.0.19",
-  "description": "Inter-process communication bridge for Kimodo motion generation and Unity",
+  "displayName": "KimodoUnityBridge",
+  "version": "3.1.4",
+  "description": "Unity character-animation commands, Timeline authoring, retargeting, and local motion generation",
   "unity": "2022.3",
   "keywords": [
+    "character-animation",
+    "cli",
     "kimodo",
     "motion",
     "animation",
@@ -20,7 +22,7 @@
   "samples": [
     {
       "displayName": "Light Sample",
-      "description": "Light Sample scene and generated clips for Kimodo Unity Motion Tools On Default RenderPpie.",
+      "description": "Light sample scene and generated clips for KimodoUnityBridge.",
       "path": "LightSample~"
     }
   ],

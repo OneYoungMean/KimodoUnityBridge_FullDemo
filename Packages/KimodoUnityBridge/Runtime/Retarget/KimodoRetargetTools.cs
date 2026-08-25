@@ -30,7 +30,10 @@ namespace KimodoBridge
             }
 
             clip.ClearCurves();
-            if (!KimodoRetargetClipWriter.WriteMuscleCurves(samples, clip, out error))
+            // Retarget output is the complete atomic 70D payload. Writing
+            // only the 49 body muscles here drops rootTQ/footTQ before the
+            // next HumanPose evaluation and recreates the old split path.
+            if (!KimodoRetargetClipWriter.WriteRetargetMuscleCurves(samples, clip, out error))
             {
                 return false;
             }
@@ -77,8 +80,8 @@ namespace KimodoBridge
             out string error,
             Action<string> debugLog = null)
         {
-            SkeletonCache sourceCache = null;
-            SkeletonCache targetCache = null;
+            RetargetSkeleton sourceCache = null;
+            RetargetSkeleton targetCache = null;
             try
             {
                 targetClip = sourceClip;
@@ -107,25 +110,25 @@ namespace KimodoBridge
                     return false;
                 }
 
-                float frameRate = sourceClip.frameRate > 0f ? sourceClip.frameRate : KimodoPlayableClip.FIXED_FRAME_RATE;
+                float frameRate = sourceClip.frameRate > 0f ? sourceClip.frameRate : KimodoMotionModelProfiles.DefaultFrameRate;
                 float duration = Mathf.Max(0f, sourceClip.length);
                 int frameCount = KimodoRetargetSamplingUtility.ResolveInclusiveSampleCount(duration, frameRate);
                 bool needsSourceCache = exportMuscleClip && !sourceClip.isHumanMotion;
                 bool needsTargetCache = !exportMuscleClip;
 
-                if (needsSourceCache && !KimodoRetargetAvatarUtility.ValidateRetargetCache(sourceCache, out _))
+                if (needsSourceCache && !KimodoRetargetAvatarUtility.ValidateRetargetSkeleton(sourceCache, out _))
                 {
                     sourceCache = null;
-                    if (!KimodoRetargetAvatarUtility.TryBuildSkeletonCache(sourceAvatar, "KimodoRetargetTools_SourceClipBatch", out sourceCache, out error))
+                    if (!KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(sourceAvatar, "KimodoRetargetTools_SourceClipBatch", out sourceCache, out error))
                     {
                         return false;
                     }
                 }
 
-                if (needsTargetCache && !KimodoRetargetAvatarUtility.ValidateRetargetCache(targetCache, out _))
+                if (needsTargetCache && !KimodoRetargetAvatarUtility.ValidateRetargetSkeleton(targetCache, out _))
                 {
                     targetCache = null;
-                    if (!KimodoRetargetAvatarUtility.TryBuildSkeletonCache(targetAvatar, "KimodoRetargetTools_TargetClipBatch", out targetCache, out error))
+                    if (!KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(targetAvatar, "KimodoRetargetTools_TargetClipBatch", out targetCache, out error))
                     {
                         return false;
                     }

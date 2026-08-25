@@ -20,7 +20,7 @@ namespace KimodoBridge.Editor
                 error = "ARDY Timeline history range is missing or empty.";
                 return false;
             }
-            if (!KimodoTimelineSamplingSession.TryCreate(
+            if (!KimodoTimelineSamplingSession.TryCreateForProfileEncoding(
                     source.TimelineContext,
                     profile.ModelName,
                     out KimodoTimelineSamplingSession sampler,
@@ -115,7 +115,7 @@ namespace KimodoBridge.Editor
 
                 for (int frame = 0; frame < frameCount; frame++)
                 {
-                    if (!KimodoRetargetSamplingUtility.TryApplyBoneSampleToSkeletonCache(
+                    if (!KimodoRetargetSamplingUtility.TryApplyBoneSampleToRetargetSkeleton(
                             targetSamples[frame],
                             sampler.TargetCache,
                             out error))

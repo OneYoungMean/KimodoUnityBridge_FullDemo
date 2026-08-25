@@ -11,8 +11,7 @@ namespace KimodoBridge.Editor
         internal sealed class PoseRigInstance
         {
             public GameObject Root;
-            public SkeletonCache TargetCache;
-            public SkeletonCache ProfileCache;
+            public RetargetSkeleton TargetCache;
             public List<Material> GeneratedMaterials;
         }
 
@@ -26,7 +25,7 @@ namespace KimodoBridge.Editor
         {
             instance = null;
             error = string.Empty;
-            Animator sourceAnimator = EditorUtility.InstanceIDToObject(animatorId) as Animator;
+            Animator sourceAnimator = KimodoEditorObjectIdUtility.ObjectFromId(animatorId) as Animator;
             if (sourceAnimator == null || sourceAnimator.gameObject == null)
             {
                 error = "Timeline binding Animator is missing.";
@@ -41,8 +40,7 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            SkeletonCache targetCache = null;
-            SkeletonCache profileCache = null;
+            RetargetSkeleton targetCache = null;
             List<Material> generatedMaterials = null;
             try
             {
@@ -59,7 +57,7 @@ namespace KimodoBridge.Editor
                     return false;
                 }
 
-                if (!KimodoRetargetAvatarUtility.TryBuildOwnedSkeletonCache(
+                if (!KimodoRetargetAvatarUtility.TryBuildOwnedRetargetSkeleton(
                         targetRoot,
                         targetAnimator,
                         out targetCache,
@@ -69,39 +67,15 @@ namespace KimodoBridge.Editor
                 }
                 targetAnimator.enabled = false;
 
-                if (!KimodoRuntimeAvatarSkeletonBuilder.TryLoadAvatarByModelName(
-                        modelName,
-                        out Avatar profileAvatar,
-                        out error) ||
-                    !KimodoRetargetCoreUtility.IsValidHumanoid(profileAvatar))
-                {
-                    error = string.IsNullOrWhiteSpace(error)
-                        ? $"Profile Avatar is unavailable for '{modelName}'."
-                        : error;
-                    return false;
-                }
-
-                if (!KimodoRetargetAvatarUtility.TryBuildSkeletonCache(
-                        profileAvatar,
-                        $"__KimodoConstraintProfile_{clipId}_{animatorId}",
-                        out profileCache,
-                        out error))
-                {
-                    return false;
-                }
-
                 targetCache.root.name = $"__KimodoConstraintAvatar_{clipId}_{animatorId}";
                 targetCache.root.hideFlags = HideFlags.HideInHierarchy | HideFlags.DontSave;
-                profileCache.root.hideFlags = HideFlags.HideAndDontSave;
                 instance = new PoseRigInstance
                 {
                     Root = targetCache.root,
                     TargetCache = targetCache,
-                    ProfileCache = profileCache,
                     GeneratedMaterials = generatedMaterials
                 };
                 targetCache = null;
-                profileCache = null;
                 generatedMaterials = null;
                 return true;
             }
@@ -113,7 +87,6 @@ namespace KimodoBridge.Editor
             finally
             {
                 targetCache?.Dispose();
-                profileCache?.Dispose();
                 DestroyMaterials(generatedMaterials);
             }
         }
@@ -137,15 +110,18 @@ namespace KimodoBridge.Editor
             {
                 root = CloneTransformHierarchy(sourceAnimator.transform, null, transformMap).gameObject;
                 root.name = $"__KimodoConstraintAvatar_{clipId}_{animatorId}";
-                root.transform.SetPositionAndRotation(sourceAnimator.transform.position, sourceAnimator.transform.rotation);
-                root.transform.localScale = sourceAnimator.transform.lossyScale;
+                // Preview retargeting receives muscle-space absolute rootTQ.
+                // Keep the preview skeleton root neutral so scene placement or
+                // lossyScale cannot add a second root transform to that value.
+                root.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+                root.transform.localScale = Vector3.one;
 
                 Material previewMaterial = CreatePreviewMaterial();
                 if (previewMaterial != null)
                 {
                     generatedMaterials.Add(previewMaterial);
                 }
-                CopySkinnedMeshes(sourceAnimator.transform, transformMap, previewMaterial, out error);
+                CopyMeshes(sourceAnimator.transform, transformMap, previewMaterial, out error);
                 if (!string.IsNullOrEmpty(error))
                 {
                     UnityEngine.Object.DestroyImmediate(root);
@@ -199,7 +175,7 @@ namespace KimodoBridge.Editor
             return clone;
         }
 
-        private static void CopySkinnedMeshes(
+        private static void CopyMeshes(
             Transform sourceRoot,
             Dictionary<Transform, Transform> transformMap,
             Material previewMaterial,
@@ -216,7 +192,7 @@ namespace KimodoBridge.Editor
                 }
 
                 var target = targetTransform.gameObject.AddComponent<SkinnedMeshRenderer>();
-                target.sharedMesh = source.sharedMesh;
+                EditorUtility.CopySerialized(source, target);
                 target.rootBone = ResolveCloneTransform(source.rootBone, transformMap);
                 Transform[] sourceBones = source.bones;
                 var targetBones = new Transform[sourceBones.Length];
@@ -230,26 +206,10 @@ namespace KimodoBridge.Editor
                     }
                 }
                 target.bones = targetBones;
-                target.localBounds = source.localBounds;
-                target.quality = source.quality;
                 target.updateWhenOffscreen = true;
                 target.skinnedMotionVectors = false;
-                target.shadowCastingMode = source.shadowCastingMode;
-                target.receiveShadows = source.receiveShadows;
-                target.lightProbeUsage = source.lightProbeUsage;
-                target.reflectionProbeUsage = source.reflectionProbeUsage;
                 target.probeAnchor = ResolveCloneTransform(source.probeAnchor, transformMap);
-                target.enabled = source.enabled;
-
-                Material[] sourceMaterials = source.sharedMaterials;
-                var materials = new Material[sourceMaterials != null ? sourceMaterials.Length : 0];
-                for (int materialIndex = 0; materialIndex < materials.Length; materialIndex++)
-                {
-                    materials[materialIndex] = previewMaterial != null
-                        ? previewMaterial
-                        : sourceMaterials[materialIndex];
-                }
-                target.sharedMaterials = materials;
+                target.sharedMaterials = ResolvePreviewMaterials(source.sharedMaterials, previewMaterial);
 
                 Mesh mesh = source.sharedMesh;
                 if (mesh != null)
@@ -260,6 +220,43 @@ namespace KimodoBridge.Editor
                     }
                 }
             }
+
+            MeshFilter[] staticFilters = sourceRoot.GetComponentsInChildren<MeshFilter>(true);
+            for (int i = 0; i < staticFilters.Length; i++)
+            {
+                MeshFilter sourceFilter = staticFilters[i];
+                MeshRenderer source = sourceFilter != null ? sourceFilter.GetComponent<MeshRenderer>() : null;
+                if (source == null || sourceFilter.sharedMesh == null ||
+                    !transformMap.TryGetValue(source.transform, out Transform targetTransform))
+                {
+                    continue;
+                }
+
+                MeshFilter targetFilter = targetTransform.gameObject.GetComponent<MeshFilter>();
+                if (targetFilter == null)
+                {
+                    targetFilter = targetTransform.gameObject.AddComponent<MeshFilter>();
+                }
+                EditorUtility.CopySerialized(sourceFilter, targetFilter);
+                MeshRenderer target = targetTransform.gameObject.GetComponent<MeshRenderer>();
+                if (target == null)
+                {
+                    target = targetTransform.gameObject.AddComponent<MeshRenderer>();
+                }
+                EditorUtility.CopySerialized(source, target);
+                target.probeAnchor = ResolveCloneTransform(source.probeAnchor, transformMap);
+                target.sharedMaterials = ResolvePreviewMaterials(source.sharedMaterials, previewMaterial);
+            }
+        }
+
+        private static Material[] ResolvePreviewMaterials(Material[] sourceMaterials, Material previewMaterial)
+        {
+            var materials = new Material[sourceMaterials != null ? sourceMaterials.Length : 0];
+            for (int i = 0; i < materials.Length; i++)
+            {
+                materials[i] = previewMaterial != null ? previewMaterial : sourceMaterials[i];
+            }
+            return materials;
         }
 
         private static Transform ResolveCloneTransform(

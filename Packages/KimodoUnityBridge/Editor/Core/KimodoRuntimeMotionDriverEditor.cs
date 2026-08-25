@@ -1,9 +1,12 @@
+using System;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
 namespace KimodoBridge.Editor
 {
     [CustomEditor(typeof(KimodoRuntimeMotionDriver))]
+    [CanEditMultipleObjects]
     internal sealed class KimodoRuntimeMotionDriverEditor : UnityEditor.Editor
     {
         private SerializedProperty targetAnimators;
@@ -14,13 +17,13 @@ namespace KimodoBridge.Editor
         private SerializedProperty prompt;
         private SerializedProperty generationFrames;
         private SerializedProperty ardyPlaybackReserveSeconds;
-        private SerializedProperty ardyAdaptivePlaybackReserve;
         private SerializedProperty ardyAutoHistory;
         private SerializedProperty ardyHistoryWeight;
+        private SerializedProperty ardyMaxSpeed;
+        private SerializedProperty ardyMaxAcceleration;
         private SerializedProperty diffusionSteps;
         private SerializedProperty randomSeed;
         private SerializedProperty seed;
-        private SerializedProperty driveFootIkTargets;
         private SerializedProperty drawDebugSkeleton;
         private SerializedProperty verboseLogging;
 
@@ -34,13 +37,13 @@ namespace KimodoBridge.Editor
             prompt = serializedObject.FindProperty("defaultPrompt");
             generationFrames = serializedObject.FindProperty("generationFrames");
             ardyPlaybackReserveSeconds = serializedObject.FindProperty("ardyPlaybackReserveSeconds");
-            ardyAdaptivePlaybackReserve = serializedObject.FindProperty("ardyAdaptivePlaybackReserve");
             ardyAutoHistory = serializedObject.FindProperty("ardyAutoHistory");
             ardyHistoryWeight = serializedObject.FindProperty("ardyHistoryWeight");
+            ardyMaxSpeed = serializedObject.FindProperty("ardyMaxSpeed");
+            ardyMaxAcceleration = serializedObject.FindProperty("ardyMaxAcceleration");
             diffusionSteps = serializedObject.FindProperty("diffusionSteps");
             randomSeed = serializedObject.FindProperty("randomSeed");
             seed = serializedObject.FindProperty("fixedSeed");
-            driveFootIkTargets = serializedObject.FindProperty("driveFootIkTargets");
             drawDebugSkeleton = serializedObject.FindProperty("drawDebugSkeleton");
             verboseLogging = serializedObject.FindProperty("verboseLogging");
         }
@@ -100,43 +103,25 @@ namespace KimodoBridge.Editor
                     ardyPlaybackReserveSeconds,
                     new GUIContent("Playback Reserve", "Request more motion when this much playable ARDY animation remains; default 1 second."));
                 EditorGUILayout.PropertyField(
-                    ardyAdaptivePlaybackReserve,
-                    new GUIContent("Adaptive Playback Reserve", "Let the backend adapt the reserve from measured response time."));
-                EditorGUILayout.PropertyField(
                     ardyAutoHistory,
-                    new GUIContent("Auto History", "Adapt the history window from upcoming motion constraints."));
+                    new GUIContent("Auto History", "0-1 m/s = 0.225; 1-10 m/s grows exponentially to 1; above 10 m/s = 1."));
                 if (!ardyAutoHistory.hasMultipleDifferentValues && !ardyAutoHistory.boolValue)
                 {
                     EditorGUILayout.PropertyField(
                         ardyHistoryWeight,
                         new GUIContent("ARDY History Weight", "0 uses one motion token; 1 uses the maximum history window."));
                 }
+                EditorGUILayout.PropertyField(ardyMaxSpeed, new GUIContent("Root2D Max Speed"));
+                EditorGUILayout.PropertyField(ardyMaxAcceleration, new GUIContent("Root2D Max Acceleration"));
             }
             KimodoGenerationInspectorGui.DrawDiffusionSteps(diffusionSteps, modelName);
             KimodoGenerationInspectorGui.DrawSeed(randomSeed, seed);
-            DrawFootIkSetting();
             EditorGUILayout.EndVertical();
             EditorGUILayout.Space();
         }
 
-        private void DrawFootIkSetting()
-        {
-            var label = new GUIContent(
-                "Foot IK",
-                "Enable foot target driving and runtime two-bone leg IK correction.");
-            if (!Application.isPlaying)
-            {
-                EditorGUILayout.PropertyField(driveFootIkTargets, label);
-                return;
-            }
-
-            KimodoRuntimeMotionDriver driver = (KimodoRuntimeMotionDriver)target;
-            driver.FootIkEnabled = EditorGUILayout.Toggle(label, driver.FootIkEnabled);
-        }
-
         private void DrawRuntimeControls()
         {
-            KimodoRuntimeMotionDriver driver = (KimodoRuntimeMotionDriver)target;
             EditorGUILayout.LabelField("Runtime Controls", EditorStyles.boldLabel);
             EditorGUILayout.BeginVertical("box");
 
@@ -145,22 +130,33 @@ namespace KimodoBridge.Editor
                 if (GUILayout.Button(new GUIContent("Apply", "Apply settings now; restart this session when required."), GUILayout.Height(30f)))
                 {
                     serializedObject.ApplyModifiedProperties();
-                    driver.ApplyGenerationSettings();
+                    ForEachSelectedDriver(driver => driver.ApplyGenerationSettings());
                 }
 
                 if (GUILayout.Button("Reset Motion", GUILayout.Height(24f)))
                 {
-                    _ = driver.ResetMotionAsync();
+                    ForEachSelectedDriver(driver => _ = driver.ResetMotionAsync());
                 }
             }
 
-            EditorGUILayout.LabelField("Driver status: " + (driver.IsRunning ? "running" : "stopped"), EditorStyles.miniLabel);
+            int runningCount = 0;
+            for (int i = 0; i < targets.Length; i++)
+            {
+                if (targets[i] is KimodoRuntimeMotionDriver driver && driver.IsRunning)
+                {
+                    runningCount++;
+                }
+            }
+            EditorGUILayout.LabelField(
+                $"Drivers: {targets.Length} selected ({runningCount} running)",
+                EditorStyles.miniLabel);
             EditorGUILayout.LabelField(
                 "Bridge status: " + (KimodoBridgeService.Shared.IsConnected ? "connected" : "disconnected"),
                 EditorStyles.miniLabel);
-            if (!string.IsNullOrWhiteSpace(driver.StatusMessage))
+            string statusSummary = BuildStatusSummary();
+            if (!string.IsNullOrWhiteSpace(statusSummary))
             {
-                EditorGUILayout.LabelField(driver.StatusMessage, EditorStyles.wordWrappedMiniLabel);
+                EditorGUILayout.LabelField(statusSummary, EditorStyles.wordWrappedMiniLabel);
             }
             if (!Application.isPlaying)
             {
@@ -173,6 +169,48 @@ namespace KimodoBridge.Editor
 
             EditorGUILayout.EndVertical();
             EditorGUILayout.Space();
+        }
+
+        private void ForEachSelectedDriver(Action<KimodoRuntimeMotionDriver> action)
+        {
+            for (int i = 0; i < targets.Length; i++)
+            {
+                if (targets[i] is KimodoRuntimeMotionDriver driver)
+                {
+                    action(driver);
+                }
+            }
+        }
+
+        private string BuildStatusSummary()
+        {
+            var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (int i = 0; i < targets.Length; i++)
+            {
+                if (!(targets[i] is KimodoRuntimeMotionDriver driver) ||
+                    string.IsNullOrWhiteSpace(driver.StatusMessage))
+                {
+                    continue;
+                }
+
+                string status = driver.StatusMessage.Trim();
+                counts.TryGetValue(status, out int count);
+                counts[status] = count + 1;
+            }
+
+            if (counts.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var summaries = new List<string>(counts.Count);
+            foreach (KeyValuePair<string, int> item in counts)
+            {
+                summaries.Add(item.Value > 1
+                    ? $"{item.Key} (x{item.Value})"
+                    : item.Key);
+            }
+            return string.Join(" | ", summaries);
         }
 
         private void DrawDebugSection()

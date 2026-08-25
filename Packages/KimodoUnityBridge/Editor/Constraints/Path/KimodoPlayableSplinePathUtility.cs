@@ -130,7 +130,6 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            float rootPositionScale = ResolveKimodoRootPositionScale(context, clip.bridgeModelName);
             int lastFrame = Mathf.Max(0, generationFrames - 1);
             int sampleCount = lastFrame == 0 ? 1 : clip.SplineWaypointCount;
             double durationSeconds = lastFrame / Mathf.Max(1f, generationFrameRate);
@@ -155,16 +154,31 @@ namespace KimodoBridge.Editor
                     worldForward.Normalize();
                 }
 
-                samples.Add(new KimodoMarkerSampleResult
+                var sample = new KimodoMarkerSampleResult
                 {
-                    constraintType = Root2DConstraintType,
+                    constraintMode = Root2DConstraintType,
                     sampleTime = timelineClip.start + (durationSeconds * t),
-                    kimodoRootPosition = new Vector3(worldPosition.x, 0f, worldPosition.z) * rootPositionScale,
-                    unityRootPos = worldPosition,
-                    unityRootRot = Quaternion.LookRotation(worldForward, Vector3.up),
-                    hasRootHeading = clip.SplineIncludeHeading,
-                    rootHeading = new Vector2(worldForward.x, worldForward.z)
-                });
+                    root2DOverride = new KimodoUnityBridge.KimodoRigidTransform
+                    {
+                        t = new Vector3(worldPosition.x, 0f, worldPosition.z),
+                        q = Quaternion.LookRotation(worldForward, Vector3.up)
+                    },
+                    enableMask = new KimodoConstraintMask
+                    {
+                        rootPosition = true,
+                        rootHeading = clip.SplineIncludeHeading
+                    },
+                    validMask = new KimodoConstraintMask
+                    {
+                        rootPosition = true,
+                        rootHeading = clip.SplineIncludeHeading
+                    }
+                };
+                sample.enableMask.muscle = false;
+                sample.enableMask.rootTQ = false;
+                sample.enableMask.leftFootTQ = false;
+                sample.enableMask.rightFootTQ = false;
+                samples.Add(sample);
             }
 
             denseRootPath = clip.SplineDensePath;
@@ -753,27 +767,6 @@ namespace KimodoBridge.Editor
                 timelineClip,
                 out context,
                 out error);
-        }
-
-        private static float ResolveKimodoRootPositionScale(
-            KimodoTimelineInOutConstraintContext context,
-            string modelName)
-        {
-            float sourceHumanScale = KimodoConstraintNormalizationUtility.ResolveHumanScale(context?.SourceAvatar);
-            float kimodoHumanScale = 1f;
-            if (KimodoRetargetMarkerSamplingUtility.TryResolveTargetAvatar(
-                    null,
-                    context?.Animator,
-                    modelName,
-                    out Avatar targetAvatar,
-                    out _) &&
-                KimodoRetargetCoreUtility.IsValidHumanoid(targetAvatar))
-            {
-                kimodoHumanScale = KimodoConstraintNormalizationUtility.ResolveHumanScale(targetAvatar);
-            }
-
-            return Mathf.Max(1e-6f, kimodoHumanScale) /
-                Mathf.Max(1e-6f, sourceHumanScale);
         }
 
         private static Vector3 ToVector3(float3 value)

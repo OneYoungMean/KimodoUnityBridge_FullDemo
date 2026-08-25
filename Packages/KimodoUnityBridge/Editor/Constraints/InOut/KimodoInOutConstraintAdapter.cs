@@ -15,8 +15,7 @@ namespace KimodoBridge.Editor
         public TrackAsset Track;
         public PlayableDirector Director;
         public Animator Animator;
-        public Avatar SourceAvatar;
-        public string ModelName = KimodoPlayableClip.DefaultBridgeModelName;
+        public string ModelName = KimodoMotionModelProfiles.DefaultModelName;
         public TimelineClip PreviousTimelineClip;
         public TimelineClip NextTimelineClip;
     }
@@ -175,15 +174,6 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            KimodoLocalAvatarUtility.AvatarResolveResult avatarResult =
-                KimodoLocalAvatarUtility.ResolveTimelineSourceAvatar(track, animator);
-            Avatar sourceAvatar = avatarResult.Avatar;
-            if (!KimodoRetargetCoreUtility.IsValidHumanoid(sourceAvatar))
-            {
-                error = $"Resolve source avatar failed: {avatarResult.Error}";
-                return false;
-            }
-
             TryResolveNeighborTimelineClips(sourceClip, out TimelineClip previousTimelineClip, out TimelineClip nextTimelineClip);
 
             context = new KimodoTimelineInOutConstraintContext
@@ -192,8 +182,7 @@ namespace KimodoBridge.Editor
                 Track = track,
                 Director = director,
                 Animator = animator,
-                SourceAvatar = sourceAvatar,
-                ModelName = KimodoPlayableClip.NormalizeBridgeModelName(((KimodoPlayableClip)sourceClip.asset)?.bridgeModelName),
+                ModelName = KimodoMotionModelProfiles.NormalizeName((sourceClip.asset as KimodoPlayableClip)?.bridgeModelName),
                 PreviousTimelineClip = previousTimelineClip,
                 NextTimelineClip = nextTimelineClip
             };
@@ -406,31 +395,15 @@ namespace KimodoBridge.Editor
                 return null;
             }
 
-            float sourceHumanScale = KimodoConstraintNormalizationUtility.ResolveHumanScale(context.SourceAvatar);
-            float kimodoHumanScale = 1f;
-            if (KimodoRetargetMarkerSamplingUtility.TryResolveTargetAvatar(
-                    null,
-                    context.Animator,
-                    context.ModelName,
-                    out Avatar targetAvatar,
-                    out _))
-            {
-                kimodoHumanScale = KimodoConstraintNormalizationUtility.ResolveHumanScale(targetAvatar);
-            }
-
             return new KimodoInOutConstraintRequest
             {
                 Mode = mode,
                 EnableBegin = enableBegin,
                 EnableEnd = enableEnd,
-                SourceAvatar = context.SourceAvatar,
                 ModelName = context.ModelName,
-                SourceHumanScale = sourceHumanScale,
-                KimodoHumanScale = kimodoHumanScale,
                 GenerationFrames = KimodoInOutConstraintTools.ClampFrameCount(generationFrames),
                 AutoBeginAnchor = autoBeginAnchor,
                 DeferNormalization = deferNormalization,
-                IsLoop = false,
                 TimelineContext = context,
                 ManualSamples = KimodoInOutConstraintTools.BuildLocalManualSamples(
                     manualSamples,

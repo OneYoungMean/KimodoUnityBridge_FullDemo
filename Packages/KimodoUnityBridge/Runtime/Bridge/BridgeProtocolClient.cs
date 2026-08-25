@@ -121,6 +121,47 @@ namespace KimodoBridge
                 reconnect: false);
         }
 
+        internal Task<BridgeProtocolResponse> GetHelpAsync(
+            string host,
+            int port,
+            CancellationToken token)
+        {
+            return SendRequestAsync(
+                host,
+                port,
+                new JObject { ["cmd"] = "help" },
+                null,
+                null,
+                token,
+                reconnect: true);
+        }
+
+        internal Task<BridgeProtocolResponse> ListModelConfigurationsAsync(
+            string host,
+            int port,
+            string model,
+            string textEncoderMode,
+            string modelsRoot,
+            CancellationToken token)
+        {
+            return SendRequestAsync(
+                host,
+                port,
+                new JObject
+                {
+                    ["cmd"] = "runtime.list_models",
+                    ["model"] = string.IsNullOrWhiteSpace(model) ? null : model,
+                    ["text_encoder_mode"] = string.IsNullOrWhiteSpace(textEncoderMode)
+                        ? KimodoTextEncoderModeProtocol.HighPrecision
+                        : textEncoderMode,
+                    ["models_root"] = modelsRoot ?? string.Empty
+                },
+                null,
+                null,
+                token,
+                reconnect: true);
+        }
+
         internal Task<BridgeProtocolResponse> GenerateAsync(
             string host,
             int port,
@@ -135,22 +176,43 @@ namespace KimodoBridge
 
             string taskId = string.IsNullOrWhiteSpace(request.task_id) ? Guid.NewGuid().ToString("N") : request.task_id.Trim();
             request.task_id = taskId;
-            string constraintsJson = request.constraints_json;
             var attachments = new List<byte[]>();
-            if (request.ardy_history_kmb != null && request.ardy_history_kmb.Length > 0)
+            string baseConstraintsJson = request.constraints?.Serialize(request.model, attachments) ?? string.Empty;
+            var constraints = string.IsNullOrWhiteSpace(baseConstraintsJson)
+                ? new JArray()
+                : JArray.Parse(baseConstraintsJson);
+            if (request.analysis_clip_constraints != null && request.analysis_clip_constraints.Count > 0)
             {
-                constraintsJson = KimodoArdyClipConstraintProtocol.Append(
-                    constraintsJson,
-                    KimodoArdyClipConstraintProtocol.SerializeHistory(request.ardy_history_kmb, attachments));
+                var clips = new JArray();
+                for (int index = 0; index < request.analysis_clip_constraints.Count; index++)
+                {
+                    KimodoKmbClipConstraint clip = request.analysis_clip_constraints[index]
+                        ?? throw new InvalidOperationException("Analysis KMB clip is null.");
+                    byte[] bytes = clip.motionBytes;
+                    if (bytes == null || bytes.Length == 0)
+                    {
+                        throw new InvalidOperationException("Analysis KMB clip is empty.");
+                    }
+                    if (clip.startFrame < 0 || clip.endFrameExclusive <= clip.startFrame)
+                    {
+                        throw new InvalidOperationException("Analysis KMB clip frame range must be non-empty and non-negative.");
+                    }
+                    int attachment = attachments.Count;
+                    attachments.Add(bytes);
+                    clips.Add(new JObject
+                    {
+                        ["type"] = "clip",
+                        ["format"] = "kmb_attachment_v1",
+                        ["attachment"] = attachment,
+                        ["start_frame"] = clip.startFrame,
+                        ["end_frame_exclusive"] = clip.endFrameExclusive
+                    });
+                }
+                foreach (JToken clip in clips) constraints.Add(clip.DeepClone());
             }
-            if (request.ardy_future_clips != null && request.ardy_future_clips.Count > 0)
-            {
-                string futureClips = KimodoArdyClipConstraintProtocol.SerializeFuture(
-                    request.model,
-                    request.ardy_future_clips,
-                    attachments);
-                constraintsJson = KimodoArdyClipConstraintProtocol.Append(constraintsJson, futureClips);
-            }
+            string constraintsJson = constraints.Count > 0
+                ? constraints.ToString(Formatting.None)
+                : baseConstraintsJson;
             var payload = new JObject
             {
                 ["cmd"] = "generate",
@@ -172,7 +234,6 @@ namespace KimodoBridge
                     payload["duration"] = duration;
                 }
                 payload["diffusion_steps"] = request.steps;
-                payload["text_weight"] = Math.Min(4f, Math.Max(0f, request.text_weight));
                 payload["seed"] = request.seed.HasValue ? request.seed.Value : null;
                 payload["transition_duration"] = request.transition_duration;
                 payload["model"] = string.IsNullOrWhiteSpace(request.model) ? null : request.model;
@@ -181,20 +242,19 @@ namespace KimodoBridge
                     : request.text_encoder_mode;
                 payload["models_root"] = request.models_root ?? string.Empty;
                 payload["force_hf_download"] = request.force_hf_download;
-                payload["owner_pid"] = request.owner_pid;
-                if (request.ardy_timeline_segments != null && request.ardy_timeline_segments.Count > 0)
+                if (request.timeline_segments != null && request.timeline_segments.Count > 0)
                 {
                     var timelineSegments = new JArray();
-                    for (int i = 0; i < request.ardy_timeline_segments.Count; i++)
+                    for (int i = 0; i < request.timeline_segments.Count; i++)
                     {
-                        KimodoArdyTimelineSegmentDto segment = request.ardy_timeline_segments[i];
+                        KimodoTimelineSegmentDto segment = request.timeline_segments[i];
                         if (segment == null)
                         {
-                            throw new InvalidOperationException("ARDY timeline segment is null.");
+                            throw new InvalidOperationException("Timeline segment is null.");
                         }
                         if (float.IsNaN(segment.duration) || float.IsInfinity(segment.duration) || segment.duration <= 0f)
                         {
-                            throw new InvalidOperationException("ARDY timeline segment duration must be finite and positive.");
+                            throw new InvalidOperationException("Timeline segment duration must be finite and positive.");
                         }
                         timelineSegments.Add(new JObject
                         {
@@ -202,7 +262,7 @@ namespace KimodoBridge
                             ["duration"] = segment.duration
                         });
                     }
-                    payload["ardy_timeline_segments"] = timelineSegments;
+                    payload["timeline_segments"] = timelineSegments;
                 }
             }
             if (request.prompt != null)
@@ -213,20 +273,27 @@ namespace KimodoBridge
             {
                 payload["constraints_json"] = constraintsJson;
             }
+            if (!string.IsNullOrWhiteSpace(request.analysis_option_json))
+            {
+                try
+                {
+                    payload["analysis_option"] = JToken.Parse(request.analysis_option_json);
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException($"analysis_option must be a JSON object: {ex.Message}");
+                }
+            }
             if (!request.ardy_session_update_only && request.simulate_free_vram_gb.HasValue)
             {
                 payload["simulate_free_vram_gb"] = Math.Max(0, request.simulate_free_vram_gb.Value);
             }
             if (!request.ardy_session_update_only)
             {
-                AddOptional(payload, "ardy_history_crop_seconds", request.ardy_history_crop_seconds);
                 AddOptional(payload, "ardy_history_weight", request.ardy_history_weight);
-                AddOptional(payload, "ardy_future_crop_seconds", request.ardy_future_crop_seconds);
                 AddOptional(payload, "ardy_max_speed", request.ardy_max_speed);
                 AddOptional(payload, "ardy_max_acceleration", request.ardy_max_acceleration);
-                AddOptional(payload, "ardy_history_transition_weight", request.ardy_history_transition_weight);
                 AddOptional(payload, "ardy_playback_reserve_seconds", request.ardy_playback_reserve_seconds);
-                AddOptional(payload, "ardy_adaptive_playback_reserve", request.ardy_adaptive_playback_reserve);
             }
 
             byte[] binaryPayload = null;
@@ -317,10 +384,6 @@ namespace KimodoBridge
             request["request_id"] = requestId;
             string taskId = request.Value<string>("task_id") ?? string.Empty;
             var item = new PendingRequest(requestId, taskId, progress, modelLoadingTimeoutMs);
-            if (!pending.TryAdd(requestId, item))
-            {
-                throw new InvalidOperationException("Bridge request id collision.");
-            }
 
             try
             {
@@ -335,6 +398,10 @@ namespace KimodoBridge
                     else if (!IsConnected || !string.Equals(sharedHost, host, StringComparison.OrdinalIgnoreCase) || sharedPort != port)
                     {
                         throw new IOException("Bridge persistent connection is not available.");
+                    }
+                    if (!pending.TryAdd(requestId, item))
+                    {
+                        throw new InvalidOperationException("Bridge request id collision.");
                     }
                     await WriteJsonLineAsync(sharedStream, request, token).ConfigureAwait(false);
                     if (binaryPayload != null && binaryPayload.Length > 0)

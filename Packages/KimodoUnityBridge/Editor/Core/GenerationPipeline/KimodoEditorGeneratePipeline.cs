@@ -1,19 +1,19 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using TimelineInject;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.Timeline;
 
 namespace KimodoBridge.Editor
 {
     internal static class KimodoEditorGeneratePipeline
     {
-        private const string DefaultModelName = "Kimodo-SOMA-RP-v1";
-
-        public static async Task<KimodoEditorGenerateResult> ExecuteAsync(KimodoEditorGenerateRequest request)
+        public static async Task<KimodoEditorGenerationResult> ExecuteAsync(KimodoEditorGenerateRequest request)
         {
             if (request == null)
             {
@@ -26,7 +26,7 @@ namespace KimodoBridge.Editor
                 throw new InvalidOperationException("Prompt is empty.");
             }
 
-            string modelName = string.IsNullOrWhiteSpace(request.ModelName) ? DefaultModelName : request.ModelName.Trim();
+            string modelName = KimodoMotionModelProfiles.NormalizeName(request.ModelName);
             ThrowIfCanceled(request);
             request.Progress?.Invoke(KimodoBridgeCommandStage.InvokeBackend, "Generating motion...");
 
@@ -34,7 +34,7 @@ namespace KimodoBridge.Editor
             return BakeRuntimeResult(request, prompt, modelName, runtimeResult);
         }
 
-        internal static KimodoEditorGenerateResult BakeRuntimeResult(
+        internal static KimodoEditorGenerationResult BakeRuntimeResult(
             KimodoEditorGenerateRequest request,
             string prompt,
             string modelName,
@@ -56,7 +56,7 @@ namespace KimodoBridge.Editor
             }
 
             ThrowIfCanceled(request);
-            CreateTargetClip(request);
+            request.CreateTargetClip();
             if (request.TargetClip == null)
             {
                 throw new InvalidOperationException("Target clip is null.");
@@ -67,7 +67,7 @@ namespace KimodoBridge.Editor
             if (!KimodoRetargetToolsEditor.BakeIntoClip(
                     request.TargetClip,
                     motionJson,
-                    KimodoPlayableClip.ResolveBakeSkeletonTypeFromModelName(modelName),
+                    KimodoMotionModelProfiles.ResolveBakeSkeletonType(modelName),
                     modelName,
                     null,
                     out string bakeError))
@@ -77,17 +77,16 @@ namespace KimodoBridge.Editor
 
             ThrowIfCanceled(request);
             EditorUtility.SetDirty(request.TargetClip);
-            KimodoFootContactTrackUtility.Apply(request.TargetClip, runtimeResult.MotionData);
 
-            AnimationClip rawBoneClip = CreateRawBoneWritebackClip(request.TargetClip);
+            AnimationClip rawBoneClip = KimodoEditorClipWritebackService.CreateRawBoneWritebackClip(request.TargetClip);
             request.RawBoneClip = rawBoneClip;
             if (KimodoMotionModelProfiles.TryGetArdy(modelName, out _))
             {
                 // ponytail: keep native ARDY keys; Unity samples them at the output rate.
-                request.TargetClip.frameRate = KimodoPlayableClip.FIXED_FRAME_RATE;
+                request.TargetClip.frameRate = KimodoMotionModelProfiles.DefaultFrameRate;
             }
             ThrowIfCanceled(request);
-            KimodoEditorGenerateOutputPlan outputPlan = ResolveOutputPlan(request, modelName);
+            KimodoEditorGenerateOutputPlan outputPlan = request.ResolveOutputPlan(modelName);
             if (outputPlan == null)
             {
                 throw new InvalidOperationException("Output plan is null.");
@@ -103,7 +102,6 @@ namespace KimodoBridge.Editor
             {
                 TryFilterGeneratedBoneClip(request.TargetClip, outputPlan.TargetRetargetAvatar, outputPlan.CurveFilterOptions);
                 KimodoFootContactTrackUtility.Apply(request.TargetClip, runtimeResult.MotionData);
-                KimodoEditorClipWritebackService.FlushWritebackAssets();
                 request.Progress?.Invoke(KimodoBridgeCommandStage.Retarget, "Skipping retarget: binding hierarchy already matches clip bindings.");
                 return CompleteBakedOutput(request, prompt, modelName, runtimeResult, outputPlan, rawBoneClip);
             }
@@ -115,19 +113,10 @@ namespace KimodoBridge.Editor
 
             ThrowIfCanceled(request);
             request.Progress?.Invoke(KimodoBridgeCommandStage.Retarget, "Retargeting...");
-            ResolveTimelinePlanarOffset(
-                request,
-                outputPlan,
-                out Vector3 targetPlanarOffset,
-                out Quaternion targetPlanarRotation,
-                out float targetHumanScale);
             if (!KimodoRetargetToolsEditor.TryBakeMuscleClipToClip(
                     request.TargetClip,
                     outputPlan.OriginRetargetAvatar,
                     request.TargetClip,
-                    targetPlanarOffset,
-                    targetPlanarRotation,
-                    targetHumanScale,
                     out string muscleCacheError))
             {
                 throw new InvalidOperationException(string.IsNullOrWhiteSpace(muscleCacheError)
@@ -140,7 +129,6 @@ namespace KimodoBridge.Editor
                 request.TargetClip.EnsureQuaternionContinuity();
                 KimodoFootContactTrackUtility.Apply(request.TargetClip, runtimeResult.MotionData);
                 EditorUtility.SetDirty(request.TargetClip);
-                KimodoEditorClipWritebackService.FlushWritebackAssets();
                 return CompleteBakedOutput(request, prompt, modelName, runtimeResult, outputPlan, rawBoneClip);
             }
 
@@ -175,50 +163,9 @@ namespace KimodoBridge.Editor
             ThrowIfCanceled(request);
             TryFilterGeneratedBoneClip(request.TargetClip, outputPlan.TargetRetargetAvatar, outputPlan.CurveFilterOptions);
             KimodoFootContactTrackUtility.Apply(request.TargetClip, runtimeResult.MotionData);
-            KimodoEditorClipWritebackService.FlushWritebackAssets();
             ThrowIfCanceled(request);
 
             return CompleteBakedOutput(request, prompt, modelName, runtimeResult, outputPlan, rawBoneClip);
-        }
-
-        private static void ResolveTimelinePlanarOffset(
-            KimodoEditorGenerateRequest request,
-            KimodoEditorGenerateOutputPlan outputPlan,
-            out Vector3 targetPlanarOffset,
-            out Quaternion targetPlanarRotation,
-            out float targetHumanScale)
-        {
-            targetPlanarOffset = Vector3.zero;
-            targetPlanarRotation = Quaternion.identity;
-            targetHumanScale = 1f;
-
-            TrackAsset track = request?.TimelineClipSnapshot?.GetParentTrack();
-            if (track == null)
-            {
-                return;
-            }
-
-            Animator animator = null;
-            if (request.TimelineDirectorSnapshot != null)
-            {
-                UnityEngine.Object binding = request.TimelineDirectorSnapshot.GetGenericBinding(track);
-                animator = binding as Animator ??
-                    (binding as GameObject)?.GetComponentInChildren<Animator>(true);
-            }
-
-            KimodoTimelineTrackOffsetUtility.ResolveWorldOffset(
-                track,
-                animator,
-                out Vector3 trackPosition,
-                out Quaternion trackRotation);
-
-            targetPlanarOffset = new Vector3(trackPosition.x, 0f, trackPosition.z);
-            targetPlanarRotation = KimodoConstraintNormalizationUtility.ResolvePlanarRotation(trackRotation);
-
-            if (KimodoRetargetCoreUtility.IsValidHumanoid(outputPlan?.TargetRetargetAvatar))
-            {
-                targetHumanScale = KimodoConstraintNormalizationUtility.ResolveHumanScale(outputPlan.TargetRetargetAvatar);
-            }
         }
 
         internal static async Task<KimodoBridgeCommandResult> ExecuteRuntimePipelineAsync(
@@ -268,9 +215,8 @@ namespace KimodoBridge.Editor
             commandRequest.GenerationRequest.steps = KimodoMotionModelProfiles.ResolveArdyProtocolSteps(
                 request.DiffusionSteps,
                 profile);
-            commandRequest.GenerationRequest.ardy_history_kmb = historyPayload;
+            PrependArdyHistoryConstraint(commandRequest.GenerationRequest.constraints.clips, historyPayload, profile);
             commandRequest.GenerationRequest.ardy_playback_reserve_seconds = 0.0;
-            commandRequest.GenerationRequest.ardy_adaptive_playback_reserve = false;
 
             request.Progress?.Invoke(KimodoBridgeCommandStage.InvokeBackend, "Generating complete ARDY KMB...");
             var pipeline = new KimodoBridgeCommand();
@@ -279,15 +225,8 @@ namespace KimodoBridge.Editor
                 (stage, message) => request.Progress?.Invoke(stage, message),
                 request.Token);
             ValidateArdyResult(directResult, profile, request.EffectiveSeed);
-            request.GeneratedArdySeeds.Add(directResult.ResolvedSeed.Value);
-            request.GeneratedArdyFingerprint = directResult.MotionRepFingerprint;
-
             KimodoRawMotionData sourceMotion = directResult.MotionData;
             byte[] sourcePayload = KimodoRawMotionUtility.ToFlatBuffer(sourceMotion, profile.ModelName);
-            if (request.RuntimeTrimStartFrame <= 0)
-            {
-                request.GeneratedArdyMotionCachePath = ArdyUnityMotionCache.Write(sourcePayload, "timeline-final");
-            }
             return new KimodoBridgeCommandResult
             {
                 MotionJsonCompact = KimodoRawMotionUtility.ToCompactJson(sourceMotion),
@@ -297,7 +236,8 @@ namespace KimodoBridge.Editor
                 Message = "ARDY generation complete.",
                 RawStatus = "done",
                 MotionRepFingerprint = profile.MotionRepFingerprint,
-                ResolvedSeed = directResult.ResolvedSeed
+                ResolvedSeed = directResult.ResolvedSeed,
+                AnalysisJson = directResult.AnalysisJson
             };
         }
 
@@ -323,6 +263,11 @@ namespace KimodoBridge.Editor
 
             result.MotionData = trimmed;
             result.MotionJsonCompact = KimodoRawMotionUtility.ToCompactJson(trimmed);
+            result.AnalysisJson = TrimAnalysisForOutput(
+                result.AnalysisJson,
+                request.RuntimeTrimStartFrame,
+                request.TargetFrameRate,
+                trimmed.FrameCount);
             if (result.MotionBytes != null ||
                 string.Equals(result.MotionFormat, "kmb_v1", StringComparison.OrdinalIgnoreCase))
             {
@@ -336,7 +281,7 @@ namespace KimodoBridge.Editor
             return result;
         }
 
-        private static KimodoEditorGenerateResult CompleteBakedOutput(
+        private static KimodoEditorGenerationResult CompleteBakedOutput(
             KimodoEditorGenerateRequest request,
             string prompt,
             string modelName,
@@ -350,6 +295,7 @@ namespace KimodoBridge.Editor
                 runtimeResult,
                 outputPlan,
                 rawBoneClip);
+            KimodoEditorClipWritebackService.FlushWritebackAssets();
             if (rawBoneClip != null && string.IsNullOrWhiteSpace(AssetDatabase.GetAssetPath(rawBoneClip)))
             {
                 UnityEngine.Object.DestroyImmediate(rawBoneClip);
@@ -360,8 +306,12 @@ namespace KimodoBridge.Editor
                 request,
                 prompt,
                 runtimeResult.MotionJsonCompact,
+                runtimeResult.MotionBytes,
+                runtimeResult.StartFrame,
+                runtimeResult.EndFrameExclusive,
                 request.TargetClip,
-                rawBoneClip);
+                rawBoneClip,
+                runtimeResult.AnalysisJson);
         }
 
         private static void FinalizeArdyLeadingGuardOutput(
@@ -411,7 +361,7 @@ namespace KimodoBridge.Editor
                 if (!KimodoRetargetToolsEditor.BakeIntoClip(
                         rawBoneClip,
                         runtimeResult.MotionJsonCompact,
-                        KimodoPlayableClip.ResolveBakeSkeletonTypeFromModelName(modelName),
+                        KimodoMotionModelProfiles.ResolveBakeSkeletonType(modelName),
                         modelName,
                         null,
                         out string rawTrimError))
@@ -421,9 +371,6 @@ namespace KimodoBridge.Editor
                 EditorUtility.SetDirty(rawBoneClip);
             }
 
-            request.GeneratedArdyMotionCachePath = ArdyUnityMotionCache.Write(
-                runtimeResult.MotionBytes,
-                "timeline-final");
             KimodoPlayableClipGenerationSettings.DebugLog(
                 $"[Kimodo][ArdyGuard] trimmed final-target leading guard: " +
                 $"targetAvatar='{samplingAvatar.name}', visibleFrames={runtimeResult.MotionData.FrameCount}.");
@@ -451,11 +398,11 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            SkeletonCache cache = null;
+            RetargetSkeleton cache = null;
             AnimationClip trimmedClip = null;
             try
             {
-                if (!KimodoRetargetAvatarUtility.TryBuildSkeletonCache(
+                if (!KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(
                         samplingAvatar,
                         "KimodoArdyRetargetedGuardTrim",
                         out cache,
@@ -526,7 +473,7 @@ namespace KimodoBridge.Editor
 
         private static bool TryCollectBoneSamplesFromClipRange(
             AnimationClip clip,
-            SkeletonCache cache,
+            RetargetSkeleton cache,
             int frameCount,
             float sampleStartTime,
             float sampleFrameRate,
@@ -572,7 +519,7 @@ namespace KimodoBridge.Editor
 
         private static bool TryCollectMuscleSamplesFromClipRange(
             AnimationClip clip,
-            SkeletonCache cache,
+            RetargetSkeleton cache,
             int frameCount,
             float sampleStartTime,
             float sampleFrameRate,
@@ -640,6 +587,36 @@ namespace KimodoBridge.Editor
             return historyPayload;
         }
 
+        internal static void PrependArdyHistoryConstraint(
+            List<KimodoClipConstraint> constraints,
+            byte[] payload,
+            KimodoMotionModelProfile profile)
+        {
+            if (payload == null || payload.Length == 0)
+            {
+                return;
+            }
+            if (constraints == null)
+            {
+                throw new ArgumentNullException(nameof(constraints));
+            }
+            if (!KimodoRawMotionUtility.TryParseFlatBuffer(
+                    payload,
+                    out KimodoRawMotionData motion,
+                    out string error))
+            {
+                throw new InvalidOperationException($"ARDY history KMB is invalid: {error}");
+            }
+            float duration = motion.FrameCount / profile.SourceFps;
+            constraints.Insert(0, new KimodoClipConstraint
+            {
+                motionBytes = payload,
+                startTime = -duration,
+                duration = duration,
+                mask = null
+            });
+        }
+
         internal static void ValidateArdyResult(
             KimodoBridgeCommandResult result,
             KimodoMotionModelProfile profile,
@@ -682,19 +659,21 @@ namespace KimodoBridge.Editor
                 duration = request.EffectiveRuntimeDurationSeconds,
                 seed = request.EffectiveSeed,
                 steps = request.DiffusionSteps,
-                text_weight = Mathf.Clamp(request.TextWeight, 0f, 4f),
-                constraints_json = request.ConstraintsJson ?? string.Empty,
-                model = modelName,
+                constraints = new KimodoConstraintPayload
+                {
+                    json = request.Constraints.json ?? string.Empty,
+                    clips = request.Constraints.clips != null
+                        ? new List<KimodoClipConstraint>(request.Constraints.clips)
+                        : new List<KimodoClipConstraint>()
+                },
+                analysis_option_json = request.AnalysisOptionsJson ?? string.Empty,
+                model = KimodoMotionModelProfiles.NormalizeName(modelName),
                 text_encoder_mode = KimodoTextEncoderModeProtocol.ToProtocolValue(request.TextEncoderMode),
                 simulate_free_vram_gb = KimodoPlayableClipGenerationSettings.instance.KeepCpuForceExperimental ? 0 : (int?)null,
                 models_root = modelsRoot,
-                force_hf_download = false,
-                owner_pid = System.Diagnostics.Process.GetCurrentProcess().Id,
-                ardy_history_crop_seconds = request.ArdyHistoryCropSeconds,
                 ardy_history_weight = request.ArdyHistoryWeight,
                 ardy_max_speed = request.ArdyMaxSpeed,
-                ardy_max_acceleration = request.ArdyMaxAcceleration,
-                ardy_history_transition_weight = request.ArdyHistoryTransitionWeight
+                ardy_max_acceleration = request.ArdyMaxAcceleration
             };
 
             return new KimodoBridgeCommandRequest
@@ -715,28 +694,33 @@ namespace KimodoBridge.Editor
             }
         }
 
-        private static KimodoEditorGenerateResult Complete(
+        private static KimodoEditorGenerationResult Complete(
             KimodoEditorGenerateRequest request,
             string prompt,
             string motionJson,
+            byte[] motionBytes,
+            int startFrame,
+            int endFrameExclusive,
             AnimationClip generatedClip,
-            AnimationClip rawBoneClip)
+            AnimationClip rawBoneClip,
+            string analysisJson)
         {
             ThrowIfCanceled(request);
             request.Progress?.Invoke(KimodoBridgeCommandStage.Finalize, "Finalizing generated assets...");
             request.Progress?.Invoke(KimodoBridgeCommandStage.Completed, "Generation complete.");
 
-            return new KimodoEditorGenerateResult
+            return new KimodoEditorGenerationResult
             {
                 ConstraintsPath = string.Empty,
                 Prompt = prompt,
                 Seed = request.EffectiveSeed,
                 MotionJsonCompact = motionJson,
+                AnalysisJson = analysisJson,
+                MotionBytes = motionBytes,
+                StartFrame = startFrame,
+                EndFrameExclusive = endFrameExclusive,
                 GeneratedClip = generatedClip,
                 RawBoneClip = rawBoneClip,
-                ArdyMotionCachePath = request.GeneratedArdyMotionCachePath,
-                ArdyMotionRepFingerprint = request.GeneratedArdyFingerprint,
-                ArdyResolvedSeeds = new List<int>(request.GeneratedArdySeeds)
             };
         }
 
@@ -745,67 +729,83 @@ namespace KimodoBridge.Editor
             request?.Token.ThrowIfCancellationRequested();
         }
 
-        private static void CreateTargetClip(KimodoEditorGenerateRequest request)
+        private static string TrimAnalysisForOutput(
+            string analysisJson,
+            int trimStartFrame,
+            float frameRate,
+            int frameCount)
         {
-            if (request == null || request.CreateTargetClip == null)
+            if (string.IsNullOrWhiteSpace(analysisJson) || trimStartFrame <= 0)
+            {
+                return analysisJson;
+            }
+
+            try
+            {
+                var analysis = JObject.Parse(analysisJson);
+                TrimKeyframeMarkers(analysis, trimStartFrame, frameRate, frameCount);
+                TrimFootContactChanges(analysis, trimStartFrame, frameCount);
+                return analysis.ToString(Formatting.None);
+            }
+            catch
+            {
+                return analysisJson;
+            }
+        }
+
+        private static void TrimKeyframeMarkers(JObject analysis, int trimStartFrame, float frameRate, int frameCount)
+        {
+            if (analysis["keyframes"] is not JArray source)
             {
                 return;
             }
 
-            AnimationClip clip = request.CreateTargetClip();
-            request.CreateTargetClip = null;
-            if (clip == null)
+            var trimmed = new JArray();
+            foreach (JObject item in source.OfType<JObject>())
             {
-                throw new InvalidOperationException("Created target clip is null.");
-            }
-
-            request.TargetClip = clip;
-        }
-
-        private static KimodoEditorGenerateOutputPlan ResolveOutputPlan(KimodoEditorGenerateRequest request, string modelName)
-        {
-            if (request == null || request.ResolveOutputPlan == null)
-            {
-                return request != null ? request.OutputPlan : null;
-            }
-
-            KimodoEditorGenerateOutputPlan plan = request.ResolveOutputPlan(request.TargetClip, modelName);
-            request.ResolveOutputPlan = null;
-            if (plan == null)
-            {
-                throw new InvalidOperationException("Output plan is null.");
-            }
-
-            request.OutputPlan = plan;
-            return plan;
-        }
-
-        internal static AnimationClip CreateRawBoneWritebackClip(AnimationClip sourceClip)
-        {
-            if (sourceClip == null)
-            {
-                return null;
-            }
-
-            string sourceName = string.IsNullOrWhiteSpace(sourceClip.name) ? "KimodoRawBone" : sourceClip.name.Trim();
-            bool persist = KimodoPlayableClipGenerationSettings.instance.WriteResampledTimelineCacheClips;
-            AnimationClip rawBoneClip = persist
-                ? KimodoEditorClipWritebackService.CreateGeneratedCacheAnimationClipAsset($"{sourceName}_RawBone")
-                : new AnimationClip
+                int frame = item.Value<int?>("frame") ?? 0;
+                frame -= trimStartFrame;
+                if (frame < 0 || frame >= frameCount)
                 {
-                    hideFlags = HideFlags.HideAndDontSave,
-                    name = $"{sourceName}_RawBone"
-                };
-            KimodoEditorClipUtility.CopyClipData(sourceClip, rawBoneClip, forceNoLoopKeepY: true);
-            rawBoneClip.legacy = sourceClip.legacy;
-            rawBoneClip.frameRate = sourceClip.frameRate;
-            if (persist)
-            {
-                EditorUtility.SetDirty(rawBoneClip);
-                KimodoPlayableClipGenerationSettings.DebugLog(
-                    $"[Kimodo][Generate] Wrote raw Kimodo bone clip: '{AssetDatabase.GetAssetPath(rawBoneClip)}'.");
+                    continue;
+                }
+                item["frame"] = frame;
+                if (frameRate > 0f)
+                {
+                    item["time"] = frame / (double)frameRate;
+                }
+                trimmed.Add(item);
             }
-            return rawBoneClip;
+            analysis["keyframes"] = trimmed;
+        }
+
+        private static void TrimFootContactChanges(JObject analysis, int trimStartFrame, int frameCount)
+        {
+            if (analysis["foot_contact_changes"] is not JArray source)
+            {
+                return;
+            }
+
+            analysis["foot_contact_changes"] = new JArray(source.OfType<JObject>()
+                .Select(item =>
+                {
+                    int frame = item.Value<int?>("frame") ?? 0;
+                    frame -= trimStartFrame;
+                    if (frame < 0 || frame >= frameCount)
+                    {
+                        return null;
+                    }
+                    JObject trimmed = (JObject)item.DeepClone();
+                    trimmed["frame"] = frame;
+                    trimmed["duration_frames"] = Math.Min(
+                        Math.Max(0, trimmed.Value<int?>("duration_frames") ?? 0),
+                        frameCount - frame);
+                    return trimmed;
+                })
+                .Where(item => item != null)
+                .OrderBy(item => item.Value<int?>("duration_frames") ?? 0)
+                .ThenBy(item => item.Value<string>("foot") ?? string.Empty, StringComparer.Ordinal)
+                .ThenBy(item => item.Value<int?>("frame") ?? 0));
         }
 
         private static void TryFilterGeneratedBoneClip(

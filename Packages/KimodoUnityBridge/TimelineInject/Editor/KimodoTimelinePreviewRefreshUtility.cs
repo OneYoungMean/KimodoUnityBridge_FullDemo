@@ -39,6 +39,37 @@ namespace TimelineInject
             TimelineEditor.Refresh(RefreshReason.ContentsModified | RefreshReason.SceneNeedsUpdate | RefreshReason.WindowNeedsRedraw);
         }
 
+        public static void RefreshEditorWorkflow(RefreshReason reason)
+        {
+            EditorApplication.QueuePlayerLoopUpdate();
+            TimelineEditor.Refresh(reason | RefreshReason.SceneNeedsUpdate | RefreshReason.WindowNeedsRedraw);
+            SceneView.RepaintAll();
+        }
+
+        public static bool TryEnablePreview()
+        {
+            var state = TimelineEditor.state;
+            if (state == null)
+            {
+                return false;
+            }
+
+            state.previewMode = true;
+            return true;
+        }
+
+        public static void DisablePreview()
+        {
+            var state = TimelineEditor.state;
+            if (state == null || !state.previewMode)
+            {
+                return;
+            }
+
+            state.previewMode = false;
+            TimelineEditor.Refresh(RefreshReason.SceneNeedsUpdate | RefreshReason.WindowNeedsRedraw);
+        }
+
         public static GameObject InstantiateForAnimatorPreview(Object original)
         {
             return EditorUtility.InstantiateForAnimatorPreview(original) as GameObject;
@@ -82,6 +113,11 @@ namespace TimelineInject
         public static double TimelineFrameToTime(int frame, double frameRate)
         {
             return TimeUtility.FromFrames(frame, frameRate);
+        }
+
+        public static bool ApproximatelyTimelineTime(double left, double right)
+        {
+            return Mathf.Approximately((float)left, (float)right);
         }
 
         public static bool GetTImelineWindowLockState()

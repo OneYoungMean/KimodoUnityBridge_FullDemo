@@ -10,6 +10,80 @@ namespace KimodoBridge.Editor
 {
     internal sealed class KimodoEditorConstraintProvider
     {
+        public KimodoInOutConstraintResult BuildGenerationConstraintsOrThrow(
+            KimodoPlayableClip clip,
+            KimodoExternalConstraintRequest externalConstraint,
+            int runtimeFrameCount,
+            float runtimeLengthSeconds,
+            float frameRate,
+            bool disableTimelineInOut,
+            bool deferNormalization,
+            bool enableAutoBeginAnchor,
+            double sampleTimeOffsetSeconds,
+            TimelineClip timelineClip)
+        {
+            bool includeTimeline = externalConstraint?.Enabled != true ||
+                externalConstraint.IncludeTimelineConstraints;
+            KimodoInOutConstraintResult result;
+            if (includeTimeline)
+            {
+                result = BuildConstraintDataOrThrow(
+                    clip,
+                    runtimeFrameCount,
+                    disableTimelineInOut,
+                    deferNormalization,
+                    enableAutoBeginAnchor,
+                    sampleTimeOffsetSeconds,
+                    timelineClip);
+                if (result.BeginBoundarySample != null)
+                {
+                    result.CombinedSamples.Remove(result.BeginBoundarySample);
+                }
+            }
+            else
+            {
+                result = new KimodoInOutConstraintResult
+                {
+                    ConstraintsJson = externalConstraint.ConstraintsJson ?? string.Empty
+                };
+            }
+
+            if (externalConstraint?.Enabled == true)
+            {
+                int externalSampleStart = result.CombinedSamples.Count;
+                KimodoInOutConstraintComposer.AppendSamples(
+                    externalConstraint.ConstraintSamples,
+                    result.CombinedSamples);
+                for (int i = externalSampleStart; i < result.CombinedSamples.Count; i++)
+                {
+                    result.CombinedSamples[i].sampleTime += sampleTimeOffsetSeconds;
+                }
+
+                if (result.HasSyntheticAutoBeginConstraint &&
+                    result.CombinedSamples.Count > 0 &&
+                    KimodoConstraintNormalizationUtility.HasNormalizationAnchor(
+                        result.CombinedSamples,
+                        1.0,
+                        result.CombinedSamples[0]))
+                {
+                    result.CombinedSamples.RemoveAt(0);
+                    result.HasSyntheticAutoBeginConstraint = false;
+                }
+            }
+
+            if (includeTimeline || result.CombinedSamples.Count > 0)
+            {
+                result.ConstraintsJson = KimodoConstraintJsonExporter.ToConstraintsJson(
+                    result.CombinedSamples,
+                    ResolveExportContext(timelineClip),
+                    0.0,
+                    runtimeLengthSeconds,
+                    frameRate,
+                    result.DenseRootPath);
+            }
+            return result;
+        }
+
         public KimodoInOutConstraintResult BuildConstraintDataOrThrow(
             KimodoPlayableClip clip,
             int? generationFramesOverride = null,
@@ -66,6 +140,7 @@ namespace KimodoBridge.Editor
                 result.DenseRootPath = denseSplinePath;
                 result.ConstraintsJson = KimodoConstraintJsonExporter.ToConstraintsJson(
                     result.CombinedSamples,
+                    ResolveExportContext(sourceClip),
                     clipStartSeconds: 0.0,
                     clipDurationSeconds: KimodoInOutConstraintTools.ResolveConstraintClipDurationSeconds(generationFrames, frameRate),
                     exportFps: frameRate,
@@ -123,5 +198,20 @@ namespace KimodoBridge.Editor
 
             return null;
         }
-    }
+            private static KimodoConstraintExportContext ResolveExportContext(TimelineClip timelineClip)
+        {
+            if (timelineClip != null &&
+                KimodoInOutConstraintAdapter.TryResolveTimelineContext(timelineClip, out KimodoTimelineInOutConstraintContext context, out _) &&
+                context != null)
+            {
+                return new KimodoConstraintExportContext
+                {
+                    projectedPoseProjector = KimodoConstraintExportProjector.Create(context)
+                };
+            }
+            return new KimodoConstraintExportContext();
+        }
 }
+
+}
+//touch 7ec98321-518c-4133-8a2b-0e9dcc4436b4

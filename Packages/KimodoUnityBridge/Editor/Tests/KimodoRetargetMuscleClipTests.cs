@@ -35,17 +35,13 @@ namespace KimodoBridge.Editor.Tests
                     pose.muscles[i] = i;
                 }
 
-                var samples = new List<MuscleSample>
+                MuscleSample sample = new MuscleSample();
+                sample.SetRoot(pose.bodyPosition, pose.bodyRotation);
+                for (int i = 0; i < KimodoSampleDataLayout.BodyMuscleCount; i++)
                 {
-                    new MuscleSample
-                    {
-                        pose = pose,
-                        leftFootRotation = Quaternion.identity,
-                        rightFootRotation = Quaternion.identity,
-                        leftHandRotation = Quaternion.identity,
-                        rightHandRotation = Quaternion.identity
-                    }
-                };
+                    sample.data[i] = pose.muscles[KimodoMuscleSampleHumanPoseAdapter.UnityBodyMuscleIndices[i]];
+                }
+                var samples = new List<MuscleSample> { sample };
 
                 Assert.That(
                     KimodoRetargetCoreUtility.WriteMuscleSampleToMuscleClip(samples, clip, out string error),
@@ -83,6 +79,95 @@ namespace KimodoBridge.Editor.Tests
         }
 
         [Test]
+        public void WriteMuscleClip_DoesNotExportHandIkGoals()
+        {
+            var clip = new AnimationClip { frameRate = 30f };
+            try
+            {
+                MuscleSample sample = CreateRootRotationSample(Quaternion.identity);
+
+                Assert.That(
+                    KimodoRetargetCoreUtility.WriteMuscleSampleToMuscleClip(new[] { sample }, clip, out string error),
+                    Is.True,
+                    error);
+
+                Assert.That(HasAnimatorCurve(clip, "LeftHandT.x"), Is.False);
+                Assert.That(HasAnimatorCurve(clip, "LeftHandQ.w"), Is.False);
+                Assert.That(HasAnimatorCurve(clip, "RightHandT.z"), Is.False);
+                Assert.That(HasAnimatorCurve(clip, "RightHandQ.y"), Is.False);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(clip);
+            }
+        }
+
+        [Test]
+        public void WriteMuscleClip_ExportsFootIkGoals()
+        {
+            var clip = new AnimationClip { frameRate = 30f };
+            try
+            {
+                MuscleSample sample = CreateRootRotationSample(Quaternion.identity);
+                Quaternion expectedLeftFootRotation = new Quaternion(0.1f, 0.2f, 0.3f, 0.9f).normalized;
+                Quaternion expectedRightFootRotation = new Quaternion(0.4f, 0.5f, 0.6f, 0.7f).normalized;
+                sample.SetLeftFoot(
+                    new Vector3(1f, 2f, 3f),
+                    new Quaternion(0.1f, 0.2f, 0.3f, 0.9f));
+                sample.SetRightFoot(
+                    new Vector3(4f, 5f, 6f),
+                    new Quaternion(0.4f, 0.5f, 0.6f, 0.7f));
+
+                Assert.That(
+                    KimodoRetargetCoreUtility.WriteMuscleSampleToMuscleClip(new[] { sample }, clip, out string error),
+                    Is.True,
+                    error);
+
+                Assert.That(ReadAnimatorKey(clip, "LeftFootT.x"), Is.EqualTo(1f).Within(1e-5f));
+                Assert.That(ReadAnimatorKey(clip, "LeftFootQ.w"), Is.EqualTo(expectedLeftFootRotation.w).Within(1e-5f));
+                Assert.That(ReadAnimatorKey(clip, "RightFootT.z"), Is.EqualTo(6f).Within(1e-5f));
+                Assert.That(ReadAnimatorKey(clip, "RightFootQ.y"), Is.EqualTo(expectedRightFootRotation.y).Within(1e-5f));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(clip);
+            }
+        }
+
+        [Test]
+        public void TransientMuscleClip_ExportsFootGoalsButNotHandGoals()
+        {
+            AnimationClip clip = null;
+            try
+            {
+                MuscleSample sample = CreateRootRotationSample(Quaternion.identity);
+                sample.SetLeftFoot(new Vector3(10f, 20f, 30f), Quaternion.identity);
+                sample.SetRightFoot(new Vector3(-10f, -20f, -30f), Quaternion.identity);
+
+                Assert.That(
+                    KimodoRetargetSamplingUtility.TryCreateTransientMuscleClip(
+                        new[] { sample },
+                        30f,
+                        out clip,
+                        out string error),
+                    Is.True,
+                    error);
+
+                Assert.That(HasAnimatorCurve(clip, "LeftFootT.x"), Is.True);
+                Assert.That(HasAnimatorCurve(clip, "RightFootQ.w"), Is.True);
+                Assert.That(HasAnimatorCurve(clip, "LeftHandT.x"), Is.False);
+                Assert.That(HasAnimatorCurve(clip, "RightHandQ.w"), Is.False);
+            }
+            finally
+            {
+                if (clip != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(clip);
+                }
+            }
+        }
+
+        [Test]
         public void WriteMuscleClip_AlignsRootQuaternionHemisphere()
         {
             var clip = new AnimationClip { frameRate = 30f };
@@ -111,56 +196,11 @@ namespace KimodoBridge.Editor.Tests
             }
         }
 
-        [Test]
-        public void RemoveTimelinePlanarOffset_ConvertsTargetOffsetToSourceScale()
-        {
-            MuscleSample sample = CreateRootRotationSample(Quaternion.identity);
-            sample.pose.bodyPosition = new Vector3(100f, 0f, 100f);
-
-            KimodoRetargetToolsEditor.RemoveTimelinePlanarOffsetFromMuscleSamples(
-                new[] { sample },
-                new Vector3(100f, 0f, 100f),
-                Quaternion.identity,
-                sourceHumanScale: 2f,
-                targetHumanScale: 1f);
-
-            Assert.That(Vector3.Distance(sample.pose.bodyPosition, Vector3.zero), Is.LessThan(1e-5f));
-        }
-
-        [Test]
-        public void RemoveTimelinePlanarOffset_SubtractsOffsetBeforeInverseYaw()
-        {
-            Quaternion targetYaw = Quaternion.Euler(0f, 90f, 0f);
-            Vector3 expectedPosition = new Vector3(3f, 2f, 4f);
-            MuscleSample sample = CreateRootRotationSample(targetYaw * Quaternion.Euler(0f, 25f, 0f));
-            sample.pose.bodyPosition = new Vector3(10f, 0f, 20f) + targetYaw * expectedPosition;
-
-            KimodoRetargetToolsEditor.RemoveTimelinePlanarOffsetFromMuscleSamples(
-                new[] { sample },
-                new Vector3(10f, 50f, 20f),
-                targetYaw,
-                sourceHumanScale: 1f,
-                targetHumanScale: 1f);
-
-            Assert.That(Vector3.Distance(sample.pose.bodyPosition, expectedPosition), Is.LessThan(1e-5f));
-            Assert.That(Quaternion.Angle(sample.pose.bodyRotation, Quaternion.Euler(0f, 25f, 0f)), Is.LessThan(1e-4f));
-        }
-
         private static MuscleSample CreateRootRotationSample(Quaternion rootRotation)
         {
-            return new MuscleSample
-            {
-                pose = new HumanPose
-                {
-                    bodyPosition = Vector3.zero,
-                    bodyRotation = rootRotation,
-                    muscles = new float[HumanTrait.MuscleCount]
-                },
-                leftFootRotation = Quaternion.identity,
-                rightFootRotation = Quaternion.identity,
-                leftHandRotation = Quaternion.identity,
-                rightHandRotation = Quaternion.identity
-            };
+            MuscleSample sample = new MuscleSample();
+            sample.SetRoot(Vector3.zero, rootRotation);
+            return sample;
         }
 
         private static Quaternion ReadRootQuaternion(AnimationClip clip, int keyIndex)
@@ -180,6 +220,18 @@ namespace KimodoBridge.Editor.Tests
             Assert.That(curve, Is.Not.Null, propertyName);
             Assert.That(curve.length, Is.GreaterThan(keyIndex), propertyName);
             return curve.keys[keyIndex].value;
+        }
+
+        private static float ReadAnimatorKey(AnimationClip clip, string propertyName)
+        {
+            return ReadRootKey(clip, propertyName, 0);
+        }
+
+        private static bool HasAnimatorCurve(AnimationClip clip, string propertyName)
+        {
+            return AnimationUtility.GetEditorCurve(
+                clip,
+                EditorCurveBinding.FloatCurve(string.Empty, typeof(Animator), propertyName)) != null;
         }
     }
 }
