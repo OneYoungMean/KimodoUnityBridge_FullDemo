@@ -158,22 +158,12 @@ MonoBehaviour:
   ardyHistoryWeight: 1
   ardyMaxSpeed: 1.25
   ardyMaxAcceleration: 1.5
-  loopHint: 1
-  segmentOverlapHeadSettings:
-    mode: 1
-    overlapTimeSeconds: 0.35
-    deltaThresholdMeters: 0.025
-    maxOverlapTimeSeconds: 0.75
-    sampleCount: 4
   allowPartialJoints: 0
   segmentTrimTrailSettings:
     mode: 1
     trimTimeSeconds: 0.35
     deltaThresholdMeters: 0.01
     maxTrimTimeSeconds: 0.75
-  driveFootIkTargets: 1
-  leftFootIkTargetName: LeftFootIK
-  rightFootIkTargetName: RightFootIK
   drawDebugSkeleton: 0
   verboseLogging: 1
 --- !u!95 &5153538 stripped
@@ -1839,22 +1829,12 @@ MonoBehaviour:
   ardyHistoryWeight: 0.748
   ardyMaxSpeed: 1.25
   ardyMaxAcceleration: 1.5
-  loopHint: 1
-  segmentOverlapHeadSettings:
-    mode: 1
-    overlapTimeSeconds: 0.35
-    deltaThresholdMeters: 0.025
-    maxOverlapTimeSeconds: 0.75
-    sampleCount: 4
   allowPartialJoints: 0
   segmentTrimTrailSettings:
     mode: 1
     trimTimeSeconds: 0.35
     deltaThresholdMeters: 0.01
     maxTrimTimeSeconds: 0.75
-  driveFootIkTargets: 1
-  leftFootIkTargetName: LeftFootIK
-  rightFootIkTargetName: RightFootIK
   drawDebugSkeleton: 0
   verboseLogging: 1
 --- !u!114 &821815589
@@ -2297,6 +2277,8 @@ MonoBehaviour:
   clickArrivalThresholdMeters: 0.1
   clickIncludeHeading: 1
   clickTargetMarkerDiameter: 0.2
+  clickTargetMarkerMaterial: {fileID: 2100000, guid: f91b90a904f84b54aae26f464c73cb0a,
+    type: 2}
   targetX: 0
   targetY: 1
   targetZ: 1
@@ -3013,22 +2995,12 @@ MonoBehaviour:
   ardyHistoryWeight: 1
   ardyMaxSpeed: 1.25
   ardyMaxAcceleration: 1.5
-  loopHint: 1
-  segmentOverlapHeadSettings:
-    mode: 1
-    overlapTimeSeconds: 0.35
-    deltaThresholdMeters: 0.025
-    maxOverlapTimeSeconds: 0.75
-    sampleCount: 4
   allowPartialJoints: 0
   segmentTrimTrailSettings:
     mode: 1
     trimTimeSeconds: 0.35
     deltaThresholdMeters: 0.01
     maxTrimTimeSeconds: 0.75
-  driveFootIkTargets: 1
-  leftFootIkTargetName: LeftFootIK
-  rightFootIkTargetName: RightFootIK
   drawDebugSkeleton: 0
   verboseLogging: 1
 --- !u!95 &1363098294 stripped
@@ -3108,22 +3080,12 @@ MonoBehaviour:
   ardyHistoryWeight: 1
   ardyMaxSpeed: 1.25
   ardyMaxAcceleration: 1.5
-  loopHint: 1
-  segmentOverlapHeadSettings:
-    mode: 1
-    overlapTimeSeconds: 0.35
-    deltaThresholdMeters: 0.025
-    maxOverlapTimeSeconds: 0.75
-    sampleCount: 4
   allowPartialJoints: 0
   segmentTrimTrailSettings:
     mode: 1
     trimTimeSeconds: 0.35
     deltaThresholdMeters: 0.01
     maxTrimTimeSeconds: 0.75
-  driveFootIkTargets: 1
-  leftFootIkTargetName: LeftFootIK
-  rightFootIkTargetName: RightFootIK
   drawDebugSkeleton: 0
   verboseLogging: 1
 --- !u!95 &1464951261 stripped
@@ -3203,22 +3165,12 @@ MonoBehaviour:
   ardyHistoryWeight: 1
   ardyMaxSpeed: 1.25
   ardyMaxAcceleration: 1.5
-  loopHint: 1
-  segmentOverlapHeadSettings:
-    mode: 1
-    overlapTimeSeconds: 0.35
-    deltaThresholdMeters: 0.025
-    maxOverlapTimeSeconds: 0.75
-    sampleCount: 4
   allowPartialJoints: 0
   segmentTrimTrailSettings:
     mode: 1
     trimTimeSeconds: 0.35
     deltaThresholdMeters: 0.01
     maxTrimTimeSeconds: 0.75
-  driveFootIkTargets: 1
-  leftFootIkTargetName: LeftFootIK
-  rightFootIkTargetName: RightFootIK
   drawDebugSkeleton: 0
   verboseLogging: 1
 --- !u!95 &1514062699 stripped
@@ -3292,22 +3244,12 @@ MonoBehaviour:
   ardyHistoryWeight: 1
   ardyMaxSpeed: 1.25
   ardyMaxAcceleration: 1.5
-  loopHint: 1
-  segmentOverlapHeadSettings:
-    mode: 1
-    overlapTimeSeconds: 0.35
-    deltaThresholdMeters: 0.025
-    maxOverlapTimeSeconds: 0.75
-    sampleCount: 4
   allowPartialJoints: 0
   segmentTrimTrailSettings:
     mode: 1
     trimTimeSeconds: 0.35
     deltaThresholdMeters: 0.01
     maxTrimTimeSeconds: 0.75
-  driveFootIkTargets: 1
-  leftFootIkTargetName: LeftFootIK
-  rightFootIkTargetName: RightFootIK
   drawDebugSkeleton: 0
   verboseLogging: 1
 --- !u!95 &1574027558 stripped
@@ -3604,22 +3546,12 @@ MonoBehaviour:
   ardyHistoryWeight: 0.748
   ardyMaxSpeed: 1.25
   ardyMaxAcceleration: 1.5
-  loopHint: 1
-  segmentOverlapHeadSettings:
-    mode: 1
-    overlapTimeSeconds: 0.35
-    deltaThresholdMeters: 0.025
-    maxOverlapTimeSeconds: 0.75
-    sampleCount: 4
   allowPartialJoints: 0
   segmentTrimTrailSettings:
     mode: 1
     trimTimeSeconds: 0.35
     deltaThresholdMeters: 0.01
     maxTrimTimeSeconds: 0.75
-  driveFootIkTargets: 1
-  leftFootIkTargetName: LeftFootIK
-  rightFootIkTargetName: RightFootIK
   drawDebugSkeleton: 0
   verboseLogging: 1
 --- !u!95 &1699232383 stripped
@@ -5017,22 +4949,12 @@ MonoBehaviour:
   ardyHistoryWeight: 0.748
   ardyMaxSpeed: 1.25
   ardyMaxAcceleration: 1.5
-  loopHint: 1
-  segmentOverlapHeadSettings:
-    mode: 1
-    overlapTimeSeconds: 0.35
-    deltaThresholdMeters: 0.025
-    maxOverlapTimeSeconds: 0.75
-    sampleCount: 4
   allowPartialJoints: 0
   segmentTrimTrailSettings:
     mode: 1
     trimTimeSeconds: 0.35
     deltaThresholdMeters: 0.01
     maxTrimTimeSeconds: 0.75
-  driveFootIkTargets: 1
-  leftFootIkTargetName: LeftFootIK
-  rightFootIkTargetName: RightFootIK
   drawDebugSkeleton: 0
   verboseLogging: 1
 --- !u!1660057539 &9223372036854775807

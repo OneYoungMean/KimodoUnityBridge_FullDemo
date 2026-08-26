@@ -30,6 +30,7 @@ namespace KimodoBridge
         [SerializeField][Min(0f)] private float clickArrivalThresholdMeters = 0.1f;
         [SerializeField] private bool clickIncludeHeading = true;
         [SerializeField][Min(0.01f)] private float clickTargetMarkerDiameter = 0.2f;
+        [SerializeField] private Material clickTargetMarkerMaterial;
 
         [Header("End Effector")]
         [SerializeField] private float targetX;
@@ -197,7 +198,14 @@ namespace KimodoBridge
             }
             if (marker.TryGetComponent(out Renderer markerRenderer))
             {
-                markerRenderer.material.color = Color.green;
+                if (clickTargetMarkerMaterial != null)
+                {
+                    markerRenderer.sharedMaterial = clickTargetMarkerMaterial;
+                }
+                else
+                {
+                    markerRenderer.material.color = Color.green;
+                }
             }
 
             float diameter = Mathf.Max(0.01f, clickTargetMarkerDiameter);
