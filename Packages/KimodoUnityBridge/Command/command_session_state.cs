@@ -1004,6 +1004,10 @@ namespace KimodoUnityBridge.Command
                             new JArray(), analysis, analysisMotionBytes, animation, inputSignature);
                         record = GetCachedAnalysis(session, id);
                     }
+                    if (IsHumanoidCharacter(character))
+                    {
+                        EnsureAnalysisRootTrajectory(session, character, record, startFrame, endFrame);
+                    }
                     subjects.Add(new AnalysisSubject(role, character, animation, record, startFrame, endFrame));
                 }
 
@@ -1012,18 +1016,278 @@ namespace KimodoUnityBridge.Command
                 return Ok(new JObject
                 {
                     ["level"] = level,
-                    ["clips"] = new JArray(subjects.Select(subject => new JObject
-                    {
-                        ["role"] = subject.Role,
-                        ["character"] = subject.Character.Name,
-                        ["clip"] = subject.Animation.Name,
-                        ["analysis_mode"] = IsHumanoidCharacter(subject.Character) ? "humanoid" : "mesh",
-                        ["keyframes"] = subject.Record.Analysis?["keyframes"]?.DeepClone() ?? new JArray(),
-                        ["foot_contacts"] = subject.Record.Analysis?["foot_contacts"]?.DeepClone() ?? new JArray()
-                    })),
+                    ["clips"] = new JArray(subjects.Select(BuildAnimationAnalyzeClipResult)),
                     ["pictures"] = pictures
                 });
             });
+        }
+
+        public static string SessionGetRaw(string argumentsJson)
+        {
+            return Execute(argumentsJson, arguments =>
+            {
+                TimelineSessionRecord session = RequireCurrentTimelineSession();
+                string kind = RequiredStringValue(arguments, "kind").ToLowerInvariant();
+                string name = RequiredStringValue(arguments, "name");
+                string characterName = arguments.Value<string>("character")?.Trim();
+                RawSessionObject resolved = ResolveRawSessionObject(session, kind, name, characterName);
+                return Ok(DescribeRawSessionObject(resolved));
+            });
+        }
+
+        private static RawSessionObject ResolveRawSessionObject(
+            TimelineSessionRecord session,
+            string kind,
+            string name,
+            string characterName)
+        {
+            var candidates = new List<RawSessionObject>();
+            IEnumerable<TimelineCharacterRecord> characters = session.Characters;
+            if (!string.IsNullOrWhiteSpace(characterName))
+            {
+                characters = characters.Where(item => string.Equals(item.Name, characterName, StringComparison.OrdinalIgnoreCase));
+                if (!characters.Any())
+                {
+                    throw new InvalidOperationException($"Character '{characterName}' is not in the current Timeline Session.");
+                }
+            }
+
+            switch (kind)
+            {
+                case "character":
+                    candidates.AddRange(characters
+                        .Where(item => string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase))
+                        .Select(item => new RawSessionObject(kind, item.Name, item.Root, item.Name)));
+                    break;
+                case "clip":
+                    candidates.AddRange(characters.SelectMany(character => character.Animations
+                        .Where(animation => string.Equals(animation.Name, name, StringComparison.OrdinalIgnoreCase) && animation.Clip != null)
+                        .Select(animation => new RawSessionObject(kind, animation.Name, animation.Clip, character.Name))));
+                    break;
+                case "track":
+                    candidates.AddRange(characters.SelectMany(character => CollectSessionTracks(session, character)
+                        .Where(track => string.Equals(track.name, name, StringComparison.OrdinalIgnoreCase))
+                        .Select(track => new RawSessionObject(kind, track.name, track, character.Name))));
+                    break;
+                case "constraint":
+                    candidates.AddRange(characters.SelectMany(character =>
+                        character.Track != null
+                            ? character.Track.GetMarkers().OfType<KimodoConstraintMarker>()
+                                .Where(marker => string.Equals(marker.name, name, StringComparison.OrdinalIgnoreCase))
+                                .Select(marker => new RawSessionObject(kind, marker.name, marker, character.Name))
+                            : Enumerable.Empty<RawSessionObject>()));
+                    break;
+                default:
+                    throw new InvalidOperationException("kind must be character, track, clip, or constraint.");
+            }
+
+            candidates = candidates
+                .GroupBy(item => GetObjectReference(item.Target), StringComparer.Ordinal)
+                .Select(group => group.First())
+                .ToList();
+            if (candidates.Count == 0)
+            {
+                throw new InvalidOperationException($"Session {kind} '{name}' was not found.");
+            }
+            if (candidates.Count > 1)
+            {
+                throw new InvalidOperationException(
+                    $"Session {kind} '{name}' is ambiguous; provide character to disambiguate.");
+            }
+            return candidates[0];
+        }
+
+        private static IEnumerable<TrackAsset> CollectSessionTracks(
+            TimelineSessionRecord session,
+            TimelineCharacterRecord character)
+        {
+            var tracks = new List<TrackAsset>();
+            if (session?.TimelineAsset != null)
+            {
+                foreach (TrackAsset root in session.TimelineAsset.GetRootTracks())
+                {
+                    tracks.Add(root);
+                    tracks.AddRange(root.GetChildTracks());
+                }
+            }
+            if (character?.Track != null) tracks.Add(character.Track);
+            if (character?.PoseCacheTrack != null) tracks.Add(character.PoseCacheTrack);
+            if (character?.AnalysisTrack != null) tracks.Add(character.AnalysisTrack);
+            return tracks.Where(item => item != null).Distinct();
+        }
+
+        private static JObject DescribeRawSessionObject(RawSessionObject value)
+        {
+            string path = AssetDatabase.GetAssetPath(value.Target) ?? string.Empty;
+            return new JObject
+            {
+                ["kind"] = value.Kind,
+                ["name"] = value.Name,
+                ["guid"] = GetObjectReference(value.Target),
+                ["asset_guid"] = string.IsNullOrWhiteSpace(path) ? string.Empty : AssetDatabase.AssetPathToGUID(path),
+                ["path"] = path,
+                ["object_type"] = value.Target != null ? value.Target.GetType().Name : string.Empty,
+                ["character"] = value.Character
+            };
+        }
+
+        private sealed class RawSessionObject
+        {
+            public RawSessionObject(string kind, string name, UnityEngine.Object target, string character)
+            {
+                Kind = kind;
+                Name = name;
+                Target = target;
+                Character = character;
+            }
+
+            public string Kind { get; }
+            public string Name { get; }
+            public UnityEngine.Object Target { get; }
+            public string Character { get; }
+        }
+
+        private static JObject BuildAnimationAnalyzeClipResult(AnalysisSubject subject)
+        {
+            bool humanoid = IsHumanoidCharacter(subject.Character);
+            var result = new JObject
+            {
+                ["role"] = subject.Role,
+                ["character"] = subject.Character.Name,
+                ["clip"] = subject.Animation.Name,
+                ["analysis_mode"] = humanoid ? "humanoid" : "mesh",
+                ["keyframes"] = subject.Record.Analysis?["keyframes"]?.DeepClone() ?? new JArray(),
+                ["foot_contacts"] = subject.Record.Analysis?["foot_contacts"]?.DeepClone() ?? new JArray()
+            };
+            if (humanoid)
+            {
+                result["root_trajectory"] = subject.Record.RootTrajectory?.DeepClone() ?? new JObject();
+            }
+            return result;
+        }
+
+        private static void EnsureAnalysisRootTrajectory(
+            TimelineSessionRecord session,
+            TimelineCharacterRecord character,
+            AnalysisCacheRecord record,
+            int startFrame,
+            int endFrameExclusive)
+        {
+            if (record?.RootTrajectory?["path"] is JObject pathReference)
+            {
+                int cachedIndex = pathReference.Value<int?>("index") ?? -1;
+                string cachedTrack = pathReference.Value<string>("track");
+                KimodoConstraintMarker cachedMarker = cachedIndex >= 0 &&
+                    string.Equals(cachedTrack, character.PoseCacheTrack?.name, StringComparison.OrdinalIgnoreCase)
+                        ? FindPoseMarker(character.PoseCacheTrack, cachedIndex)
+                        : null;
+                if (cachedMarker?.IsExternalPath == true && cachedMarker.PathData != null)
+                {
+                    return;
+                }
+            }
+
+            int frameCount = Math.Max(1, endFrameExclusive - startFrame);
+            KimodoMarkerSampleResult[] samples = CaptureSampleResults(character, startFrame, frameCount);
+            if (samples.Length == 0 || !TryGetRoot2DWorld(samples[0], out Vector3 startPosition, out Quaternion startRotation))
+            {
+                throw new InvalidOperationException(
+                    $"Character '{character.Name}' root trajectory could not sample the first Root2D pose.");
+            }
+
+            Quaternion startHeading = ResolvePlanarHeading(startRotation);
+            Quaternion toStartLocal = Quaternion.Inverse(startHeading);
+            var knots = new List<KimodoRootPathKnot>(samples.Length);
+            var jsonSamples = new JArray();
+            float pathLength = 0f;
+            float minDeltaY = 0f;
+            float maxDeltaY = 0f;
+            Vector2 previousPosition = Vector2.zero;
+            Vector2 finalPosition = Vector2.zero;
+            Vector2 firstHeading = Vector2.up;
+            Vector2 finalHeading = Vector2.up;
+            for (int frame = 0; frame < samples.Length; frame++)
+            {
+                if (!TryGetRoot2DWorld(samples[frame], out Vector3 worldPosition, out Quaternion worldRotation))
+                {
+                    throw new InvalidOperationException(
+                        $"Character '{character.Name}' root trajectory could not sample Root2D at frame {frame}.");
+                }
+
+                Vector3 localDelta = toStartLocal * (worldPosition - startPosition);
+                Vector3 localForward = toStartLocal * (ResolvePlanarHeading(worldRotation) * Vector3.forward);
+                var position = new Vector2(localDelta.x, localDelta.z);
+                var heading = new Vector2(localForward.x, localForward.z);
+                heading = heading.sqrMagnitude > 1e-8f ? heading.normalized : finalHeading;
+                float deltaY = worldPosition.y - startPosition.y;
+                if (frame > 0) pathLength += Vector2.Distance(previousPosition, position);
+                if (frame == 0) firstHeading = heading;
+                minDeltaY = Mathf.Min(minDeltaY, deltaY);
+                maxDeltaY = Mathf.Max(maxDeltaY, deltaY);
+                previousPosition = position;
+                finalPosition = position;
+                finalHeading = heading;
+                knots.Add(new KimodoRootPathKnot
+                {
+                    frame = frame,
+                    position = position,
+                    hasHeading = true,
+                    heading = heading,
+                    deltaY = deltaY
+                });
+                jsonSamples.Add(new JObject
+                {
+                    ["frame"] = frame,
+                    ["position_xz"] = new JArray(position.x, position.y),
+                    ["heading_xz"] = new JArray(heading.x, heading.y),
+                    ["delta_y"] = deltaY
+                });
+            }
+
+            int index = AllocatePoseIndex(character.PoseCacheTrack);
+            float sourceHumanScale = KimodoConstraintNormalizationUtility.ResolveHumanScale(character.Avatar);
+            StoreExternalPath(character, index, new KimodoRootPathData
+            {
+                type = "analyzed",
+                length = pathLength,
+                sourceHumanScale = sourceHumanScale,
+                inverse = false,
+                knots = knots
+            });
+
+            float sampleSpanSeconds = samples.Length > 1
+                ? (samples.Length - 1) / (float)SessionFrameRate
+                : 0f;
+            float firstYaw = Mathf.Atan2(firstHeading.x, firstHeading.y) * Mathf.Rad2Deg;
+            float finalYaw = Mathf.Atan2(finalHeading.x, finalHeading.y) * Mathf.Rad2Deg;
+            float signedHeadingChange = Mathf.DeltaAngle(firstYaw, finalYaw);
+            record.RootTrajectory = new JObject
+            {
+                ["path"] = PoseReferenceJson(character.PoseCacheTrack.name, index),
+                ["coordinate_space"] = "clip_start_local",
+                ["frame_rate"] = SessionFrameRate,
+                ["frame_count"] = samples.Length,
+                ["duration_seconds"] = samples.Length / SessionFrameRate,
+                ["sample_span_seconds"] = sampleSpanSeconds,
+                ["path_length_xz"] = pathLength,
+                ["net_displacement_xz"] = new JArray(finalPosition.x, finalPosition.y),
+                ["net_distance_xz"] = finalPosition.magnitude,
+                ["average_speed_xz"] = sampleSpanSeconds > 1e-6f ? pathLength / sampleSpanSeconds : 0f,
+                ["heading_change_degrees"] = signedHeadingChange,
+                ["delta_y_range"] = new JArray(minDeltaY, maxDeltaY),
+                ["source_human_scale"] = sourceHumanScale,
+                ["samples"] = jsonSamples
+            };
+            AnalysisCache[record.Id] = record;
+            WriteJsonAtomically(AnalysisCachePath(session, record.Id), record.ToJson());
+        }
+
+        private static Quaternion ResolvePlanarHeading(Quaternion rotation)
+        {
+            Vector3 forward = Vector3.ProjectOnPlane(rotation * Vector3.forward, Vector3.up);
+            return forward.sqrMagnitude > 1e-8f
+                ? Quaternion.LookRotation(forward.normalized, Vector3.up)
+                : Quaternion.identity;
         }
 
         private static string NormalizeAnalysisPictureLevel(string level)
