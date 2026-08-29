@@ -14,7 +14,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   maxGeneratedClips: 400
   timelineConstraintCacheTimeFrames: 60
-  localModelsPath: C:/nvlab/models~
   defaultPrompt: a man walk and say hello
   defaultBridgeModelName: Kimodo-SOMA-RP-v1
   defaultTextEncoderMode: 0
@@ -23,7 +22,7 @@ MonoBehaviour:
   enableDebugLog: 0
   enableKimodoStaticGraph: 0
   enableSplineExperimental: 0
-  setupWizardCompleted: 1
+  setupWizardCompleted: 0
   quickServerPath: 
   autoSyncQuickServer: 1
   advancedCurveFilterFoldout: 0
