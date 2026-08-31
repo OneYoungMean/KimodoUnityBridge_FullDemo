@@ -1,16 +1,16 @@
 # 开发备忘录 / Development memo
 
-> Temporary development snapshot. This is not an AI execution contract and does not override the live schema, `kimodo_help`, or user instructions.
+> Temporary development snapshot; use the root Skill and command catalog for execution details.
 >
-> 当前文件只是临时开发快照，不是 AI 执行契约，也不覆盖实时 schema、API Help 或用户指令。日常任务从 [SKILL.md](../SKILL.md) 路由，具体命令与参数读取 [Command/help.json](../Command/help.json)。
+> 当前文件只是临时开发快照。日常任务从 [SKILL.md](../SKILL.md) 路由，命令定义位于 [Command/help.json](../Command/help.json)。
 
-## Current command surface
+## Current command surface (主要命令面；不含 raw 互操作命令)
 
 The maintained public commands are:
 
-- Startup and discovery: `kimodo_install_server`, `kimodo_help` (`kimodo_install_server` initializes the project-local runtime on first use and is repeated only for installation, upgrade, or recovery)
+- Startup and discovery: `kimodo_install_server`, `kimodo_help` (`kimodo_install_server` starts an asynchronous project-local installation task and returns `install:<guid>`; poll it with `kimodo_get_generation`)
 - Session/content: `session_get_or_create`, `session_add`, `session_close`
-- Generation jobs: `kimodo_generate_animation`, `kimodo_get_generation`, `kimodo_cancel_generation`
+- Async tasks: `kimodo_generate_animation` returns a generation `request_id`; `kimodo_get_generation` polls either task type; `kimodo_cancel_generation` cancels generation only
 - Analysis/evidence: `animation_analyze`, `animation_compare`
 - Pose editing: `pose_get`, `pose_contract`, `pose_set_root_transform`, `pose_set_muscle`
 - Asset output: `kimodo_record_range`, `kimodo_retarget_animation`
@@ -27,7 +27,8 @@ The maintained public commands are:
 
 ## Active documentation work
 
-- Keep `../Command/help.json` aligned with the dispatcher, and keep concrete command details out of `../SKILL.md` and its three sub-skills.
+- Keep `../Command/help.json` aligned with the dispatcher, and keep concrete command details out of `../SKILL.md` and the capability tools under `../tools/`.
+- Keep raw object lookup details confined to `../Command/help.json` and the single entry sentence in `../SKILL.md`.
 
 ## Verification items
 

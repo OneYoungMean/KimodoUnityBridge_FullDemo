@@ -10,8 +10,10 @@ from collections import deque
 from itertools import count
 import io
 import math
+import re
 from pathlib import Path
 import secrets
+import shutil
 import socket
 import threading
 import time
@@ -72,6 +74,11 @@ def _build_protocol_help(kimodo_root: str = "") -> dict[str, Any]:
             {
                 "cmd": "cancel",
                 "description": "Cancel a queued or running generation by task_id.",
+            },
+            {
+                "cmd": "status",
+                "description": "Return progress and estimated completion for a queued or running task.",
+                "fields": ["task_id"],
             },
             {
                 "cmd": "quit",
@@ -365,6 +372,45 @@ def _try_reuse_existing_supervisor(serverport_path: Path, logger: SetupLogger) -
 
     logger.log(f"[INFO] Reusing active quickserver_cli at {host}:{port}")
     return True
+
+
+def _supervisor_is_reachable(serverport_path: Path) -> bool:
+    """Return whether serverport points at a currently reachable supervisor."""
+    data = _read_serverport(serverport_path)
+    host = str(data.get("host") or "").strip()
+    try:
+        port = int(str(data.get("port") or "").strip())
+    except ValueError:
+        return False
+    pid_text = str(data.get("pid") or "").strip()
+    if pid_text:
+        try:
+            if not _pid_is_running(int(pid_text)):
+                return False
+        except ValueError:
+            return False
+    return bool(host and port > 0 and _can_connect(host, port))
+
+
+def _preserve_and_clear_supervisor_log(log_path: Path) -> bool:
+    """Copy the previous log aside, then truncate the original path in place.
+
+    The original filename is intentionally never replaced: Unity's LogPump may
+    already hold that file open and must continue following the same inode/file
+    handle after QuickServer restarts.
+    """
+    path = Path(log_path)
+    if not path.exists():
+        return False
+    old_path = Path(str(path) + "_old")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, old_path)
+        with path.open("w", encoding="utf-8", newline=""):
+            pass
+        return True
+    except OSError:
+        return False
 
 
 def _write_serverport(path: Path, host: str, port: int, state_name: str) -> None:
@@ -913,6 +959,8 @@ def _execute_generate(
         raise ValueError("The generate.loop protocol field has been removed.")
 
     generate_kwargs = {"emit_progress": False}
+    if progress is not None:
+        generate_kwargs["progress_callback"] = progress
     if attachments:
         generate_kwargs["attachments"] = attachments
     output, prompt = runtime_helpers._run_generate(
@@ -943,6 +991,73 @@ def _build_streaming_status_message(
             return "progress", detail
         return "progress", "Generating motion..."
     return "progress", f"Task '{task_id}' is still running..."
+
+
+def _format_eta_seconds(seconds: Any) -> str:
+    try:
+        value = float(seconds)
+    except (TypeError, ValueError):
+        return "unknown"
+    if not math.isfinite(value) or value < 0:
+        return "unknown"
+    value = int(round(value))
+    if value < 60:
+        return f"{value}s"
+    minutes, remainder = divmod(value, 60)
+    return f"{minutes}m {remainder:02d}s"
+
+
+def _task_status_payload(task: dict[str, Any] | None) -> dict[str, Any]:
+    if task is None:
+        return {"status": "idle", "progress": "0/0", "eta_seconds": None, "message": "No active task."}
+    eta = task.get("eta_seconds")
+    current = int(task.get("progress_current") or 0)
+    total = int(task.get("progress_total") or 0)
+    progress = f"{current}/{total}" if total > 0 else "0/0"
+    payload: dict[str, Any] = {
+        "status": str(task.get("state") or "queued"),
+        "task_id": str(task.get("task_id") or ""),
+        "progress": progress,
+        "eta_seconds": float(eta) if isinstance(eta, (int, float)) and math.isfinite(float(eta)) else None,
+        "message": str(task.get("status_message") or ""),
+    }
+    if payload["eta_seconds"] is not None:
+        payload["message"] = f"{payload['message']} ETA {_format_eta_seconds(payload['eta_seconds'])}.".strip()
+    return payload
+
+
+def _update_task_progress(task: dict[str, Any], message: str) -> None:
+    text = str(message or "").strip()
+    task["status_message"] = text
+    if not text:
+        return
+    task.setdefault("phase", "loading")
+    generation = re.search(r"Generation progress:\s*(\d+)\s*/\s*(\d+).*?(?:@\s*)?([0-9]+(?:\.[0-9]+)?)\s*(?:it/s|frames?/s)", text, re.I)
+    if generation is None:
+        tqdm_match = re.search(r"\b(\d+)\s*/\s*(\d+)\s+\[[^\]]*?,\s*([0-9]+(?:\.[0-9]+)?)\s*it/s", text, re.I)
+        if tqdm_match:
+            generation = tqdm_match
+    if generation:
+        current, total, rate = int(generation.group(1)), int(generation.group(2)), float(generation.group(3))
+        task.update({"phase": "generating", "progress_current": current, "progress_total": total, "progress_rate": rate})
+        task["eta_seconds"] = max(0.0, (total - current) / rate) if total > current and rate > 0 else None
+        return
+    download = re.search(r"speed=([0-9.]+)\s*\w+/s.*?eta=([0-9.]+)s", text, re.I)
+    if download:
+        task["phase"] = "downloading"
+        task["progress_rate"] = float(download.group(1))
+        task["eta_seconds"] = float(download.group(2))
+        return
+    if text.startswith("[DOWNLOAD]"):
+        task["phase"] = "downloading"
+        task.setdefault("eta_seconds", 60.0)
+        return
+    if text.startswith("[STEP] Installing"):
+        task["phase"] = "loading"
+        seen = task.setdefault("installation_steps", set())
+        if text not in seen:
+            seen.add(text)
+        task["eta_seconds"] = max(30.0, 30.0 * len(seen))
 
 
 def _attach_task_id(payload: dict[str, Any], task_id: str) -> dict[str, Any]:
@@ -1185,6 +1300,8 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
         "sessions": {default_session_id: new_session(default_session_id, explicit=False)},
         "ready_model_workers": deque(),
         "tasks": {},
+        "recent_tasks": {},
+        "runtime_load_seconds": 0.0,
         "retired_runtimes": deque(),
         "active_task_id": "",
         "active_worker_count": 0,
@@ -1208,24 +1325,11 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
 
     def capture_task_runtime_progress(message: str) -> None:
         text = str(message or "").strip()
-        if not text.startswith(
-            (
-                "[INFO] Preparing runtime:",
-                "[INFO] Shared text encoder mode changed",
-                "[INFO] ARDY reusing Kimodo text encoder:",
-                "[INFO] Runtime ready:",
-                "[INFO] Text encoder",
-                "[OK] FP16 text encoder",
-                "[OK] INT8 text encoder",
-                "[OK] NF4 text encoder",
-                "[STEP] Downloading",
-                "[DOWNLOAD]",
-            )
-        ):
+        if not text.startswith(("[INFO]", "[OK]", "[STEP]", "[DOWNLOAD]")):
             return
         task = state["tasks"].get(str(getattr(task_context, "task_id", "") or ""))
         if task is not None:
-            task["status_message"] = text
+            _update_task_progress(task, text)
 
     logger.on_log = capture_task_runtime_progress
 
@@ -1352,7 +1456,11 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
         task_status = str((response or {}).get("status") or ("cancelled" if task["cancel_event"].is_set() else "closed"))
         message = str((response or {}).get("message") or task.get("status_message") or "Task closed.")
         task["state"] = task_status
+        task["eta_seconds"] = 0.0 if task_status in ("done", "cancelled", "error") else task.get("eta_seconds")
         state["tasks"].pop(task["task_id"], None)
+        state["recent_tasks"][task["task_id"]] = task
+        if len(state["recent_tasks"]) > 128:
+            state["recent_tasks"].pop(next(iter(state["recent_tasks"])))
         if session.get("active") is task:
             session["active"] = None
         state["active_task_id"] = ""
@@ -1531,7 +1639,7 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
         session: dict[str, Any],
     ) -> tuple[dict[str, Any], bytes | None]:
         def report_progress(message: str) -> None:
-            task["status_message"] = str(message or "").strip()
+            _update_task_progress(task, message)
 
         def execute() -> tuple[dict[str, Any], bytes | None]:
             profile = runtime.get("motion_profile")
@@ -1630,16 +1738,24 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                     text_encoder_execution_gate.acquire(encoder_key)
                     try:
                         publish_state("loading_runtime")
-                        task["status_message"] = "Preparing motion runtime..."
+                        _update_task_progress(task, "Preparing motion runtime...")
+                        task["eta_seconds"] = max(60.0, float(state.get("runtime_load_seconds") or 0.0) * 2.0)
+                        task["loading_started_at"] = time.monotonic()
                         if task["cancel_event"].is_set():
                             raise runtime_helpers.GenerateCancelledError("Generation canceled.")
                         try:
+                            load_started = time.monotonic()
                             runtime = get_runtime(session, task["runtime_config"], task["cancel_event"])
+                            load_elapsed = time.monotonic() - load_started
+                            with state_lock:
+                                state["runtime_load_seconds"] = load_elapsed
                         except assets.DownloadCancelledError as exc:
                             raise runtime_helpers.GenerateCancelledError(str(exc)) from exc
                         if task["cancel_event"].is_set():
                             raise runtime_helpers.GenerateCancelledError("Generation canceled.")
-                        task["status_message"] = "Generating motion..."
+                        _update_task_progress(task, "Generating motion...")
+                        task["phase"] = "generating"
+                        task["eta_seconds"] = None
                         publish_state("generating")
                         task_response, task_binary = run_one_shot(task, runtime, session)
                         return _attach_runtime_metadata(
@@ -1804,6 +1920,9 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                         task_id,
                         str(task.get("status_message") or ""),
                     )
+                eta = task.get("eta_seconds")
+                if eta is not None and stream_status in ("queued", "loading", "progress"):
+                    stream_message = f"{stream_message} ETA {_format_eta_seconds(eta)}."
 
                 now = time.time()
                 should_emit = (
@@ -1965,6 +2084,12 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                                     "binary": None,
                                     "state": "queued",
                                     "status_message": f"Task '{task_id}' waiting in queue.",
+                                    "phase": "queued",
+                                    "progress_current": 0,
+                                    "progress_total": 0,
+                                    "progress_rate": None,
+                                    "eta_seconds": 60.0,
+                                    "created_at": time.time(),
                                 }
                                 state["tasks"][task_id] = task
                                 session["queue"].append(task)
@@ -1978,6 +2103,16 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                             if cancel_response.get("cancel_status") == "cancelling":
                                 with queue_changed:
                                     mark_session_ready_locked(session)
+                        elif cmd == "status":
+                            requested_task_id = str(request.get("task_id") or request.get("id") or "").strip()
+                            with state_lock:
+                                target = state["tasks"].get(requested_task_id) if requested_task_id else session.get("active")
+                                if target is None and not requested_task_id and session.get("queue"):
+                                    target = session["queue"][0]
+                                if target is None and requested_task_id:
+                                    target = state["recent_tasks"].get(requested_task_id)
+                                status_payload = _task_status_payload(target)
+                            reply(status_payload)
                         elif cmd == "quit":
                             reply({"status": "done", "session_id": default_session_id, "server_closing": True})
                             request_shutdown("quit command")
@@ -2064,6 +2199,9 @@ def main(argv: list[str] | None = None, *, root_dir: str | None = None, source_r
     parser = _build_parser()
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     paths = discover_project_paths(root_dir)
+    supervisor_log_path = paths.log_dir / SUPERVISOR_LOG_FILE_NAME
+    if not _supervisor_is_reachable(paths.root_dir / "serverport"):
+        _preserve_and_clear_supervisor_log(supervisor_log_path)
     with _redirect_process_output(paths, args.output, args.log, SUPERVISOR_LOG_FILE_NAME):
         with _prepare_logger(paths, "file", args.log, SUPERVISOR_LOG_FILE_NAME, append=True) as logger:
             return _run_supervisor(args, str(paths.root_dir), logger)

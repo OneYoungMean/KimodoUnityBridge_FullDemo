@@ -30,6 +30,9 @@ namespace KimodoBridge
 
     public sealed class KimodoBridgeService : IDisposable
     {
+        // The editor command job id is propagated to the TCP task so status
+        // queries can use one stable identifier across both layers.
+        internal static readonly AsyncLocal<string> GenerationTaskIdContext = new AsyncLocal<string>();
         private sealed class ActiveLogPump
         {
             public string Path = string.Empty;
@@ -153,6 +156,15 @@ namespace KimodoBridge
             return RequireDoneResponse(response, "Bridge model list returned no response.", "Bridge model list request failed.");
         }
 
+        public async Task<JObject> GetStatusAsync(string taskId, CancellationToken token = default)
+        {
+            ThrowIfStopRequested();
+            await EnsureConnectedAsync(null, token).ConfigureAwait(false);
+            BridgeProtocolResponse response = await protocolClient.GetStatusAsync(
+                currentHost, currentPort, taskId, token).ConfigureAwait(false);
+            return response?.Header ?? new JObject { ["status"] = "idle" };
+        }
+
         internal async Task<KimodoBridgeGenerationResult> GenerateAsync(
             KimodoGenerationRequestDto request,
             Action<string> progress,
@@ -173,6 +185,10 @@ namespace KimodoBridge
                 await EnsureConnectedAsync(progress, token).ConfigureAwait(false);
                 ThrowIfSessionChanged(requestSessionVersion);
 
+                if (string.IsNullOrWhiteSpace(request.task_id))
+                {
+                    request.task_id = GenerationTaskIdContext.Value;
+                }
                 if (string.IsNullOrWhiteSpace(request.task_id))
                 {
                     request.task_id = Guid.NewGuid().ToString("N");
