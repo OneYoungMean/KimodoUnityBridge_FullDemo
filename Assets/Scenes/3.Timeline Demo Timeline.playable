@@ -136,6 +136,7 @@ MonoBehaviour:
   pathData:
     type: forward
     length: 1
+    sourceHumanScale: 1
     inverse: 0
     knots: []
 --- !u!114 &-7968298621862472923
@@ -358,6 +359,11 @@ MonoBehaviour:
   randomSeed: 0
   seed: 572103253
   generateLoop: 1
+  overridePathAngle: 0
+  pathBeginAngleDegrees: 0
+  pathEndAngleDegrees: 0
+  overrideHeading: 0
+  headingDegrees: 0
   analysisOptionsJson: 
   generatedAssetName: 
   generatedOutputFolder: 
@@ -609,6 +615,11 @@ MonoBehaviour:
   randomSeed: 0
   seed: 121655362
   generateLoop: 0
+  overridePathAngle: 0
+  pathBeginAngleDegrees: 0
+  pathEndAngleDegrees: 0
+  overrideHeading: 0
+  headingDegrees: 0
   analysisOptionsJson: 
   generatedAssetName: 
   generatedOutputFolder: 
@@ -810,9 +821,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260805_074534_972(Clone)(Clone)
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260831_204151_032
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: b7e6994d1fc9ae944a6efa861a39ff21, type: 2}
+  m_Clip: {fileID: 7400000, guid: 648e09bfa6e14b84ab318aec6b8d7abd, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -830,6 +841,11 @@ MonoBehaviour:
   randomSeed: 0
   seed: 1400152582
   generateLoop: 0
+  overridePathAngle: 0
+  pathBeginAngleDegrees: 0
+  pathEndAngleDegrees: 0
+  overrideHeading: 0
+  headingDegrees: 0
   analysisOptionsJson: 
   generatedAssetName: 
   generatedOutputFolder: 
@@ -1005,6 +1021,11 @@ MonoBehaviour:
   randomSeed: 1
   seed: 1487896120
   generateLoop: 0
+  overridePathAngle: 0
+  pathBeginAngleDegrees: 0
+  pathEndAngleDegrees: 0
+  overrideHeading: 0
+  headingDegrees: 0
   analysisOptionsJson: 
   generatedAssetName: 
   generatedOutputFolder: 
@@ -1066,6 +1087,11 @@ MonoBehaviour:
   randomSeed: 0
   seed: 961133262
   generateLoop: 0
+  overridePathAngle: 0
+  pathBeginAngleDegrees: 0
+  pathEndAngleDegrees: 0
+  overrideHeading: 0
+  headingDegrees: 0
   analysisOptionsJson: 
   generatedAssetName: 
   generatedOutputFolder: 
@@ -1813,6 +1839,7 @@ MonoBehaviour:
     m_Objects:
     - {fileID: 2013234037094079595}
     - {fileID: 3728785880591473372}
+    - {fileID: 993796054691707209}
   m_InfiniteClipPreExtrapolation: 0
   m_InfiniteClipPostExtrapolation: 0
   m_InfiniteClipOffsetPosition: {x: 0, y: 0, z: 0}
@@ -1855,6 +1882,145 @@ MonoBehaviour:
     m_ScenePreview: 1
   m_DurationMode: 0
   m_MarkerTrack: {fileID: 0}
+--- !u!114 &993796054691707209
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 87e740c332e138f438368ba13793dbb7, type: 3}
+  m_Name: Kimodo Constraint Marker
+  m_EditorClassIdentifier: 
+  m_Time: 0.3833
+  constraintEnabled: 1
+  autoSample: 0
+  constraintMode: 1
+  markerType: 0
+  sampleData:
+    sampleData:
+      data:
+      - 0.046239357
+      - -0.060449503
+      - 0.0041512735
+      - 0.13284357
+      - -0.025585504
+      - 0.0087529225
+      - -0.45886838
+      - 0.0046262434
+      - 0.13473362
+      - -0.17099437
+      - -0.14120694
+      - -0.08655327
+      - 0.3505879
+      - 0.037150484
+      - -0.26630035
+      - 0.433949
+      - 0.032997184
+      - 0.20555118
+      - 0.72658837
+      - 0.12998645
+      - -0.2544949
+      - -0.29041395
+      - 0.0024146421
+      - 0.39033362
+      - 0.15767063
+      - 0.17495747
+      - 0.65971816
+      - 0.043158498
+      - -0.34297806
+      - -0.22862671
+      - 0.0042436663
+      - -0.7557365
+      - -0.3187708
+      - -0.5330514
+      - 0.38786796
+      - -0.025557464
+      - 0.5682421
+      - -0.014635939
+      - 0.0365362
+      - -0.11345661
+      - -1.0310681
+      - -0.48403934
+      - -0.46438986
+      - 0.32403928
+      - -0.1133036
+      - 0.54995686
+      - -0.052253112
+      - 0.04075197
+      - -0.08865953
+      - -0.0025521533
+      - 0.9613174
+      - -0.053773586
+      - 0.010667157
+      - 0.0027501371
+      - -0.010419
+      - 0.9998851
+      - -0.08523285
+      - -0.957353
+      - -0.082166396
+      - -0.38033232
+      - 0.36531684
+      - -0.5972764
+      - 0.604278
+      - 0.11274625
+      - -0.950988
+      - -0.08363991
+      - -0.5735305
+      - 0.5569455
+      - -0.42792046
+      - 0.4216144
+    enableMask:
+      muscle: 1
+      rootTQ: 1
+      leftFootTQ: 1
+      rightFootTQ: 1
+      rootPosition: 1
+      rootHeading: 1
+      leftFoot: 1
+      rightFoot: 1
+      leftHand: 1
+      rightHand: 1
+    validMask:
+      muscle: 1
+      rootTQ: 1
+      leftFootTQ: 1
+      rightFootTQ: 1
+      rootPosition: 1
+      rootHeading: 1
+      leftFoot: 1
+      rightFoot: 1
+      leftHand: 1
+      rightHand: 1
+    enabled: 1
+    creationOrder: 0
+    effectors:
+      leftHand:
+        position: {x: -0.17899041, y: 0.8725934, z: -0.064027354}
+        rotation: {x: 0.025055334, y: 0.25979275, z: 0.6254355, w: 0.7353308}
+      rightHand:
+        position: {x: 0.13629724, y: 0.8629855, z: -0.021459546}
+        rotation: {x: 0.03370412, y: -0.36032003, z: -0.6349234, w: 0.6825739}
+      leftFoot:
+        position: {x: -0.10030468, y: 0.09022486, z: -0.14386374}
+        rotation: {x: 0.004034315, y: -0.2253245, z: -0.0015572427, w: 0.9742743}
+      rightFoot:
+        position: {x: 0.08399394, y: 0.092341125, z: -0.14685509}
+        rotation: {x: 0.00059404375, y: 0.14324145, z: -0.003646093, w: 0.98968095}
+    rootOverride:
+      position: {x: -0.0039952695, y: 0.87148184, z: -0.038191944}
+      rotation: {x: 0.06985153, y: -0.012693187, z: -0.03038531, w: 0.9970138}
+    rootOverrideAfterEffectors: 0
+    constraintMode: fullbody
+    sampleTime: 0.3833
+  pathData:
+    type: forward
+    length: 1
+    sourceHumanScale: 1
+    inverse: 0
+    knots: []
 --- !u!114 &1120585084697551713
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -1885,6 +2051,11 @@ MonoBehaviour:
   randomSeed: 0
   seed: 1297364042
   generateLoop: 1
+  overridePathAngle: 0
+  pathBeginAngleDegrees: 0
+  pathEndAngleDegrees: 0
+  overrideHeading: 0
+  headingDegrees: 0
   analysisOptionsJson: 
   generatedAssetName: 
   generatedOutputFolder: 
@@ -2231,7 +2402,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Time: 4.6
   constraintEnabled: 1
-  autoSample: 1
+  autoSample: 0
   constraintMode: 1
   markerType: 0
   sampleData:
@@ -2240,72 +2411,72 @@ MonoBehaviour:
       - -0.22654906
       - 0.0154242115
       - 0.00771425
-      - 0.01804025
-      - -0.012125732
-      - 0.0032519035
+      - 0.018040592
+      - -0.01212539
+      - 0.0032517754
       - -0.66167396
       - -0.06002666
       - 0.09114451
       - -0.26146773
       - -0.118207164
       - -0.07868044
-      - 0.13331796
-      - 0.020940416
-      - 0.0131934
-      - -0.08351054
-      - 0.35728335
-      - 0.18892635
-      - -0.311883
-      - 0.17750424
-      - 0.26010317
-      - -0.16855225
-      - -0.6366843
-      - -0.10235653
-      - 0.4121253
-      - 0.10967534
-      - -0.31548882
-      - -0.012986612
-      - 0.5741481
-      - 0.48322728
+      - 0.13331746
+      - 0.020940324
+      - 0.013193613
+      - -0.08351059
+      - 0.35728344
+      - 0.18892723
+      - -0.31188303
+      - 0.17750439
+      - 0.26010242
+      - -0.1685509
+      - -0.6366838
+      - -0.10235614
+      - 0.41212535
+      - 0.10967538
+      - -0.31548852
+      - -0.012986657
+      - 0.5741482
+      - 0.4832278
       - -0.67902714
       - -0.90692717
       - -0.014204998
-      - -0.24372488
-      - 0.4327202
-      - -0.2680776
-      - -0.113826334
-      - -0.36375168
-      - 0.20911741
-      - -0.24619639
-      - -1.411141
-      - 0.14170067
-      - -0.2905481
-      - 0.3923635
-      - -0.26351234
-      - -0.22016928
-      - -0.37307432
-      - -0.07043107
-      - 0.07745573
-      - -0.4382397
-      - 0.79202324
+      - -0.2437237
+      - 0.43272054
+      - -0.26807812
+      - -0.11382631
+      - -0.36375135
+      - 0.20911816
+      - -0.24619703
+      - -1.4111425
+      - 0.14170073
+      - -0.29054925
+      - 0.39236373
+      - -0.26351264
+      - -0.220169
+      - -0.37307525
+      - -0.070430614
+      - 0.07745581
+      - -0.43823963
+      - 0.7920231
       - -0.27350962
-      - -0.27586502
-      - -0.0051555717
-      - -0.012413601
+      - -0.27586496
+      - -0.0051556383
+      - -0.012413625
       - 0.9611024
       - -0.04168348
       - -0.63407445
-      - -0.1895976
-      - 0.034880992
-      - 0.45203683
-      - -0.26629674
-      - 0.8506069
-      - 0.12425685
-      - -0.6025137
-      - -0.20007852
-      - -0.12886964
-      - 0.7269517
-      - 0.06696069
+      - -0.18959728
+      - 0.034880742
+      - 0.45203692
+      - -0.26629686
+      - 0.85060686
+      - 0.12425684
+      - -0.60251373
+      - -0.20007841
+      - -0.12886947
+      - 0.7269518
+      - 0.06696086
       - 0.6711558
     enableMask:
       muscle: 1
@@ -2333,26 +2504,27 @@ MonoBehaviour:
     creationOrder: 0
     effectors:
       leftHand:
-        position: {x: -0.5230733, y: 0.76989686, z: -0.28653163}
-        rotation: {x: -0.23716778, y: 0.7968915, z: 0.18028422, w: 0.5255597}
+        position: {x: -0.56858736, y: 0.7625032, z: -0.2685017}
+        rotation: {x: -0.21921508, y: 0.7440909, z: 0.20173174, w: 0.5979781}
       rightHand:
-        position: {x: -0.33949485, y: 0.8027887, z: -0.2776274}
-        rotation: {x: -0.18336159, y: -0.812973, z: -0.2857721, w: 0.47306204}
+        position: {x: -0.3, y: 0.79, z: -0.2}
+        rotation: {x: -0.18336195, y: -0.8129736, z: -0.28577226, w: 0.4730621}
       leftFoot:
-        position: {x: -0.4970108, y: 0.20881057, z: -0.055478334}
-        rotation: {x: 0.29858896, y: -0.3334344, z: 0.13655981, w: 0.883752}
+        position: {x: -0.49701077, y: 0.20881069, z: -0.055478156}
+        rotation: {x: 0.29858884, y: -0.33343446, z: 0.13655977, w: 0.8837524}
       rightFoot:
-        position: {x: -0.30034095, y: 0.21061152, z: -0.047280625}
-        rotation: {x: 0.44192892, y: 0.12817743, z: 0.026968652, w: 0.88743573}
+        position: {x: -0.30034092, y: 0.2106114, z: -0.04728055}
+        rotation: {x: 0.44192925, y: 0.12817737, z: 0.026968688, w: 0.88743573}
     rootOverride:
-      position: {x: -0.40955436, y: 0.66265607, z: -0.24088675}
-      rotation: {x: -0.30755004, y: -0.025096357, z: -0.010557213, w: 0.9511423}
+      position: {x: -0.40955436, y: 0.66265607, z: -0.24088673}
+      rotation: {x: -0.30754998, y: -0.025096357, z: -0.010557211, w: 0.9511424}
     rootOverrideAfterEffectors: 0
     constraintMode: fullbody
     sampleTime: 4.6
   pathData:
     type: forward
     length: 1
+    sourceHumanScale: 1
     inverse: 0
     knots: []
 --- !u!114 &2384964765174586638
@@ -2602,6 +2774,7 @@ MonoBehaviour:
   pathData:
     type: forward
     length: 1
+    sourceHumanScale: 1
     inverse: 0
     knots: []
 --- !u!114 &2811406062615636571
@@ -2740,6 +2913,7 @@ MonoBehaviour:
   pathData:
     type: forward
     length: 1
+    sourceHumanScale: 1
     inverse: 0
     knots: []
 --- !u!114 &3728785880591473372
@@ -2756,7 +2930,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Time: 9.45
   constraintEnabled: 1
-  autoSample: 1
+  autoSample: 0
   constraintMode: 1
   markerType: 0
   sampleData:
@@ -2774,64 +2948,64 @@ MonoBehaviour:
       - -0.17099437
       - -0.14120694
       - -0.08655327
-      - 0.35058838
-      - 0.0371506
-      - -0.26630002
-      - 0.43394718
-      - 0.03299736
-      - 0.20555024
-      - 0.7265859
-      - 0.12998684
-      - -0.25449762
-      - -0.29041424
+      - 0.3505879
+      - 0.037150484
+      - -0.26630035
+      - 0.433949
+      - 0.032997184
+      - 0.20555118
+      - 0.72658837
+      - 0.12998645
+      - -0.2544949
+      - -0.29041395
       - 0.0024146421
-      - 0.39033607
-      - 0.15767053
-      - 0.17495902
-      - 0.6597206
-      - 0.0431583
-      - -0.3429764
-      - -0.22862576
+      - 0.39033362
+      - 0.15767063
+      - 0.17495747
+      - 0.65971816
+      - 0.043158498
+      - -0.34297806
+      - -0.22862671
       - 0.0042436663
       - -0.7557365
       - -0.3187708
-      - -0.5330506
-      - 0.387868
-      - -0.025558185
-      - 0.5682419
-      - -0.014635482
-      - 0.036536593
-      - -0.113456085
+      - -0.5330514
+      - 0.38786796
+      - -0.025557464
+      - 0.5682421
+      - -0.014635939
+      - 0.0365362
+      - -0.11345661
       - -1.0310681
       - -0.48403934
       - -0.46438986
-      - 0.32403946
-      - -0.113303594
-      - 0.5499569
-      - -0.05225312
-      - 0.040751986
-      - -0.08866013
-      - -0.0025521817
-      - 0.9613175
-      - -0.053773627
-      - 0.010667142
+      - 0.32403928
+      - -0.1133036
+      - 0.54995686
+      - -0.052253112
+      - 0.04075197
+      - -0.08865953
+      - -0.0025521533
+      - 0.9613174
+      - -0.053773586
+      - 0.010667157
       - 0.0027501371
-      - -0.010419002
+      - -0.010419
       - 0.9998851
-      - -0.08523282
-      - -0.9573529
-      - -0.0821665
-      - -0.38033238
-      - 0.36531687
-      - -0.59727657
-      - 0.60427785
-      - 0.11274623
-      - -0.9509882
-      - -0.08364023
+      - -0.08523285
+      - -0.957353
+      - -0.082166396
+      - -0.38033232
+      - 0.36531684
+      - -0.5972764
+      - 0.604278
+      - 0.11274625
+      - -0.950988
+      - -0.08363991
       - -0.5735305
-      - 0.55694574
-      - -0.42792007
-      - 0.42161432
+      - 0.5569455
+      - -0.42792046
+      - 0.4216144
     enableMask:
       muscle: 1
       rootTQ: 1
@@ -2858,26 +3032,27 @@ MonoBehaviour:
     creationOrder: 0
     effectors:
       leftHand:
-        position: {x: -0.17899065, y: 0.8725936, z: -0.06402727}
-        rotation: {x: 0.025055509, y: 0.25979266, z: 0.62543476, w: 0.7353308}
+        position: {x: -0.17899041, y: 0.8725934, z: -0.064027354}
+        rotation: {x: 0.025055334, y: 0.25979275, z: 0.6254355, w: 0.7353308}
       rightHand:
-        position: {x: 0.13629726, y: 0.86298543, z: -0.021459602}
-        rotation: {x: 0.033704158, y: -0.36031982, z: -0.6349229, w: 0.68257344}
+        position: {x: 0.13629724, y: 0.8629855, z: -0.021459546}
+        rotation: {x: 0.03370412, y: -0.36032003, z: -0.6349234, w: 0.6825739}
       leftFoot:
-        position: {x: -0.10030464, y: 0.09022498, z: -0.14386386}
-        rotation: {x: 0.004034111, y: -0.22532445, z: -0.0015573972, w: 0.9742743}
+        position: {x: -0.10030468, y: 0.09022486, z: -0.14386374}
+        rotation: {x: 0.004034315, y: -0.2253245, z: -0.0015572427, w: 0.9742743}
       rightFoot:
-        position: {x: 0.08399388, y: 0.092341006, z: -0.14685535}
-        rotation: {x: 0.00059427833, y: 0.14324176, z: -0.0036460205, w: 0.9896808}
+        position: {x: 0.08399394, y: 0.092341125, z: -0.14685509}
+        rotation: {x: 0.00059404375, y: 0.14324145, z: -0.003646093, w: 0.98968095}
     rootOverride:
-      position: {x: -0.0039952695, y: 0.8714819, z: -0.038191944}
-      rotation: {x: 0.06985152, y: -0.012693187, z: -0.030385312, w: 0.9970138}
+      position: {x: -0.0039952695, y: 0.87148184, z: -0.038191944}
+      rotation: {x: 0.06985153, y: -0.012693187, z: -0.03038531, w: 0.9970138}
     rootOverrideAfterEffectors: 0
     constraintMode: fullbody
     sampleTime: 9.45
   pathData:
     type: forward
     length: 1
+    sourceHumanScale: 1
     inverse: 0
     knots: []
 --- !u!114 &4532238185154227398
@@ -3206,6 +3381,7 @@ MonoBehaviour:
   pathData:
     type: forward
     length: 1
+    sourceHumanScale: 1
     inverse: 0
     knots: []
 --- !u!114 &6253555263931779845
@@ -3542,6 +3718,11 @@ MonoBehaviour:
   randomSeed: 0
   seed: 572103253
   generateLoop: 1
+  overridePathAngle: 0
+  pathBeginAngleDegrees: 0
+  pathEndAngleDegrees: 0
+  overrideHeading: 0
+  headingDegrees: 0
   analysisOptionsJson: 
   generatedAssetName: 
   generatedOutputFolder: 
