@@ -13,6 +13,7 @@ import math
 import re
 from pathlib import Path
 import secrets
+import shutil
 import socket
 import threading
 import time
@@ -371,6 +372,45 @@ def _try_reuse_existing_supervisor(serverport_path: Path, logger: SetupLogger) -
 
     logger.log(f"[INFO] Reusing active quickserver_cli at {host}:{port}")
     return True
+
+
+def _supervisor_is_reachable(serverport_path: Path) -> bool:
+    """Return whether serverport points at a currently reachable supervisor."""
+    data = _read_serverport(serverport_path)
+    host = str(data.get("host") or "").strip()
+    try:
+        port = int(str(data.get("port") or "").strip())
+    except ValueError:
+        return False
+    pid_text = str(data.get("pid") or "").strip()
+    if pid_text:
+        try:
+            if not _pid_is_running(int(pid_text)):
+                return False
+        except ValueError:
+            return False
+    return bool(host and port > 0 and _can_connect(host, port))
+
+
+def _preserve_and_clear_supervisor_log(log_path: Path) -> bool:
+    """Copy the previous log aside, then truncate the original path in place.
+
+    The original filename is intentionally never replaced: Unity's LogPump may
+    already hold that file open and must continue following the same inode/file
+    handle after QuickServer restarts.
+    """
+    path = Path(log_path)
+    if not path.exists():
+        return False
+    old_path = Path(str(path) + "_old")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, old_path)
+        with path.open("w", encoding="utf-8", newline=""):
+            pass
+        return True
+    except OSError:
+        return False
 
 
 def _write_serverport(path: Path, host: str, port: int, state_name: str) -> None:
@@ -967,31 +1007,19 @@ def _format_eta_seconds(seconds: Any) -> str:
     return f"{minutes}m {remainder:02d}s"
 
 
-def _estimated_completion_utc(seconds: Any) -> str | None:
-    try:
-        value = float(seconds)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(value) or value < 0:
-        return None
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + value))
-
-
-def _task_status_payload(task: dict[str, Any] | None, queue_index: int = -1) -> dict[str, Any]:
+def _task_status_payload(task: dict[str, Any] | None) -> dict[str, Any]:
     if task is None:
-        return {"status": "idle", "phase": "idle", "eta_seconds": None, "estimated_completion_utc": None}
+        return {"status": "idle", "progress": "0/0", "eta_seconds": None, "message": "No active task."}
     eta = task.get("eta_seconds")
+    current = int(task.get("progress_current") or 0)
+    total = int(task.get("progress_total") or 0)
+    progress = f"{current}/{total}" if total > 0 else "0/0"
     payload: dict[str, Any] = {
         "status": str(task.get("state") or "queued"),
-        "phase": str(task.get("phase") or "queued"),
         "task_id": str(task.get("task_id") or ""),
-        "message": str(task.get("status_message") or ""),
-        "progress_current": int(task.get("progress_current") or 0),
-        "progress_total": int(task.get("progress_total") or 0),
-        "progress_rate": task.get("progress_rate"),
-        "queue_index": max(0, int(queue_index)),
+        "progress": progress,
         "eta_seconds": float(eta) if isinstance(eta, (int, float)) and math.isfinite(float(eta)) else None,
-        "estimated_completion_utc": _estimated_completion_utc(eta),
+        "message": str(task.get("status_message") or ""),
     }
     if payload["eta_seconds"] is not None:
         payload["message"] = f"{payload['message']} ETA {_format_eta_seconds(payload['eta_seconds'])}.".strip()
@@ -2083,13 +2111,7 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                                     target = session["queue"][0]
                                 if target is None and requested_task_id:
                                     target = state["recent_tasks"].get(requested_task_id)
-                                queue_index = -1
-                                if target is not None:
-                                    for index, queued_task in enumerate(session.get("queue") or ()):
-                                        if queued_task is target:
-                                            queue_index = index + 1
-                                            break
-                                status_payload = _task_status_payload(target, queue_index)
+                                status_payload = _task_status_payload(target)
                             reply(status_payload)
                         elif cmd == "quit":
                             reply({"status": "done", "session_id": default_session_id, "server_closing": True})
@@ -2177,6 +2199,9 @@ def main(argv: list[str] | None = None, *, root_dir: str | None = None, source_r
     parser = _build_parser()
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     paths = discover_project_paths(root_dir)
+    supervisor_log_path = paths.log_dir / SUPERVISOR_LOG_FILE_NAME
+    if not _supervisor_is_reachable(paths.root_dir / "serverport"):
+        _preserve_and_clear_supervisor_log(supervisor_log_path)
     with _redirect_process_output(paths, args.output, args.log, SUPERVISOR_LOG_FILE_NAME):
         with _prepare_logger(paths, "file", args.log, SUPERVISOR_LOG_FILE_NAME, append=True) as logger:
             return _run_supervisor(args, str(paths.root_dir), logger)
