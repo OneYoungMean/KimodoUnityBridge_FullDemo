@@ -34,6 +34,7 @@ description: Generate, verify, and derive Unity animation Clips from explicit mo
 #define NEED_LEFT_FOOT_POSE             <YES|NO>
 #define NEED_RIGHT_FOOT_POSE            <YES|NO>
 #define SHOULD_RETARGET_AFTER_GENERATION <YES|NO>
+#define ALLOW_DIRECT_POSE_EDIT           NO
 
 CHARACTER       = REQUIRED("<safe character / 安全角色名>")
 SOURCE_CLIP     = REQUIRED_IF(
@@ -94,6 +95,80 @@ GENERATION_PROMPT = JOIN_EXPLICIT_FIELDS(
 # Only fields explicitly supplied by the caller are emitted. Do not infer
 # preparation/recovery structure, breathing, contacts, root displacement, or
 # other unstated semantics; preserve unknown abbreviations verbatim.
+
+## Animation source discovery / 动画来源发现
+
+当请求涉及修复、替换、参考或查找某个动作时，必须先检查场景角色的
+`Animator.runtimeAnimatorController` 及其 BlendTree 实际引用的 AnimationClip，
+不能先在 `KimodoGeneratedClips` 目录中按名称搜索。
+
+```pseudo
+controller_clips = clips_referenced_by_current_character_controller(CHARACTER)
+source_clip = first_semantic_match(
+    controller_clips,
+    prefer_assets_outside = "Assets/KimodoGeneratedClips"
+)
+
+if source_clip is empty:
+    source_clip = first_semantic_match(
+        clips_referenced_by_other_scene_controllers(CHARACTER),
+        prefer_assets_outside = "Assets/KimodoGeneratedClips"
+    )
+
+if source_clip is empty:
+    source_clip = first_semantic_match(clips_under = "Assets/KimodoGeneratedClips")
+```
+
+`source: "added"` 只表示 Clip 被加入 Session，不能证明它是原始动画。
+Controller 中的实际 AnimationClip 引用优先；生成目录中的 Clip 只能作为后备来源。
+
+## Context-first generation / 上下文优先生成
+
+```pseudo
+if request_names_one_or_more_actions():
+    related_clips = find_semantically_matching_controller_clips_first(
+        character=CHARACTER,
+        actions=actions_named_by_request,
+        prefer_assets_outside="Assets/KimodoGeneratedClips"
+    )
+    if related_clips is empty:
+        related_clips = find_semantically_matching_clips_in_current_session(
+            character=CHARACTER,
+            actions=actions_named_by_request,
+            prefer_assets_outside="Assets/KimodoGeneratedClips"
+        )
+    record_context_evidence(related_clips)
+    if request_semantics_include_fix_or_variant_of_named_actions() and related_clips is empty:
+        record_context_evidence("No matching action clip found; this is a new baseline generation.")
+    if related_clips is not empty:
+        related_analysis = animation_analyze(related_clips, level="middle", resolution=512)
+        source_profile = related_analysis.clips[0].motion_profile
+        source_keyframes = related_analysis.clips[0].keyframes
+        if request_is_repair_or_variant_of_related_clip():
+            derive_loop_path_and_heading_decisions_from(
+                source_profile,
+                selected_semantic,
+                explicit_user_intent
+            )
+        if request_explicitly_requires_reference_or_constraints():
+            build_constraints_from_analysis_trajectory_and_pathangle(related_analysis)
+```
+
+匹配到已有动画后，必须先使用 analysis 返回的 `motion_profile` 判断循环、路径和
+heading，再决定是否覆盖。关键帧列表用于动作阶段、采样帧和验证证据；默认不调用
+`pose_get`、`pose_set` 或 `pose_contract`，也不创建/修改 Pose 资产。轨迹直接复用
+`root_trajectory.path`，明确方向使用 PathAngle 起止角度。只有用户明确要求编辑 Pose，
+并确认接受 rig/Humanoid 映射副作用时，才允许启用 `ALLOW_DIRECT_POSE_EDIT=YES`。若没有匹配动画，
+报告未找到上下文后再按动作语义推断：向前为 PathAngle 起止 `0°`，左转终点
+`-90°`，右转终点 `+90°`；仅在语义明确时启用对应覆盖。
+
+```pseudo
+analysis_frame_anchors = source_analysis.clips[0].keyframes
+verification_frames = choose_phase_and_endpoint_frames(analysis_frame_anchors)
+path_constraint = source_analysis.clips[0].root_trajectory.path
+path_angle = derive_path_angle_from_motion_profile_and_request(source_profile, request)
+// No pose_get/pose_set: anchors are metadata, path/path_angle are generation inputs.
+```
 
 function execute_generate_skill(request):
     ASSERT not (
@@ -174,6 +249,14 @@ function execute_generate_skill(request):
         source_image_path = source_analysis.pictures.image_path
         source_picture_map = source_analysis.pictures.images
         ASSERT OPEN_WITH_AVAILABLE_VISUAL_TOOL(source_image_path) == YES
+        source_profile = source_analysis.clips[0].motion_profile
+        source_keyframes = source_analysis.clips[0].keyframes
+        if request_is_repair_or_variant_of_source_clip():
+            derive_loop_path_and_heading_decisions_from(
+                source_profile,
+                selected_semantic,
+                explicit_user_intent
+            )
 
     constraints = []
 
@@ -187,50 +270,14 @@ function execute_generate_skill(request):
         })
 
     if any_pose_constraint_is_needed() == YES:
-        ASSERT HAS_SOURCE_ANIMATION == YES
-        for each explicitly_established_constraint_frame:
-            pose_ref = pose_get({
-                source: {
-                    character: character,
-                    clip: source_clip,
-                    frame: explicitly_established_constraint_frame
-                },
-                full_data: request.needs_full_pose_data
-            }).pose
-
-            if request_explicitly_requires_root_transform_edit:
-                pose_ref = pose_set_root_transform({
-                    pose: pose_ref,
-                    root: request.help_validated_root
-                }).pose
-
-            if request_explicitly_requires_muscle_edit:
-                pose_ref = pose_set_muscle({
-                    pose: pose_ref,
-                    muscles: request.help_validated_muscles
-                }).pose
-
-            if request_explicitly_requires_effector_alignment:
-                pose_ref = pose_contract({
-                    origin: request.origin_pose,
-                    target: pose_ref,
-                    endeffectors: request.endeffectors,
-                    components: request.components,
-                    mode: request.contract_mode
-                }).pose
-
-            constraints.append(
-                build_help_validated_point_constraint(
-                    frame = explicitly_established_constraint_frame,
-                    pose = pose_ref,
-                    use_fullbody = NEED_FULLBODY_POSE,
-                    use_root2d = NEED_ROOT2D_POSE,
-                    use_left_hand = NEED_LEFT_HAND_POSE,
-                    use_right_hand = NEED_RIGHT_HAND_POSE,
-                    use_left_foot = NEED_LEFT_FOOT_POSE,
-                    use_right_foot = NEED_RIGHT_FOOT_POSE
-                )
+        if ALLOW_DIRECT_POSE_EDIT != YES:
+            record_generation_warning(
+                "Pose constraints deferred: generation uses analysis trajectory/PathAngle only."
             )
+        else:
+            ASSERT request_explicitly_confirms_rig_side_effects() == YES
+            ASSERT HAS_SOURCE_ANIMATION == YES
+            use_explicit_pose_workflow_only(request, source_analysis)
 
     args = {
         character: character,
@@ -242,6 +289,14 @@ function execute_generate_skill(request):
 
     if SHOULD_LOOP == YES:
         args.loop = true
+
+    if request_semantics_contain_explicit_facing_or_path_direction():
+        SHOULD_OVERRIDE_PATH_DIRECTIONS = YES
+        PATH_BEGIN_YAW_DEGREES = resolve_absolute_unity_yaw_from_scene_context(
+            CHARACTER,
+            DIRECTION_OR_PATH
+        )
+        PATH_END_YAW_DEGREES = PATH_BEGIN_YAW_DEGREES
 
     if SHOULD_OVERRIDE_PATH_DIRECTIONS == YES:
         // Supply both values deliberately; do not rely on the omitted-peer default.
@@ -484,7 +539,9 @@ function derive_supported_correction_from_failed_macros():
         )
 
     if POSE_MATCH == NO or CONTACT_MATCH == NO:
-        return request_with_pose_constraints_only_if_pose_get_refs_exist()
+        if ALLOW_DIRECT_POSE_EDIT == YES and request_explicitly_confirms_rig_side_effects():
+            return request_with_explicit_pose_workflow(source_analysis)
+        return no_supported_correction
 
     if LOOP_MATCH == NO and SHOULD_LOOP == YES:
         return request_with_loop_enabled_unless_runtime_declares_loop_fallback()
@@ -494,8 +551,10 @@ function derive_supported_correction_from_failed_macros():
 function required(required_flag, evidence):
     return evidence if required_flag == YES else NOT_APPLICABLE
 
-ASSERT analysis_selected_frames_are_evidence_not_constraints()
-ASSERT pose_constraints_use_pose_get_returned_track_and_index()
+ASSERT analysis_keyframes_are_used_as_evidence_and_timing_anchors()
+ASSERT default_generation_does_not_materialize_or_edit_pose_assets()
+ASSERT source_motion_profile_precedes_prompt_heuristics()
+ASSERT direct_pose_edit_requires_explicit_user_confirmation_and_opt_in()
 ASSERT analyzed_path_is_a_constraint_only_when_root_trajectory_path_is_reused()
 ASSERT path_override_and_loop_are_independent_and_may_coexist()
 ASSERT fixed_heading_overrides_path_tangent_heading_but_not_path_positions()
@@ -504,6 +563,41 @@ ASSERT same_frame_precedence_is_fullbody_then_root2d_then_effectors()
 ASSERT no_source_target_range_pose_path_contact_or_constraint_is_invented()
 ASSERT completed_outputs_are_preserved_and_corrections_are_derived_outputs()
 ASSERT failed_canceled_or_fallback_results_are_reported_as_returned()
+
+## Root path and path-angle constraints / Root 路径统一采样
+
+`root_path` 与 `path_begin_angle_degrees/path_end_angle_degrees` 使用同一条
+稀疏 Root2D 约束管线。两者的区别仅在路径采样对象：
+
+```pseudo
+sample_frames = union(
+    clip_start_frame,
+    clip_end_frame,
+    frames_already_containing_root2d_or_fullbody_constraints
+)
+
+if ROOT_PATH:
+    path_samples = sample_animationclip_root_trajectory(root_path.source_clip)
+if PATH_ANGLE_OVERRIDE:
+    first_pass_clip = materialize_first_pass_motion_as_transient_animationclip()
+    path_samples = sample_animationclip_root_trajectory_with_angles(
+        first_pass_clip,
+        path_begin_angle_degrees,
+        path_end_angle_degrees
+    )
+
+emit_one_sparse_root2d_constraint(path_samples, sample_frames)
+```
+
+路径约束默认只在起点、终点和当前 Clip 已有约束帧采样；固定 heading
+覆盖是独立选项，只有显式启用时才可按其采样间隔增加帧。不得把路径默认展开为
+每一帧一个 Root2D 约束。路径和姿态均应通过实际 `AnimationClip` 采样。PathAngle
+的第一遍生成结果在最终 Clip 写回前，应先物化为临时 `AnimationClip`（或使用等价
+的 Clip 采样器），然后与 `root_path` 走同一套采样和稀疏约束导出逻辑；不能仅凭
+prompt 推断轨迹数据。
+
+`Root2D` 只覆盖根节点的 XZ 和平面 heading；原动画/FullBody Pose 中的根 Y、高低、
+Pitch 与 Roll 均是运动语义，必须保留，不能由路径约束静默归零或替换。
 
 if evidence_is_static_only():
     LOOP_SEAMLESSNESS       = UNKNOWN
