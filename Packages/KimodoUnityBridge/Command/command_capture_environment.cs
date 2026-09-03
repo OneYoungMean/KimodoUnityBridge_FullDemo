@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using KimodoUnityBridge;
@@ -281,9 +282,23 @@ namespace KimodoUnityBridge.Command
             if (volumeLayerMask != null)
             {
                 volumeLayerMask.SetValue(additionalCameraData, (LayerMask)0);
-                return;
             }
-            additionalCameraDataType.GetProperty("volumeLayerMask")?.SetValue(additionalCameraData, (LayerMask)0);
+            else
+            {
+                additionalCameraDataType.GetProperty("volumeLayerMask")?.SetValue(additionalCameraData, (LayerMask)0);
+            }
+            if (pipelineName.IndexOf("HighDefinition", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                pipelineName.IndexOf("HDRP", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                Type clearColorModeType = additionalCameraDataType.GetNestedType(
+                    "ClearColorMode", BindingFlags.Public | BindingFlags.NonPublic);
+                if (clearColorModeType != null)
+                {
+                    object colorMode = System.Enum.Parse(clearColorModeType, "Color");
+                    additionalCameraDataType.GetField("clearColorMode")?.SetValue(additionalCameraData, colorMode);
+                    additionalCameraDataType.GetProperty("clearColorMode")?.SetValue(additionalCameraData, colorMode);
+                }
+            }
         }
 
         private static TrajectoryScale BuildTrajectoryScale(IReadOnlyList<SubjectPictureData> subjects, bool includeEndEffectors = false)
@@ -595,9 +610,9 @@ namespace KimodoUnityBridge.Command
             bool isBuiltIn = IsBuiltInCapturePipeline();
             foreach (var setup in new[]
             {
-                (position: new Vector3(-4f, 6f, -4f), intensity: isBuiltIn ? .375f : 1.1f),
-                (position: new Vector3(4f, 3f, -2f), intensity: isBuiltIn ? .175f : .55f),
-                (position: new Vector3(0f, 5f, 5f), intensity: isBuiltIn ? .10f : .35f)
+                (position: new Vector3(-4f, 6f, -4f), intensity: isBuiltIn ? 1.125f : 3.3f),
+                (position: new Vector3(4f, 3f, -2f), intensity: isBuiltIn ? .525f : 1.65f),
+                (position: new Vector3(0f, 5f, 5f), intensity: isBuiltIn ? .30f : 1.05f)
             })
             {
                 GameObject lightObject = MoveToAnalysisSessionRoot(
