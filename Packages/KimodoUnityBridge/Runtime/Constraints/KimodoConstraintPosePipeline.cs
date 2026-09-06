@@ -191,7 +191,6 @@ namespace KimodoBridge
             public Vector3 rightFootPosition;
             public Quaternion rightFootRotation;
             public bool applyRoot;
-            public bool rootAfterEffectors;
             public bool rootPlanar;
             public bool rootHeading;
             public Vector3 rootPosition;
@@ -200,10 +199,9 @@ namespace KimodoBridge
 
             public void ProcessRootMotion(AnimationStream stream)
             {
-                if (applyRoot && !rootAfterEffectors && stream.isHumanStream)
-                {
-                    ApplyRoot(stream);
-                }
+                // Root overrides are applied after humanoid IK in ProcessAnimation.
+                // AnimationHumanStream.bodyPosition/bodyRotation written here are
+                // overwritten by the subsequent SolveIK pass.
             }
 
             public void ProcessAnimation(AnimationStream stream)
@@ -214,6 +212,14 @@ namespace KimodoBridge
                 }
 
                 AnimationHumanStream human = stream.AsHuman();
+                // Root and effector values come from the same SampleResult.
+                // Apply the root first so SolveIK consumes the final body pose
+                // and does not receive a second root delta afterward.
+                if (applyRoot)
+                {
+                    ApplyRoot(stream);
+                }
+
                 ApplyGoal(human, AvatarIKGoal.LeftHand, solveLeftHand,
                     leftHandPosition, leftHandRotation);
                 ApplyGoal(human, AvatarIKGoal.RightHand, solveRightHand,
@@ -227,37 +233,36 @@ namespace KimodoBridge
                 {
                     human.SolveIK();
                 }
-
-                if (applyRoot && rootAfterEffectors)
-                {
-                    ApplyRoot(stream);
-                }
             }
 
             private void ApplyRoot(AnimationStream stream)
             {
-                Vector3 position = rootPosition;
-                Quaternion rotation = rootRotation;
+                AnimationHumanStream human = stream.AsHuman();
+                Vector3 currentHipsPosition = hips.GetPosition(stream);
+                Quaternion currentHipsRotation = hips.GetRotation(stream).normalized;
+                Vector3 targetPosition = rootPosition;
+                Quaternion targetRotation = rootRotation.normalized;
                 if (rootPlanar)
                 {
-                    Vector3 currentWorldPosition = hips.GetPosition(stream);
-                    position = KimodoMotionMath.ApplyPlanarPosition(currentWorldPosition, rootPosition);
-                    if (rootHeading)
-                    {
-                        rotation = KimodoMotionMath.ApplyPlanarHeading(hips.GetRotation(stream), rootRotation);
-                    }
-                    else
-                    {
-                        rotation = hips.GetRotation(stream);
-                    }
+                    targetPosition = KimodoMotionMath.ApplyPlanarPosition(
+                        currentHipsPosition,
+                        targetPosition);
+                    targetRotation = rootHeading
+                        ? KimodoMotionMath.ApplyPlanarHeading(currentHipsRotation, targetRotation)
+                        : currentHipsRotation;
                 }
                 else if (!rootHeading)
                 {
-                    rotation = hips.GetRotation(stream);
+                    targetRotation = currentHipsRotation;
                 }
 
-                hips.SetPosition(stream, position);
-                hips.SetRotation(stream, rotation.normalized);
+                float scale = Mathf.Max(1e-6f, human.humanScale);
+                Vector3 deltaPosition = (targetPosition - currentHipsPosition) / scale;
+                Quaternion deltaRotation = rootHeading
+                    ? (targetRotation * Quaternion.Inverse(currentHipsRotation)).normalized
+                    : Quaternion.identity;
+                human.bodyPosition += deltaPosition;
+                human.bodyRotation = (deltaRotation * human.bodyRotation).normalized;
             }
 
             private static void ApplyGoal(
@@ -390,16 +395,25 @@ namespace KimodoBridge
                 return true;
             }
 
-            any |= job.solveLeftHand = KimodoConstraintMask.IsActive(sample, "lefthand");
-            any |= job.solveRightHand = KimodoConstraintMask.IsActive(sample, "righthand");
-            any |= job.solveLeftFoot = KimodoConstraintMask.IsActive(sample, "leftfoot");
-            any |= job.solveRightFoot = KimodoConstraintMask.IsActive(sample, "rightfoot");
+            // Root2D is a root-only constraint. Older/authored samples can
+            // still carry stale effector payloads or masks after their mode
+            // changes, so do not let those values accidentally turn Root2D
+            // into an IK solve. Other modes retain their explicit effector
+            // channel semantics.
+            bool calculateEffectors =
+                KimodoConstraintInternal.NormalizeMode(sample.constraintMode) != "root2d";
+            if (calculateEffectors)
+            {
+                any |= job.solveLeftHand = KimodoConstraintMask.IsActive(sample, "lefthand");
+                any |= job.solveRightHand = KimodoConstraintMask.IsActive(sample, "righthand");
+                any |= job.solveLeftFoot = KimodoConstraintMask.IsActive(sample, "leftfoot");
+                any |= job.solveRightFoot = KimodoConstraintMask.IsActive(sample, "rightfoot");
+            }
 
             if (KimodoConstraintMask.IsActive(sample, "rootposition") &&
                 sample.rootOverride != null)
             {
                 job.applyRoot = true;
-                job.rootAfterEffectors = sample.rootOverrideAfterEffectors;
                 job.rootPlanar = KimodoConstraintInternal.NormalizeMode(sample.constraintMode) == "root2d" ||
                     KimodoConstraintInternal.NormalizeMode(sample.constraintMode) == "mix";
                 job.rootHeading = KimodoConstraintMask.IsActive(sample, "rootheading");
