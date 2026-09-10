@@ -20,8 +20,8 @@ namespace KimodoUnityBridge.Command.Tests
                 "kimodo_help", "kimodo_install_server",
                 "session_get_or_create", "session_get_raw", "session_add", "session_close",
                 "kimodo_generate_animation", "kimodo_get_generation", "kimodo_cancel_generation",
-                "animation_analyze", "animation_compare",
-                "pose_get", "pose_contract", "pose_set_root_transform", "pose_set_muscle",
+                "animation_analyze",
+                "pose_get", "pose_set_root_transform", "pose_set_muscle",
                 "kimodo_record_range", "kimodo_retarget_animation"
             }, names);
         }
@@ -37,6 +37,9 @@ namespace KimodoUnityBridge.Command.Tests
             Assert.That(schema?["properties"]?["clips"]?["minItems"]?.Value<int>(), Is.EqualTo(1));
             Assert.That(schema?["properties"]?["clips"]?["maxItems"]?.Value<int>(), Is.EqualTo(2));
             Assert.That(schema?["properties"]?["level"]?.Value<string>("default"), Is.EqualTo("middle"));
+            JObject definition = json["tools"].Values<JObject>()
+                .Single(value => value.Value<string>("name") == "animation_analyze");
+            Assert.That(definition.Value<string>("description"), Does.Contain("phase_track_version"));
         }
 
         [Test]

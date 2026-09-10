@@ -135,7 +135,7 @@
     },
     {
       "name": "animation_analyze",
-      "description": "Analyze one or two immutable Session clips and render visual evidence synchronously. Each Humanoid clips[] result includes root_trajectory.path plus clip-start-local Root XZ, heading, vertical motion, root pitch/roll samples, distance/speed/heading metrics, source human scale, endpoint_pose_comparison (body muscles plus complete root position/rotation), and motion_profile (loop/path/heading/vertical/tilt evidence plus deferred override decisions); the path is stored on the Pose Cache Track for reuse. Root2D is a planar XZ/heading override and never suppresses sampled Y, pitch, or roll. Mesh-only results omit Humanoid trajectory/contact data. Completed Clips are never modified.",
+      "description": "Analyze one or two immutable Session clips and render visual evidence synchronously. Humanoid results use analysis_schema_version=2-phase-track-v1 and phase_track_version=1-temporal-cluster-v1: contiguous, non-overlapping temporal phase/transition intervals with anchor frames replace uniform keyframe sampling. Use level=-test for one clip and a fixed 20-tile 16:9 contact/keyframe diagnostic using backend keyframes. Results include root_trajectory.path, endpoint_pose_comparison, motion_profile, foot contacts, and phase_track. Mesh-only results return phase_track=NOT_APPLICABLE and omit Humanoid trajectory/contact data. Completed Clips are never modified.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -177,7 +177,8 @@
             "enum": [
               "low",
               "middle",
-              "high"
+              "high",
+              "-test"
             ],
             "default": "middle"
           },
@@ -186,41 +187,14 @@
             "minimum": 64,
             "maximum": 4096,
             "description": "Final picture tile resolution in pixels; accepts 64 through 4096. Rendering uses a 2x supersample and downsamples to this size. Defaults to 512."
+          },
+          "analysis_option": {
+            "type": "object",
+            "description": "Optional backend analysis options. In -test mode keyframe_count defaults to 8 and may be overridden by the caller."
           }
         },
         "required": [
           "clips"
-        ],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "animation_compare",
-      "description": "Compare two animation ranges or transition-like clip ranges without modifying the Session.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "session_id": {
-            "type": "string",
-            "description": "Session id; omitted uses the current Session."
-          },
-          "character": {
-            "type": "string",
-            "description": "Safe character name in the current Session."
-          },
-          "origin": {
-            "type": "object",
-            "description": "Origin animation and half-open frame range."
-          },
-          "target": {
-            "type": "object",
-            "description": "Target animation and half-open frame range."
-          }
-        },
-        "required": [
-          "character",
-          "origin",
-          "target"
         ],
         "additionalProperties": false
       }
@@ -372,7 +346,7 @@
           },
           "analysis_option": {
             "type": "object",
-            "description": "Optional analysis object; set keyframes.enabled=true and keyframes.max_count (or keyframe_count) to control keyframe sampling."
+            "description": "Optional analysis object for phase-track analysis. Legacy uniform keyframe_count/max_count controls are removed; Humanoid phase_track intervals and anchors are produced by the analyzer."
           },
           "path_begin_angle_degrees": {
             "type": "number",
@@ -712,90 +686,6 @@
         },
         "required": [
           "source"
-        ],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "pose_contract",
-      "description": "Align a target External Pose end-effector to an origin External Pose and create a new External Pose slot.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "origin": {
-            "type": "object",
-            "description": "External Pose slot in the current Session.",
-            "additionalProperties": false,
-            "properties": {
-              "track": {
-                "type": "string"
-              },
-              "index": {
-                "type": "integer",
-                "minimum": 0
-              }
-            },
-            "required": [
-              "track",
-              "index"
-            ]
-          },
-          "target": {
-            "type": "object",
-            "description": "External Pose slot in the current Session.",
-            "additionalProperties": false,
-            "properties": {
-              "track": {
-                "type": "string"
-              },
-              "index": {
-                "type": "integer",
-                "minimum": 0
-              }
-            },
-            "required": [
-              "track",
-              "index"
-            ]
-          },
-          "endeffectors": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "left_hand",
-                "right_hand",
-                "left_foot",
-                "right_foot"
-              ]
-            },
-            "description": "End effectors to align."
-          },
-          "components": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "position",
-                "rotation"
-              ]
-            },
-            "description": "Components to align."
-          },
-          "mode": {
-            "type": "string",
-            "enum": [
-              "align_target_root",
-              "least_squares_root_fit"
-            ]
-          }
-        },
-        "required": [
-          "origin",
-          "target",
-          "endeffectors",
-          "components",
-          "mode"
         ],
         "additionalProperties": false
       }

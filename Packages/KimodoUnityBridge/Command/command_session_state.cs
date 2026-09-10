@@ -20,6 +20,7 @@ namespace KimodoUnityBridge.Command
 {
     internal static partial class command_context
     {
+        private const string AnalysisContractVersion = "2-phase-track-v1";
         private const string TimelineDirectorNamePrefix = "Kimodo_CommandSession_";
         internal const int SessionCaptureLayer = 17;
         internal const int ClipSafeZoneFrames = 4;
@@ -975,121 +976,6 @@ namespace KimodoUnityBridge.Command
             throw new InvalidOperationException($"Retarget non-muscle clip '{source.name}' failed: {error}");
         }
 
-        public static string AnimationCompare(string argumentsJson)
-        {
-            return Execute(argumentsJson, arguments =>
-            {
-                TimelineSessionRecord session = RequireTimelineSession(arguments);
-                TimelineCharacterRecord character = ResolveCurrentSessionCharacter(arguments);
-                AnimationRange origin = ResolveAnimationRange(arguments["origin"] as JObject, character, "origin");
-                AnimationRange target = ResolveAnimationRange(arguments["target"] as JObject, character, "target");
-                KimodoMarkerSampleResult originPose = CaptureSampleResult(character, origin.EndFrameExclusive - 1);
-                KimodoMarkerSampleResult targetPose = CaptureSampleResult(character, target.StartFrame);
-                KimodoMotionMath.PoseDelta poseDelta = ComputePoseMotionDelta(originPose, targetPose);
-                var endEffectorDeltas = new JObject();
-                string recommended = "left_foot";
-                float smallest = float.MaxValue;
-                foreach (string endEffector in new[] { "left_hand", "right_hand", "left_foot", "right_foot" })
-                {
-                    KimodoRigidTransform originTransform = GetEndEffector(originPose, endEffector);
-                    KimodoRigidTransform targetTransform = GetEndEffector(targetPose, endEffector);
-                    Vector3 delta = targetTransform.t - originTransform.t;
-                    float distance = delta.magnitude;
-                    if (distance < smallest)
-                    {
-                        smallest = distance;
-                        recommended = endEffector;
-                    }
-                    endEffectorDeltas[endEffector] = new JObject
-                    {
-                        ["position"] = new JArray(delta.x, delta.y, delta.z),
-                        ["distance"] = distance
-                    };
-                }
-                return Ok(new JObject
-                {
-                    ["direct_concat"] = new JObject
-                    {
-                        ["recommended"] = false,
-                        ["reason"] = "Foot-contact comparison is not available in the current QuickServer analysis contract."
-                    },
-                    ["root_delta"] = new JObject
-                    {
-                        ["position"] = new JArray(
-                            poseDelta.RootPositionDelta.x,
-                            poseDelta.RootPositionDelta.y,
-                            poseDelta.RootPositionDelta.z),
-                        ["rotation_euler_degrees"] = new JArray(
-                            poseDelta.RootPitchDeltaDegrees,
-                            poseDelta.RootYawDeltaDegrees,
-                            poseDelta.RootRollDeltaDegrees),
-                        ["rotation_degrees"] = poseDelta.RootRotationDeltaDegrees
-                    },
-                    ["pose_delta"] = new JObject
-                    {
-                        ["mean_muscle_delta"] = poseDelta.MeanBodyMuscleDelta,
-                        ["root_height_delta"] = poseDelta.RootHeightDelta,
-                        ["root_pitch_delta_degrees"] = poseDelta.RootPitchDeltaDegrees,
-                        ["root_roll_delta_degrees"] = poseDelta.RootRollDeltaDegrees
-                    },
-                    ["end_effector_delta"] = endEffectorDeltas,
-                    ["contacts"] = new JObject
-                    {
-                        ["origin"] = new JObject(),
-                        ["target"] = new JObject(),
-                        ["compatible_support"] = false
-                    },
-                    ["trajectory_delta"] = new JObject
-                    {
-                        ["root_position"] = new JArray(
-                            poseDelta.RootPositionDelta.x,
-                            poseDelta.RootPositionDelta.y,
-                            poseDelta.RootPositionDelta.z)
-                    },
-                    ["recommended_contract"] = new JObject
-                    {
-                        ["endeffectors"] = new JArray(recommended),
-                        ["mode"] = "align_target_root"
-                    }
-                });
-            });
-        }
-
-        private static AnimationRange ResolveAnimationRange(JObject value, TimelineCharacterRecord character, string name)
-        {
-            if (value == null) throw new InvalidOperationException($"{name} must be an object.");
-            TimelineAnimationRecord animation = ResolveAnimation(new JObject { ["animation"] = RequiredStringValue(value, "animation") }, character);
-            JArray range = value["range"] as JArray;
-            if (range == null || range.Count != 2 || range[0]?.Type != JTokenType.Integer || range[1]?.Type != JTokenType.Integer)
-            {
-                throw new InvalidOperationException($"{name}.range must be [start_frame,end_frame_exclusive].");
-            }
-            int localStart = range[0].Value<int>();
-            int localEnd = range[1].Value<int>();
-            int duration = animation.TimelineClip != null
-                ? Math.Max(1, Mathf.RoundToInt((float)(animation.TimelineDurationSeconds * SessionFrameRate)))
-                : Math.Max(1, animation.EndFrameExclusive - animation.StartFrame);
-            if (localStart < 0 || localEnd <= localStart || localEnd > duration)
-            {
-                throw new InvalidOperationException($"{name}.range must be within the animation's [0,{duration}) frame range.");
-            }
-            int clipStart = animation.TimelineClip != null
-                ? Mathf.RoundToInt((float)(animation.TimelineStartSeconds * SessionFrameRate))
-                : animation.StartFrame;
-            return new AnimationRange(clipStart + localStart, clipStart + localEnd);
-        }
-
-        private readonly struct AnimationRange
-        {
-            public AnimationRange(int startFrame, int endFrameExclusive)
-            {
-                StartFrame = startFrame;
-                EndFrameExclusive = endFrameExclusive;
-            }
-            public int StartFrame { get; }
-            public int EndFrameExclusive { get; }
-        }
-
         public static string AnimationAnalyze(string argumentsJson)
         {
             return Execute(argumentsJson, arguments =>
@@ -1102,6 +988,10 @@ namespace KimodoUnityBridge.Command
                 }
 
                 string level = NormalizeAnalysisPictureLevel(arguments.Value<string>("level"));
+                if (level == "-test" && requestedClips?.Count != 1)
+                {
+                    throw new InvalidOperationException("-test analysis accepts exactly one clip.");
+                }
                 int pictureResolution = ResolveAnalysisPictureResolution(arguments["resolution"]);
                 JObject requestedAnalysisOptions = null;
                 string requestedAnalysisOptionsJson = ParseAnalysisOptionsJson(arguments);
@@ -1159,15 +1049,13 @@ namespace KimodoUnityBridge.Command
                         }
                         else
                         {
-                            analysis = BuildMeshAnalysis(animation, ResolveAnalysisKeyframeCount(analysisOptions));
+                            analysis = BuildMeshAnalysis(animation);
                             analysisMotionBytes = null;
                         }
-                        analysis["keyframe_count"] = ResolveAnalysisKeyframeCount(analysisOptions);
                         NormalizeAnalysisContract(
                             analysis,
                             startFrame,
-                            endFrame,
-                            ResolveAnalysisKeyframeCount(analysisOptions));
+                            endFrame);
                         if (!IsHumanoidCharacter(character)) analysis["source"] = "mesh_only_pose_sampling";
                         string id = CacheAnalysisResult(
                             session, character, startFrame / SessionFrameRate, endFrame / SessionFrameRate,
@@ -1184,8 +1072,26 @@ namespace KimodoUnityBridge.Command
 
                 JObject pictures = RenderAnalysisPictures(session, subjects, level, pictureResolution);
                 SaveTimelineSession(session);
+                string analysisImagePath = pictures?.Value<string>("image_path") ?? string.Empty;
+                var analysisLog = new JObject
+                {
+                    ["level"] = level,
+                    ["clips"] = new JArray(subjects.Select(subject => new JObject
+                    {
+                        ["role"] = subject.Role,
+                        ["character"] = subject.Character?.Name ?? string.Empty,
+                        ["clip"] = subject.Animation?.Name ?? string.Empty,
+                        ["analysis"] = subject.Record.Analysis?.DeepClone() ?? new JObject()
+                    })),
+                    ["image_path"] = analysisImagePath,
+                    ["image_path_absolute"] = string.IsNullOrWhiteSpace(analysisImagePath)
+                        ? string.Empty
+                        : ProjectRelativePathToAbsolute(analysisImagePath)
+                };
+                Debug.Log("[Kimodo][Analysis] " + analysisLog.ToString(Formatting.None));
                 return Ok(new JObject
                 {
+                    ["analysis_schema_version"] = AnalysisContractVersion,
                     ["level"] = level,
                     ["clips"] = new JArray(subjects.Select(BuildAnimationAnalyzeClipResult)),
                     ["pictures"] = pictures
@@ -1325,8 +1231,15 @@ namespace KimodoUnityBridge.Command
                 ["role"] = subject.Role,
                 ["character"] = subject.Character.Name,
                 ["clip"] = subject.Animation.Name,
+                ["analysis_schema_version"] = AnalysisContractVersion,
                 ["analysis_mode"] = humanoid ? "humanoid" : "mesh",
                 ["keyframes"] = subject.Record.Analysis?["keyframes"]?.DeepClone() ?? new JArray(),
+                ["phase_track_version"] = humanoid
+                    ? subject.Record.Analysis?.Value<string>("phase_track_version") ?? string.Empty
+                    : "NOT_APPLICABLE",
+                ["phase_track"] = humanoid
+                    ? subject.Record.Analysis?["phase_track"]?.DeepClone() ?? new JArray()
+                    : "NOT_APPLICABLE",
                 ["foot_contacts"] = subject.Record.Analysis?["foot_contacts"]?.DeepClone() ?? new JArray()
             };
             if (humanoid)
@@ -1366,7 +1279,7 @@ namespace KimodoUnityBridge.Command
             }
 
             int frameCount = Math.Max(1, endFrameExclusive - startFrame);
-            KimodoMarkerSampleResult[] samples = CaptureSampleResults(character, startFrame, frameCount);
+            KimodoMarkerSampleResult[] samples = CaptureCachedSampleResults(record, character, startFrame, frameCount);
             if (samples.Length == 0 || !TryGetRoot2DWorld(samples[0], out Vector3 startPosition, out Quaternion startRotation))
             {
                 throw new InvalidOperationException(
@@ -1495,8 +1408,9 @@ namespace KimodoUnityBridge.Command
                 return;
             }
 
-            KimodoMarkerSampleResult first = CaptureSampleResult(character, startFrame);
-            KimodoMarkerSampleResult last = CaptureSampleResult(character, endFrameExclusive - 1);
+            KimodoMarkerSampleResult[] endpointSamples = CaptureCachedSampleResults(record, character, startFrame, Math.Max(1, endFrameExclusive - startFrame));
+            KimodoMarkerSampleResult first = endpointSamples[0];
+            KimodoMarkerSampleResult last = endpointSamples[endpointSamples.Length - 1];
             bool valid = first?.sampleData?.IsValid == true && last?.sampleData?.IsValid == true;
             var comparison = new JObject
             {
@@ -1554,6 +1468,7 @@ namespace KimodoUnityBridge.Command
                 ["net_distance_xz"] = netDistance,
                 ["heading_change_degrees"] = headingChange,
                 ["heading_consistent"] = Mathf.Abs(headingChange) <= 8f,
+                ["keyframe_heading_consistent"] = Mathf.Abs(headingChange) <= 8f,
                 ["root_pitch_delta_range_degrees"] = trajectory["root_pitch_delta_range_degrees"]?.DeepClone() ?? new JArray(),
                 ["root_roll_delta_range_degrees"] = trajectory["root_roll_delta_range_degrees"]?.DeepClone() ?? new JArray(),
                 ["should_override_path"] = "defer_to_task_semantics",
@@ -1562,7 +1477,7 @@ namespace KimodoUnityBridge.Command
             WriteJsonAtomically(AnalysisCachePath(session, record.Id), record.ToJson());
         }
 
-        // Shared by animation_compare and automatic analysis endpoint checks.
+        // Shared by automatic analysis endpoint checks.
         // The common math keeps body, root height and root rotation observable.
         private static KimodoMotionMath.PoseDelta ComputePoseMotionDelta(
             KimodoMarkerSampleResult origin,
@@ -1587,9 +1502,9 @@ namespace KimodoUnityBridge.Command
         private static string NormalizeAnalysisPictureLevel(string level)
         {
             string normalized = (level ?? "middle").Trim().ToLowerInvariant();
-            if (normalized != "low" && normalized != "middle" && normalized != "high")
+            if (normalized != "low" && normalized != "middle" && normalized != "high" && normalized != "-test")
             {
-                throw new InvalidOperationException("level must be low, middle, or high.");
+                throw new InvalidOperationException("level must be low, middle, high, or -test.");
             }
             return normalized;
         }
@@ -1612,11 +1527,9 @@ namespace KimodoUnityBridge.Command
         private static void NormalizeAnalysisContract(
             JObject analysis,
             int startFrame,
-            int endFrame,
-            int requestedKeyframeCount)
+            int endFrame)
         {
             analysis ??= new JObject();
-            int keyframeCount = Mathf.Clamp(requestedKeyframeCount, 1, 128);
             var keyframes = new JArray();
             foreach (JObject keyframe in (analysis?["keyframes"] as JArray ?? new JArray()).OfType<JObject>())
             {
@@ -1648,86 +1561,45 @@ namespace KimodoUnityBridge.Command
                     ["duration_frames"] = contact.Value<int?>("duration_frames") ?? 0
                 });
             }
-            analysis.RemoveAll();
-            analysis["keyframes"] = SelectAnalysisKeyframes(keyframes, keyframeCount, Math.Max(1, endFrame - startFrame));
-            analysis["keyframe_count"] = keyframeCount;
+            // Destructive v2 contract: the analyzer owns temporal phase
+            // intervals. Do not re-sample or uniformly select keyframes here.
+            // The renderer later replaces Humanoid anchors with phase anchors.
+            analysis["keyframes"] = keyframes;
             analysis["foot_contacts"] = normalizedContacts;
             analysis["source"] = "quickserver_analysis_only";
         }
 
-        private static JArray SelectAnalysisKeyframes(JArray candidates, int count, int frameCount)
-        {
-            int target = Mathf.Clamp(count, 1, Math.Max(1, frameCount));
-            var scored = candidates.OfType<JObject>()
-                .Select((item, order) => new
-                {
-                    Item = item,
-                    Frame = Mathf.Clamp(item.Value<int?>("frame") ?? 0, 0, frameCount - 1),
-                    Score = item.Value<float?>("saliency") ?? item.Value<float?>("score") ?? 0f,
-                    Order = order
-                })
-                .GroupBy(item => item.Frame)
-                .Select(group => group.OrderByDescending(item => item.Score).ThenBy(item => item.Order).First())
-                .ToList();
-            var selected = new HashSet<int>();
-            for (int segment = 0; segment < target; segment++)
-            {
-                int start = Mathf.FloorToInt(segment * frameCount / (float)target);
-                int end = Mathf.Min(frameCount - 1,
-                    Mathf.FloorToInt((segment + 1) * frameCount / (float)target) - 1);
-                var candidate = scored.Where(item => item.Frame >= start && item.Frame <= end)
-                    .OrderByDescending(item => item.Score)
-                    .ThenBy(item => Mathf.Abs(item.Frame - Mathf.RoundToInt((start + end) * .5f)))
-                    .ThenBy(item => item.Order)
-                    .FirstOrDefault();
-                selected.Add(candidate != null
-                    ? candidate.Frame
-                    : Mathf.RoundToInt((start + end) * .5f));
-            }
-            if (target > 1)
-            {
-                selected.Add(0);
-                selected.Add(frameCount - 1);
-            }
-            return new JArray(selected.OrderBy(frame => frame).Take(target).Select(frame =>
-            {
-                var item = scored.FirstOrDefault(value => value.Frame == frame)?.Item;
-                JObject result = item != null ? (JObject)item.DeepClone() : new JObject();
-                result["frame"] = frame;
-                return result;
-            }));
-        }
-
         private static JObject BuildEffectiveAnalysisOptions(string level, JObject requested)
         {
-            const int defaultKeyframeCount = 8;
             JObject result = requested != null
                 ? (JObject)requested.DeepClone()
                 : new JObject();
-            JObject keyframes = result["keyframes"] as JObject ?? new JObject();
-            int keyframeCount = result.Value<int?>("keyframe_count") ??
-                keyframes.Value<int?>("max_count") ?? defaultKeyframeCount;
-            keyframeCount = Mathf.Clamp(keyframeCount, 1, 128);
-            result["keyframe_count"] = keyframeCount;
-            keyframes["enabled"] = keyframes.Value<bool?>("enabled") ?? true;
-            keyframes["max_count"] = keyframeCount;
-            result["keyframes"] = keyframes;
+            if (level == "-test")
+            {
+                int count = result.Value<int?>("keyframe_count") ?? 8;
+                if (count <= 0) throw new InvalidOperationException("analysis_option.keyframe_count must be a positive integer.");
+                result["keyframe_count"] = count;
+                return result;
+            }
+            // Legacy keyframe_count/max_count are intentionally not read in
+            // the v2 command. The phase tracker is deterministic and owns
+            // temporal segmentation.
+            result.Remove("keyframe_count");
+            if (result["keyframes"] is JObject keyframes)
+            {
+                keyframes.Remove("max_count");
+                keyframes.Remove("enabled");
+                if (!keyframes.HasValues) result.Remove("keyframes");
+            }
             return result;
         }
 
-        private static int ResolveAnalysisKeyframeCount(JObject options)
-        {
-            int count = options?.Value<int?>("keyframe_count") ??
-                (options?["keyframes"] as JObject)?.Value<int?>("max_count") ?? 8;
-            return Mathf.Clamp(count, 1, 128);
-        }
-
-        private static JObject BuildMeshAnalysis(TimelineAnimationRecord animation, int keyframeCount)
+        private static JObject BuildMeshAnalysis(TimelineAnimationRecord animation)
         {
             int frameCount = Math.Max(1, animation?.EndFrameExclusive > animation?.StartFrame
                 ? animation.EndFrameExclusive - animation.StartFrame
                 : Mathf.Max(1, Mathf.RoundToInt((float)((animation?.TimelineDurationSeconds ?? 0.0) * SessionFrameRate))));
-            int count = Math.Min(Mathf.Max(1, keyframeCount), frameCount);
+            int count = Math.Min(2, frameCount);
             var keyframes = new JArray();
             for (int index = 0; index < count; index++)
             {
@@ -1743,6 +1615,8 @@ namespace KimodoUnityBridge.Command
             {
                 ["keyframes"] = keyframes,
                 ["foot_contacts"] = new JArray(),
+                ["phase_track_version"] = "NOT_APPLICABLE",
+                ["phase_track"] = "NOT_APPLICABLE",
                 ["source"] = "mesh_only_pose_sampling"
             };
         }

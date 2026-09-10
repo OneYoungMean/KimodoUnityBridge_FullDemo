@@ -27,11 +27,9 @@ namespace KimodoUnityBridge.Command
         public const string SessionCloseCommand = "session_close";
         public const string SessionAddCommand = "session_add";
         public const string AnimationAnalyzeCommand = "animation_analyze";
-        public const string AnimationCompareCommand = "animation_compare";
         public const string RecordRangeCommand = "kimodo_record_range";
         public const string RetargetAnimationCommand = "kimodo_retarget_animation";
         public const string PoseGetCommand = "pose_get";
-        public const string PoseContractCommand = "pose_contract";
         public const string PoseSetRootTransformCommand = "pose_set_root_transform";
         public const string PoseSetMuscleCommand = "pose_set_muscle";
         public const string GetGenerationCommand = "kimodo_get_generation";
@@ -99,11 +97,12 @@ namespace KimodoUnityBridge.Command
                              Optional("animator", "string", "Scene Animator name/path for kind=animator."),
                              Optional("ignore_warning", "boolean", "Import all transition variants when the projected transition count exceeds 128; defaults to false."))),
                     CommandDefinition(AnimationAnalyzeCommand,
-                        "Analyze one or two immutable Session clips and render visual evidence synchronously. Each Humanoid clips[] result includes root_trajectory.path plus clip-start-local Root XZ, heading, vertical motion, root pitch/roll samples, distance/speed/heading metrics, source human scale, endpoint_pose_comparison (body muscles plus complete root position/rotation), and motion_profile (loop/path/heading/vertical/tilt evidence plus deferred override decisions); the path is stored on the Pose Cache Track for reuse. Root2D is a planar XZ/heading override and never suppresses sampled Y, pitch, or roll. Mesh-only results omit Humanoid trajectory/contact data. Completed Clips are never modified.",
+                        "Analyze one or two immutable Session clips and render visual evidence synchronously. Humanoid results use analysis_schema_version=2-phase-track-v1 and phase_track_version=1-temporal-cluster-v1: contiguous, non-overlapping temporal phase/transition intervals with anchor frames replace uniform keyframe sampling. Use level=-test for one clip and a fixed 20-tile 16:9 contact/keyframe diagnostic using backend keyframes. Results include root_trajectory.path, endpoint_pose_comparison, motion_profile, foot contacts, and phase_track. Mesh-only results return phase_track=NOT_APPLICABLE and omit Humanoid trajectory/contact data. Completed Clips are never modified.",
                         Properties(
                             Optional("session_id", "string", "Session id; omitted uses the current Session."),
                             RequiredAnalysisClips(),
-                             OptionalEnumWithDefault("level", "middle", "low", "middle", "high"),
+                            OptionalEnumWithDefault("level", "middle", "low", "middle", "high", "-test"),
+                            Optional("analysis_option", "object", "Optional backend analysis options. In -test mode keyframe_count defaults to 8 and may be overridden by the caller."),
                             new PropertyDefinition("resolution", new JObject
                             {
                                 ["type"] = "integer",
@@ -111,13 +110,6 @@ namespace KimodoUnityBridge.Command
                                 ["maximum"] = 4096,
                                 ["description"] = "Final picture tile resolution in pixels; accepts 64 through 4096. Rendering uses a 2x supersample and downsamples to this size. Defaults to 512."
                             }, false))),
-                    CommandDefinition(AnimationCompareCommand,
-                        "Compare two animation ranges or transition-like clip ranges without modifying the Session.",
-                        Properties(
-                            Optional("session_id", "string", "Session id; omitted uses the current Session."),
-                            Required("character", "string", "Safe character name in the current Session."),
-                            Required("origin", "object", "Origin animation and half-open frame range."),
-                            Required("target", "object", "Target animation and half-open frame range."))),
                     CommandDefinition(RecordRangeCommand,
                         "Record a Session time range into an AnimationClip and append it to the source character.",
                         Properties(
@@ -152,7 +144,7 @@ namespace KimodoUnityBridge.Command
                             Enum("output_mode", "humanoid_muscle", "character_bone", "model_bone"),
                             Optional("output_folder", "string", "Unity folder under Assets; defaults to Assets/KimodoGeneratedClips."),
                             Optional("name", "string", "Requested safe animation name; defaults to the prompt."),
-                            Optional("analysis_option", "object", "Optional analysis object; set keyframes.enabled=true and keyframes.max_count (or keyframe_count) to control keyframe sampling."),
+                            Optional("analysis_option", "object", "Optional analysis object for the phase-track analyzer. Legacy uniform keyframe-count controls are removed; Humanoid output always uses phase_track_version and continuous phase_track intervals."),
                             Optional("path_begin_angle_degrees", "number", "Absolute Unity yaw for the Root2D path start; providing either path angle enables same-seed Path Override, and an omitted peer defaults to zero."),
                             Optional("path_end_angle_degrees", "number", "Absolute Unity yaw for the Root2D path end; providing either path angle enables same-seed Path Override, and an omitted peer defaults to zero."),
                             Optional("override_heading_degrees", "number", "Regenerate with the same seed and apply this absolute Unity yaw to Root2D constraints every 30 frames; positive turns right and zero faces Unity forward."),
@@ -162,14 +154,6 @@ namespace KimodoUnityBridge.Command
                         Properties(
                             RequiredPoseSource("source"),
                             Optional("full_data", "boolean", "Return all 49 muscles and TQ channels; defaults to false."))),
-                    CommandDefinition(PoseContractCommand,
-                        "Align a target External Pose end-effector to an origin External Pose and create a new External Pose slot.",
-                        Properties(
-                            RequiredPoseReference("origin"),
-                            RequiredPoseReference("target"),
-                            RequiredEnumArray("endeffectors", "End effectors to align.", "left_hand", "right_hand", "left_foot", "right_foot"),
-                            RequiredEnumArray("components", "Components to align.", "position", "rotation"),
-                            RequiredEnum("mode", "align_target_root", "least_squares_root_fit"))),
                     CommandDefinition(PoseSetRootTransformCommand,
                         "Modify the root transform of an External Pose slot.",
                         Properties(
@@ -274,7 +258,7 @@ namespace KimodoUnityBridge.Command
                         Route("add a character, clip, or Animator", SessionAddCommand),
                         Route("generate motion", GenerateAnimationCommand, "then " + GetGenerationCommand),
                         Route("analyze and render motion", AnimationAnalyzeCommand, "returns one composite picture and self-describing tiles"),
-                        Route("materialize or edit a pose", PoseGetCommand, "then pose_set_root_transform / pose_set_muscle / pose_contract"),
+                        Route("materialize or edit a pose", PoseGetCommand, "then pose_set_root_transform / pose_set_muscle"),
                         Route("obtain a reusable root trajectory", AnimationAnalyzeCommand, "then reference root_trajectory.path from a generation root_path constraint"),
                         Route("record or retarget", RecordRangeCommand, "or " + RetargetAnimationCommand)
                     },

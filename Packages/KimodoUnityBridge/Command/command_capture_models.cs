@@ -129,7 +129,7 @@ namespace KimodoUnityBridge.Command
                 Bounds = bounds;
                 TestBounds = testBounds;
                 KeyframeCount = Mathf.Max(1,
-                    subject.Record.Analysis?.Value<int?>("keyframe_count") ?? 8);
+                    (subject.Record.Analysis?["keyframes"] as JArray)?.Count ?? 1);
                 KeyFrameSet = new HashSet<int>((subject.Record.Analysis?["keyframes"] as JArray ?? new JArray())
                     .OfType<JObject>()
                     .Select(item => Mathf.Clamp(item.Value<int?>("frame") ?? 0, 0, Math.Max(0, pelvis.Length - 1))));
@@ -152,8 +152,20 @@ namespace KimodoUnityBridge.Command
             public Bounds LastBounds { get; }
             public Bounds Bounds { get; }
             public Bounds TestBounds { get; }
-            public int KeyframeCount { get; }
+            public int KeyframeCount { get; private set; }
             public HashSet<int> KeyFrameSet { get; }
+
+            public void RefreshKeyframes()
+            {
+                JArray keyframes = Subject.Record.Analysis?["keyframes"] as JArray ?? new JArray();
+                KeyframeCount = Mathf.Max(1, keyframes.Count);
+                KeyFrameSet.Clear();
+                foreach (JObject item in keyframes.OfType<JObject>())
+                {
+                    KeyFrameSet.Add(Mathf.Clamp(item.Value<int?>("frame") ?? 0, 0,
+                        Math.Max(0, Pelvis.Length - 1)));
+                }
+            }
 
             public KimodoMarkerSampleResult GetSample(int localFrame)
             {
@@ -185,6 +197,8 @@ namespace KimodoUnityBridge.Command
             public HashSet<int> PrimaryFrames { get; private set; } = new HashSet<int>();
             public HashSet<int> StationaryBoostFrames { get; private set; } = new HashSet<int>();
             public bool ShowTestTrajectories { get; private set; }
+            public bool IsEmpty { get; private set; }
+            public string TestTileType { get; private set; }
 
             public static PictureTile Ghost(SubjectPictureData subject, string view, Vector3 direction, bool orthographic)
             {
@@ -270,6 +284,92 @@ namespace KimodoUnityBridge.Command
                     Orthographic = true,
                     Frame = clampedFrame,
                     PoseKind = poseKind
+                };
+            }
+
+            public static PictureTile TestOverview(SubjectPictureData subject, string type, Vector3 direction)
+            {
+                var description = new JObject
+                {
+                    ["presentation"] = type,
+                    ["test"] = true
+                };
+                return new PictureTile(subject, "test_overview_" + type, description)
+                {
+                    Direction = direction,
+                    Orthographic = true,
+                    TestTileType = type,
+                    ShowTestTrajectories = type == "3d_ghost_track"
+                };
+            }
+
+            public static PictureTile TestEmptyOverview(SubjectPictureData subject, string slot)
+            {
+                return new PictureTile(subject, "test_empty_overview", new JObject
+                {
+                    ["presentation"] = "empty_overview",
+                    ["slot"] = slot,
+                    ["test"] = true
+                }) { IsEmpty = true, TestTileType = "overview" };
+            }
+
+            public static PictureTile TestSelectedOverview(
+                SubjectPictureData subject,
+                string type,
+                IEnumerable<int> frames,
+                Vector3 direction)
+            {
+                var ordered = (frames ?? Enumerable.Empty<int>())
+                    .Distinct().OrderBy(frame => frame).ToList();
+                HashSet<int> primary = new HashSet<int>(ordered);
+                HashSet<int> promoted;
+                List<int> sampled = BuildTestSampleFrames(subject, ordered, true, out promoted);
+                return new PictureTile(subject, "test_selected_" + type, new JObject
+                {
+                    ["presentation"] = type,
+                    ["frames"] = new JArray(ordered),
+                    ["sample_frames"] = new JArray(sampled.Where(frame => !primary.Contains(frame))),
+                    ["test"] = true
+                })
+                {
+                    Direction = direction,
+                    Orthographic = true,
+                    TestTileType = type,
+                    TrajectoryFrames = sampled,
+                    PrimaryFrames = primary,
+                    StationaryBoostFrames = promoted,
+                    ShowTestTrajectories = type == "3d_ghost_track"
+                };
+            }
+
+            public static PictureTile TestPoseSlot(SubjectPictureData subject, int? frame, string row, int slot)
+            {
+                if (!frame.HasValue)
+                {
+                    return new PictureTile(subject, "test_empty_pose", new JObject
+                    {
+                        ["presentation"] = "empty_pose",
+                        ["row"] = row,
+                        ["slot"] = slot,
+                        ["test"] = true
+                    }) { IsEmpty = true, TestTileType = row };
+                }
+
+                int clamped = Mathf.Clamp(frame.Value, 0, Math.Max(0, subject.Pelvis.Length - 1));
+                return new PictureTile(subject, "test_pose", new JObject
+                {
+                    ["presentation"] = row == "key_pose" ? "key_pose" : "step_pose",
+                    ["frame"] = clamped,
+                    ["row"] = row,
+                    ["slot"] = slot,
+                    ["test"] = true
+                })
+                {
+                    Direction = new Vector3(1f, .75f, -1f),
+                    Orthographic = true,
+                    Frame = clamped,
+                    PoseKind = row,
+                    TestTileType = row
                 };
             }
 
@@ -375,7 +475,15 @@ namespace KimodoUnityBridge.Command
                             : material.HasProperty("_TintColor")
                                 ? material.GetColor("_TintColor")
                                 : Color.white;
-                    Color blended = Color.Lerp(source, tint, .9f);
+                    // Apply tint as a colour multiplier so a white tint keeps
+                    // the source palette intact. The previous near-total lerp
+                    // washed every source material to white, especially when a
+                    // fallback shader exposed a default white _Color.
+                    Color blended = new Color(
+                        source.r * tint.r,
+                        source.g * tint.g,
+                        source.b * tint.b,
+                        source.a);
                     if (material.HasProperty("_BaseColor")) block.SetColor("_BaseColor", blended);
                     else if (material.HasProperty("_Color")) block.SetColor("_Color", blended);
                     else if (material.HasProperty("_TintColor")) block.SetColor("_TintColor", blended);
