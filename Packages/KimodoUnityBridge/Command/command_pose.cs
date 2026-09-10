@@ -93,11 +93,11 @@ namespace KimodoUnityBridge.Command
             sample.validMask ??= new KimodoConstraintMask();
             if (root["position"] is JArray position)
             {
-                sample.root2DOverride.t = ReadVector3(position, "root.position");
+                sample.rootOverride.t = ReadVector3(position, "root.position");
             }
             if (root["rotation"] is JArray rotation)
             {
-                sample.root2DOverride.q = ReadQuaternion(rotation, "root.rotation");
+                sample.rootOverride.q = ReadQuaternion(rotation, "root.rotation");
             }
             if (root["position"] == null && root["rotation"] == null)
             {
@@ -344,7 +344,7 @@ namespace KimodoUnityBridge.Command
                     cache.root.transform.SetPositionAndRotation(characterRoot.position, characterRoot.rotation);
                 }
 
-                float sourceTime = (float)KimodoMarkerSamplingUtility.ResolveAnimationSourceTime(
+                double sourceTime = KimodoMarkerSamplingUtility.ResolveAnimationSourceTime(
                     timelineClip,
                     sampleTime);
                 if (!KimodoRetargetClipSamplingUtility.TryEvaluateClipSamplingContext(
@@ -379,7 +379,12 @@ namespace KimodoUnityBridge.Command
             var result = new KimodoMarkerSampleResult
             {
                 sampleData = sample?.Clone() ?? new MuscleSample(),
-                enableMask = new KimodoConstraintMask(),
+                // A captured sample is a complete evaluated pose, not a user
+                // constraint selection. The preview pipeline gates pose
+                // application on active channels, so a captured sample must
+                // advertise its full-body payload; channel validity stays
+                // owned by validMask and CaptureWorldTargets below.
+                enableMask = hasSampleData ? KimodoConstraintMask.ForType("fullbody") : new KimodoConstraintMask(),
                 validMask = new KimodoConstraintMask
                 {
                     muscle = hasSampleData,
@@ -511,7 +516,7 @@ namespace KimodoUnityBridge.Command
                 for (int index = 0; index < frameCount; index++)
                 {
                     double timelineTime = (startFrame + index) / SessionFrameRate;
-                    float sourceTime = (float)KimodoMarkerSamplingUtility.ResolveAnimationSourceTime(timelineClip, timelineTime);
+                    double sourceTime = KimodoMarkerSamplingUtility.ResolveAnimationSourceTime(timelineClip, timelineTime);
                     if (!KimodoRetargetClipSamplingUtility.TryEvaluateClipSamplingContext(
                             session.Context,
                             sourceTime,
@@ -610,8 +615,7 @@ namespace KimodoUnityBridge.Command
                 var result = new JObject
                 {
                     ["frame"] = knot.frame,
-                    ["position"] = new JArray(knot.position.x, knot.position.y),
-                    ["delta_y"] = knot.deltaY
+                    ["position"] = new JArray(knot.position.x, knot.position.y)
                 };
                 if (knot.hasHeading) result["heading"] = new JArray(knot.heading.x, knot.heading.y);
                 if (knot.hasTangentIn) result["tangent_in"] = new JArray(knot.tangentIn.x, knot.tangentIn.y);

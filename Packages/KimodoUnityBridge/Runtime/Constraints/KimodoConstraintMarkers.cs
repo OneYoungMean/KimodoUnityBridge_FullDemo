@@ -47,7 +47,8 @@ namespace KimodoBridge
     {
         Constraint = 0,
         External = 1,
-        ExternalPath = 2
+        ExternalPath = 2,
+        Analysis = 3
     }
 
     [Serializable]
@@ -57,7 +58,6 @@ namespace KimodoBridge
         public Vector2 position;
         public bool hasHeading;
         public Vector2 heading;
-        public float deltaY;
         public bool hasTangentIn;
         public Vector2 tangentIn;
         public bool hasTangentOut;
@@ -69,7 +69,6 @@ namespace KimodoBridge
             position = position,
             hasHeading = hasHeading,
             heading = heading,
-            deltaY = deltaY,
             hasTangentIn = hasTangentIn,
             tangentIn = tangentIn,
             hasTangentOut = hasTangentOut,
@@ -277,23 +276,17 @@ namespace KimodoBridge
         // runtime APIs convert world goals once to neutral model space.
         [UnityEngine.Serialization.FormerlySerializedAs("worldIkTargets")]
         public KimodoConstraintEffectors effectors = new KimodoConstraintEffectors();
-        // Complete hips override in the same explicit-target space. Root2D X/Z
-        // and heading projection is applied only at protocol export.
-        [UnityEngine.Serialization.FormerlySerializedAs("root2DOverride")]
+        // Complete hips override in the same explicit-target space. For a
+        // root2d/mix constraint, consumers project only X/Z and heading;
+        // sampled root Y, pitch and roll remain motion channels.
         public KimodoRigidTransform rootOverride = KimodoRigidTransform.Identity;
 
-        // Local pose-pipeline option. It is intentionally not a bridge
-        // protocol field: after IK, reapply this root target as the final
-        // skeleton placement.
-        public bool rootOverrideAfterEffectors;
+        // Preview/editor option. It is intentionally not a bridge protocol
+        // field: dragging the root handle carries enabled effector targets
+        // by the same rigid transform delta.
+        [UnityEngine.Serialization.FormerlySerializedAs("rootOverrideAfterEffectors")]
+        public bool carryEffectorsWithRoot;
 
-        // Source compatibility for older editor/test callers. This alias is
-        // not a second serialized value.
-        public KimodoRigidTransform root2DOverride
-        {
-            get => rootOverride;
-            set => rootOverride = value;
-        }
         // One mode is the only persisted constraint semantic. Wire-family
         // selection is centralized in KimodoConstraintInternal.
         public string constraintMode = "constraint";
@@ -308,7 +301,7 @@ namespace KimodoBridge
             creationOrder = creationOrder,
             effectors = effectors?.Clone() ?? new KimodoConstraintEffectors(),
             rootOverride = rootOverride?.Clone() ?? KimodoRigidTransform.Identity,
-            rootOverrideAfterEffectors = rootOverrideAfterEffectors,
+            carryEffectorsWithRoot = carryEffectorsWithRoot,
             constraintMode = this.constraintMode,
             sampleTime = sampleTime
         };

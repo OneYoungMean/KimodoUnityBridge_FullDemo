@@ -10,7 +10,7 @@ namespace KimodoBridge.Editor
 {
     internal static class KimodoConstraintMarkerPosePreview
     {
-public static bool TryBuildRenderContextForMarker(KimodoConstraintMarker marker, out PoseCacheRenderContext context, out string error)
+public static bool TryBuildRenderContextForMarker(KimodoConstraintMarker marker, out ConstraintPreviewContext context, out string error)
         {
             context = default;
             error = string.Empty;
@@ -58,7 +58,7 @@ public static bool TryBuildRenderContextForMarker(KimodoConstraintMarker marker,
                 : ((referenceClip?.asset as UnityEngine.Object) != null
                     ? KimodoUnityObjectIdUtility.IdHash(referenceClip.asset as UnityEngine.Object)
                     : KimodoUnityObjectIdUtility.IdHash(track));
-            context = new PoseCacheRenderContext(
+            context = new ConstraintPreviewContext(
                 clipContextId,
                 KimodoUnityObjectIdUtility.IdHash(animator),
                 KimodoUnityObjectIdUtility.IdHash(track),
@@ -70,7 +70,7 @@ public static bool TryBuildRenderContextForMarker(KimodoConstraintMarker marker,
 
         internal static bool TryRenderMarkerPreview(
             KimodoConstraintMarker marker,
-            PoseCacheRenderContext context,
+            ConstraintPreviewContext context,
             out string error)
         {
             return TryRenderMarkerPreview(marker, context, out _, out error);
@@ -78,7 +78,7 @@ public static bool TryBuildRenderContextForMarker(KimodoConstraintMarker marker,
 
         internal static bool TryBuildMarkerPreviewRequest(
             KimodoConstraintMarker marker,
-            PoseCacheRenderContext context,
+            ConstraintPreviewContext context,
             string entryId,
             Color previewColor,
             bool handlesEnabled,
@@ -101,12 +101,18 @@ public static bool TryBuildRenderContextForMarker(KimodoConstraintMarker marker,
                 SampleData = normalizedSample,
                 ConstraintType = marker.ConstraintType,
                 ConstraintMode = marker.ConstraintMode,
-                PreviewSemantic = marker.ConstraintMode == KimodoConstraintMode.Root2D
-                    ? ConstraintPreviewSemantic.BindPosePreview
-                    : ConstraintPreviewSemantic.ExistingFullBodyPreview,
-                HandlesEnabled = handlesEnabled,
+                // Root2D uses the same FK/root pipeline as FullBody, while
+                // its effector stage is explicitly disabled. Its only
+                // presentation difference is the single root handle.
+                PreviewSemantic = ConstraintPreviewSemantic.ExistingFullBodyPreview,
+                HandlesEnabled = handlesEnabled && !marker.IsAnalysis,
                 HighlightJoints = KimodoMarkerSamplingUtility.BuildHighlightJointsForMarker(marker, context.ModelName),
-                PreviewColor = previewColor,
+                PreviewColor = marker is KimodoAnalysisKeyframeMarker analysisMarker
+                    ? analysisMarker.color
+                    : previewColor == Color.white
+                        ? KimodoAnalysisPreviewStyle.ConstraintColor
+                        : previewColor,
+                ColorMode = marker.IsAnalysis ? PreviewColorMode.MultiplyTint : PreviewColorMode.Override,
                 Visible = true,
                 OnSampleChanged = changedSample =>
                 {
@@ -142,7 +148,7 @@ public static bool TryBuildRenderContextForMarker(KimodoConstraintMarker marker,
 
         private static bool TryRenderMarkerPreview(
             KimodoConstraintMarker marker,
-            PoseCacheRenderContext context,
+            ConstraintPreviewContext context,
             out KimodoMarkerSampleResult sample,
             out string error)
         {
@@ -160,7 +166,7 @@ public static bool TryBuildRenderContextForMarker(KimodoConstraintMarker marker,
                 return false;
             }
             sample = item.SampleData;
-            if (!KimodoConstraintPoseCache.RenderConstraintPreview(context, item, out error))
+            if (!KimodoConstraintPreviewRenderer.RenderConstraintPreview(context, item, out error))
             {
                 return false;
             }

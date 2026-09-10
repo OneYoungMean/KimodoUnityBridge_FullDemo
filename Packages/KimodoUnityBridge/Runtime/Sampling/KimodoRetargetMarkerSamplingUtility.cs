@@ -72,9 +72,12 @@ namespace KimodoBridge
         }
 
         /// <summary>
-        /// Captures the scene-facing targets from the rebuilt skeleton. The
-        /// caller establishes whether that Transform space is world or track;
-        /// values are never HumanPose body-space values.
+        /// Captures complete scene-facing targets from the rebuilt skeleton.
+        /// The caller establishes whether that Transform space is world or track.
+        /// Root2D is an application mode; this method always retains the
+        /// complete Hips position and rotation in rootOverride.
+        /// Effector positions follow that Transform space; effector rotations
+        /// are always bind-relative IK-goal deltas.
         /// </summary>
         internal static void CaptureWorldTargets(
             RetargetSkeleton cache,
@@ -128,6 +131,7 @@ namespace KimodoBridge
             if (valid)
             {
                 target.t = position;
+                // Constraint effector rotations remain bind-relative world deltas.
                 target.q = ResolveEffectorTransportRotation(cache, bone, rotation);
             }
             else
@@ -154,8 +158,9 @@ namespace KimodoBridge
                 return currentWorld;
             }
 
-            // This world-space delta is the final rotation sent directly to
-            // AnimationHumanStream.SetGoalRotation for every effector.
+            // Store the world-space change relative to the bind pose. The
+            // solver restores the absolute world rotation before applying the
+            // Humanoid IK goal conversion.
             return currentWorld * Quaternion.Inverse(initialWorld);
         }
 

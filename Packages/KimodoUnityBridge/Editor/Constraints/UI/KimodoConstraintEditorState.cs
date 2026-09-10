@@ -44,15 +44,15 @@ namespace KimodoBridge.Editor
             switch ((KimodoConstraintMode)mode.enumValueIndex)
             {
                 case KimodoConstraintMode.Root2D:
-                    DrawRoot2D(so);
+                    DrawRootOverride(so);
                     break;
                 case KimodoConstraintMode.Effector:
-                    DrawRoot2D(so);
+                    DrawRootOverride(so);
                     DrawEffectors(so, "sampleData");
                     break;
                 default:
                     DrawFullBody(so);
-                    DrawRoot2D(so);
+                    DrawRootOverride(so);
                     DrawEffectorPanels(so, "sampleData", "Effectors", IsAutoSample(so), showEnable: false);
                     break;
             }
@@ -67,19 +67,19 @@ namespace KimodoBridge.Editor
             EditorGUILayout.EndVertical();
         }
 
-        private static void DrawRoot2D(SerializedObject so)
+        private static void DrawRootOverride(SerializedObject so)
         {
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             SerializedProperty allowHeading = so.FindProperty("sampleData.enableMask.rootHeading");
             SerializedProperty positionEnabled = so.FindProperty("sampleData.enableMask.rootPosition");
             SerializedProperty positionValid = so.FindProperty("sampleData.validMask.rootPosition");
             SerializedProperty headingValid = so.FindProperty("sampleData.validMask.rootHeading");
-            SerializedProperty rootOverrideAfterEffectors = so.FindProperty("sampleData.rootOverrideAfterEffectors");
+            SerializedProperty carryEffectorsWithRoot = so.FindProperty("sampleData.carryEffectorsWithRoot");
             using (new EditorGUI.DisabledScope(IsAutoSample(so)))
             {
                 if (DrawTransform(
                         so.FindProperty("sampleData.rootOverride"),
-                        "Root Position / Rotation"))
+                        "Root Override (World Transform)"))
                 {
                     if (positionEnabled != null) positionEnabled.boolValue = true;
                     if (positionValid != null) positionValid.boolValue = true;
@@ -99,13 +99,13 @@ namespace KimodoBridge.Editor
                         if (headingValid != null) headingValid.boolValue = true;
                     }
                 }
-                if (rootOverrideAfterEffectors != null)
+                if (carryEffectorsWithRoot != null)
                 {
                     EditorGUILayout.PropertyField(
-                        rootOverrideAfterEffectors,
+                        carryEffectorsWithRoot,
                         new GUIContent(
-                            "Root Override After Effectors",
-                            "Apply Root2D after local effector IK. The final root target wins, so effectors move with it."));
+                            "Carry Effectors With Root",
+                            "When dragging the root handle, move enabled hand and foot effectors by the same root transform delta."));
                 }
             }
             EditorGUILayout.EndVertical();
