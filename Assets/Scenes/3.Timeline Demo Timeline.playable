@@ -12,7 +12,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 87e740c332e138f438368ba13793dbb7, type: 3}
   m_Name: Kimodo Constraint Marker
   m_EditorClassIdentifier: 
-  m_Time: 1
+  m_Time: 10.966699600219727
+  frame: 0
+  eventKind: 
+  message: 
+  color: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  sourceClipKey: 
+  sourceRole: 
   constraintEnabled: 1
   autoSample: 0
   constraintMode: 2
@@ -20,76 +26,76 @@ MonoBehaviour:
   sampleData:
     sampleData:
       data:
-      - -0.013188979
-      - 0.021552105
-      - -0.016724076
-      - 0.11836234
-      - 0.00809507
-      - -0.069802366
-      - -0.61592406
-      - -0.053335294
-      - -0.064918175
-      - -0.1233525
-      - 0.13639176
-      - -0.058281057
-      - 0.43973452
-      - -0.05187207
-      - 0.27183712
-      - 0.4498782
-      - 0.09534191
-      - -0.08562118
-      - 0.7636617
-      - 0.05128645
-      - -0.23492248
-      - -0.333369
-      - 0.0017589609
-      - 0.46880278
-      - 0.024163028
-      - -0.0037023604
-      - 0.75685364
-      - 0.1981869
-      - -0.24945164
-      - -0.4097654
-      - -0.0006108237
-      - -0.60199356
-      - -0.09108209
-      - -0.5607753
-      - 0.2636262
-      - -0.017549403
-      - 0.656589
-      - -0.029681202
-      - -0.05077043
-      - 0.030293535
-      - -0.5101791
-      - -1.130606
-      - 0.014995066
-      - -0.069880165
-      - 0.13221914
-      - 0.00087939965
-      - -0.7407028
-      - 0.3184943
-      - 0.50955236
-      - 0.0045416555
-      - 0.98073274
-      - 0.101392776
-      - 0.060786188
-      - -0.18678446
-      - 0.0013563023
-      - 0.9805177
-      - -0.15638329
-      - -0.97495747
-      - 0.0015216814
-      - -0.5480445
-      - 0.49373102
-      - -0.4896707
-      - 0.46486524
-      - 0.07642616
-      - -0.9768724
-      - -0.043024626
-      - -0.59699136
-      - 0.59172976
-      - -0.42627618
-      - 0.33428416
+      - 0.04210104
+      - -0.04958718
+      - -0.012019139
+      - 0.13671042
+      - -0.0108409915
+      - -0.086255684
+      - -0.6199197
+      - -0.29571748
+      - -0.017544946
+      - -0.027844097
+      - 0.24997537
+      - -0.05653381
+      - 0.20994015
+      - -0.08554694
+      - 0.253247
+      - 0.45263115
+      - -0.005437502
+      - -0.21157499
+      - 0.7578691
+      - -0.0359385
+      - -0.25075614
+      - -0.09915096
+      - 0.0016658485
+      - 0.51456136
+      - 0.063699275
+      - 0.047028843
+      - 0.77407414
+      - 0.19998898
+      - -0.28972268
+      - -0.26929012
+      - -0.005981953
+      - -0.7037701
+      - -0.23510174
+      - -0.5231834
+      - 0.30656886
+      - 0.03438155
+      - 0.6652815
+      - -0.12645823
+      - -0.07486893
+      - -0.010825004
+      - -0.17092463
+      - -0.8748436
+      - -0.19058287
+      - -0.17759609
+      - 0.29652107
+      - 0.20902145
+      - -0.7678974
+      - 0.4381336
+      - 0.13045539
+      - 1.0669141
+      - 0.9798448
+      - 0.07212022
+      - 0.038832806
+      - -0.16614689
+      - 0.019525345
+      - 0.98514265
+      - -0.16574685
+      - -0.96533513
+      - -0.033799935
+      - -0.5762134
+      - 0.5836121
+      - -0.42383665
+      - 0.38436657
+      - 0.042704288
+      - -0.9799129
+      - -0.09128177
+      - -0.60365874
+      - 0.5941308
+      - -0.3977933
+      - 0.35265467
     enableMask:
       muscle: 1
       rootTQ: 1
@@ -116,23 +122,23 @@ MonoBehaviour:
     creationOrder: 0
     effectors:
       leftHand:
-        position: {x: 0.86006224, y: 0.88081247, z: 0.024362527}
-        rotation: {x: -0.01802931, y: 0.06397643, z: 0.6845948, w: 0.725887}
+        position: {x: 0.8540585, y: 0.85826445, z: 0.002005525}
+        rotation: {x: 0.0069116717, y: 0.11742865, z: 0.70279354, w: 0.7016019}
       rightHand:
-        position: {x: 0.9851571, y: 1.1781945, z: 0.42959297}
-        rotation: {x: -0.3175945, y: -0.794134, z: 0.19768447, w: 0.47896326}
+        position: {x: 0.81168115, y: 1.2117801, z: 0.8066119}
+        rotation: {x: -0.3220591, y: -0.7803406, z: 0.21854153, w: 0.4894753}
       leftFoot:
-        position: {x: 0.8893844, y: 0.097587764, z: -0.062313013}
-        rotation: {x: 0.0190703, y: -0.1446204, z: 0.011082723, w: 0.98924136}
+        position: {x: 0.901073, y: 0.09831309, z: -0.072131075}
+        rotation: {x: 0.022875339, y: 0.010305135, z: 0.00028994476, w: 0.9996854}
       rightFoot:
-        position: {x: 1.1140645, y: 0.09622896, z: -0.02134578}
-        rotation: {x: 0.019374829, y: 0.03043186, z: -0.037268054, w: 0.9986539}
+        position: {x: 1.1009234, y: 0.094275475, z: -0.061864145}
+        rotation: {x: 0.00949163, y: 0.05865856, z: 0.0056236233, w: 0.99821734}
     rootOverride:
-      position: {x: 1.0086756, y: 0.8838394, z: 0.09064733}
-      rotation: {x: 0.085278474, y: -0.12947829, z: 0.005711567, w: 0.98789185}
-    rootOverrideAfterEffectors: 0
+      position: {x: 0.9950316, y: 0.8834463, z: 0.071975216}
+      rotation: {x: 0.08695626, y: -0.12781133, z: -0.010543689, w: 0.9879231}
+    carryEffectorsWithRoot: 0
     constraintMode: effector
-    sampleTime: 1
+    sampleTime: 10.966699600219727
   pathData:
     type: forward
     length: 1
@@ -339,9 +345,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260825_103720_508
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_162354_996
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: 9ccbc3e3423077448a0163419671927e, type: 2}
+  m_Clip: {fileID: 7400000, guid: d8ab0501be317c24aa04d0fc6302866f, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -595,9 +601,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260825_092340_456
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_162826_124
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: fa83131c2e765004694f96c670a38f4f, type: 2}
+  m_Clip: {fileID: 7400000, guid: 1d64548fa7985564680e070bb9d6f5d4, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -673,7 +679,7 @@ MonoBehaviour:
   m_Children: []
   m_Clips:
   - m_Version: 1
-    m_Start: 0.01666666666666633
+    m_Start: 19.9
     m_ClipIn: 0
     m_Asset: {fileID: -7635440524291453722}
     m_Duration: 1.4833333333333336
@@ -720,11 +726,11 @@ MonoBehaviour:
     m_Recordable: 0
     m_PostExtrapolationMode: 1
     m_PreExtrapolationMode: 1
-    m_PostExtrapolationTime: 0.30000000000000004
-    m_PreExtrapolationTime: 0.01666666666666633
+    m_PostExtrapolationTime: 0.3000000000000007
+    m_PreExtrapolationTime: 19.9
     m_DisplayName: walkforwardloop
   - m_Version: 1
-    m_Start: 1.8
+    m_Start: 21.683333333333334
     m_ClipIn: 0
     m_Asset: {fileID: 9057979938588153311}
     m_Duration: 1.4833333333333336
@@ -753,11 +759,11 @@ MonoBehaviour:
     m_Recordable: 0
     m_PostExtrapolationMode: 1
     m_PreExtrapolationMode: 1
-    m_PostExtrapolationTime: 0.19999999999999973
+    m_PostExtrapolationTime: 0.19999999999999574
     m_PreExtrapolationTime: 0
     m_DisplayName: run forward loop
   - m_Version: 1
-    m_Start: 3.4833333333333334
+    m_Start: 23.366666666666664
     m_ClipIn: 0
     m_Asset: {fileID: 1120585084697551713}
     m_Duration: 1.4000000000000004
@@ -792,7 +798,8 @@ MonoBehaviour:
   m_Markers:
     m_Objects:
     - {fileID: 5492147158723399585}
-    - {fileID: 2795993046300614937}
+    - {fileID: -5508936854108284937}
+    - {fileID: -5017475551967787187}
   m_InfiniteClipPreExtrapolation: 0
   m_InfiniteClipPostExtrapolation: 0
   m_InfiniteClipOffsetPosition: {x: 0, y: 0, z: 0}
@@ -821,9 +828,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260831_204151_032
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_162034_060
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: 648e09bfa6e14b84ab318aec6b8d7abd, type: 2}
+  m_Clip: {fileID: 7400000, guid: d071bb32809aea8469dca5e9e9d61214, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -1001,9 +1008,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260825_101600_607
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_162902_145
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: eddc8c2440470534e9b4dc302079b3ab, type: 2}
+  m_Clip: {fileID: 7400000, guid: fcef8c60ccdd23e4ea2d9adc574ca884, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -1018,8 +1025,8 @@ MonoBehaviour:
   motionPrompt: 'a man run and  kick right foot '
   generationFrames: 150
   diffusionSteps: 100
-  randomSeed: 1
-  seed: 1487896120
+  randomSeed: 0
+  seed: 231033105
   generateLoop: 0
   overridePathAngle: 0
   pathBeginAngleDegrees: 0
@@ -1057,6 +1064,151 @@ MonoBehaviour:
   splineWaypointCount: 8
   splineDensePath: 1
   splineIncludeHeading: 1
+--- !u!114 &-5508936854108284937
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 87e740c332e138f438368ba13793dbb7, type: 3}
+  m_Name: Kimodo Constraint Marker
+  m_EditorClassIdentifier: 
+  m_Time: 21.700000762939453
+  frame: 0
+  eventKind: 
+  message: 
+  color: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  sourceClipKey: 
+  sourceRole: 
+  constraintEnabled: 1
+  autoSample: 0
+  constraintMode: 1
+  markerType: 0
+  sampleData:
+    sampleData:
+      data:
+      - 0.08064053
+      - -0.07289317
+      - 0.011413756
+      - 0.14806922
+      - -0.024463795
+      - -0.013447454
+      - -0.5104116
+      - -0.08288462
+      - 0.10932667
+      - -0.087153144
+      - -0.026632627
+      - -0.0670284
+      - 0.25935787
+      - -0.0020744905
+      - -0.03622763
+      - 0.1899594
+      - -0.06783618
+      - 0.019124305
+      - 0.7133342
+      - -0.008425893
+      - -0.07767263
+      - -0.24852616
+      - -0.052708585
+      - 0.31247225
+      - 0.18061443
+      - 0.08602107
+      - 0.22623748
+      - 0.07416327
+      - 0.33867314
+      - -0.06415764
+      - -0.10747002
+      - -0.8001893
+      - -0.47247362
+      - -0.47727767
+      - 0.29141402
+      - -0.21031563
+      - 0.70967627
+      - 0.21713546
+      - 0.077811494
+      - 0.03486321
+      - -0.8052321
+      - -0.6352172
+      - -0.52901065
+      - 0.33764184
+      - -0.15574928
+      - 0.62380916
+      - 0.09928613
+      - 0.04242102
+      - 0.09273332
+      - 2.2053936
+      - 0.97581387
+      - 1.115068
+      - 0.008503629
+      - 0.009097675
+      - -0.009866845
+      - 0.99987376
+      - -0.04904909
+      - -0.9608279
+      - 0.06830742
+      - -0.53298795
+      - 0.46089384
+      - -0.47104064
+      - 0.5306803
+      - 0.07443957
+      - -0.7610846
+      - -0.34284282
+      - -0.23130482
+      - 0.74600637
+      - -0.07143895
+      - 0.62037826
+    enableMask:
+      muscle: 1
+      rootTQ: 1
+      leftFootTQ: 1
+      rightFootTQ: 1
+      rootPosition: 1
+      rootHeading: 1
+      leftFoot: 1
+      rightFoot: 1
+      leftHand: 1
+      rightHand: 1
+    validMask:
+      muscle: 1
+      rootTQ: 1
+      leftFootTQ: 1
+      rightFootTQ: 1
+      rootPosition: 1
+      rootHeading: 1
+      leftFoot: 1
+      rightFoot: 1
+      leftHand: 1
+      rightHand: 1
+    enabled: 1
+    creationOrder: 0
+    effectors:
+      leftHand:
+        position: {x: 1.8954961, y: 0.8585551, z: 1.0394306}
+        rotation: {x: 0.07146008, y: 0.20558895, z: 0.65654224, w: 0.72220486}
+      rightHand:
+        position: {x: 2.1952584, y: 0.8690717, z: 1.0211638}
+        rotation: {x: 0.08222911, y: -0.21696244, z: -0.6633296, w: 0.7114496}
+      leftFoot:
+        position: {x: 1.9751254, y: 0.09636861, z: 1.0844312}
+        rotation: {x: 0.0028190028, y: 0.0046600075, z: 0.056036726, w: 0.9984141}
+      rightFoot:
+        position: {x: 2.1080155, y: 0.23807669, z: 0.77789915}
+        rotation: {x: 0.5404144, y: 0.14492859, z: 0.005257705, w: 0.8288068}
+    rootOverride:
+      position: {x: 2.0404508, y: 0.8790941, z: 1.0408504}
+      rotation: {x: 0.07197899, y: -0.0025152322, z: -0.03843368, w: 0.99666226}
+    carryEffectorsWithRoot: 0
+    constraintMode: fullbody
+    sampleTime: 21.700000762939453
+  pathData:
+    type: forward
+    length: 1
+    sourceHumanScale: 1
+    inverse: 0
+    knots: []
 --- !u!114 &-5458501040353370137
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -1067,9 +1219,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260805_074601_562(Clone)(Clone)
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_162100_239
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: 451988124a6a06241a79fbc66ef61a36, type: 2}
+  m_Clip: {fileID: 7400000, guid: d06c0929a8716a744ae04e6a3e6639be, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -1123,6 +1275,151 @@ MonoBehaviour:
   splineWaypointCount: 8
   splineDensePath: 1
   splineIncludeHeading: 1
+--- !u!114 &-5017475551967787187
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 87e740c332e138f438368ba13793dbb7, type: 3}
+  m_Name: Kimodo Constraint Marker
+  m_EditorClassIdentifier: 
+  m_Time: 23.36669921875
+  frame: 0
+  eventKind: 
+  message: 
+  color: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  sourceClipKey: 
+  sourceRole: 
+  constraintEnabled: 1
+  autoSample: 0
+  constraintMode: 1
+  markerType: 0
+  sampleData:
+    sampleData:
+      data:
+      - 0.08064053
+      - -0.07289317
+      - 0.011413756
+      - 0.14806922
+      - -0.024463795
+      - -0.013447454
+      - -0.5104116
+      - -0.08288462
+      - 0.10932667
+      - -0.087153144
+      - -0.026632627
+      - -0.0670284
+      - 0.25935787
+      - -0.0020744905
+      - -0.03622763
+      - 0.1899594
+      - -0.06783618
+      - 0.019124305
+      - 0.7133342
+      - -0.008425893
+      - -0.07767263
+      - -0.24852616
+      - -0.052708585
+      - 0.31247225
+      - 0.18061443
+      - 0.08602107
+      - 0.22623748
+      - 0.07416327
+      - 0.33867314
+      - -0.06415764
+      - -0.10747002
+      - -0.8001893
+      - -0.47247362
+      - -0.47727767
+      - 0.29141402
+      - -0.21031563
+      - 0.70967627
+      - 0.21713546
+      - 0.077811494
+      - 0.03486321
+      - -0.8052321
+      - -0.6352172
+      - -0.52901065
+      - 0.33764184
+      - -0.15574928
+      - 0.62380916
+      - 0.09928613
+      - 0.04242102
+      - 0.09273332
+      - 2.2053936
+      - 0.97581387
+      - 1.115068
+      - 0.008503629
+      - 0.009097675
+      - -0.009866845
+      - 0.99987376
+      - -0.04904909
+      - -0.9608279
+      - 0.06830742
+      - -0.53298795
+      - 0.46089384
+      - -0.47104064
+      - 0.5306803
+      - 0.07443957
+      - -0.7610846
+      - -0.34284282
+      - -0.23130482
+      - 0.74600637
+      - -0.07143895
+      - 0.62037826
+    enableMask:
+      muscle: 1
+      rootTQ: 1
+      leftFootTQ: 1
+      rightFootTQ: 1
+      rootPosition: 1
+      rootHeading: 1
+      leftFoot: 1
+      rightFoot: 1
+      leftHand: 1
+      rightHand: 1
+    validMask:
+      muscle: 1
+      rootTQ: 1
+      leftFootTQ: 1
+      rightFootTQ: 1
+      rootPosition: 1
+      rootHeading: 1
+      leftFoot: 1
+      rightFoot: 1
+      leftHand: 1
+      rightHand: 1
+    enabled: 1
+    creationOrder: 0
+    effectors:
+      leftHand:
+        position: {x: 1.8954961, y: 0.8585551, z: 1.0394306}
+        rotation: {x: 0.07146008, y: 0.20558895, z: 0.65654224, w: 0.72220486}
+      rightHand:
+        position: {x: 2.1952584, y: 0.8690717, z: 1.0211638}
+        rotation: {x: 0.08222911, y: -0.21696244, z: -0.6633296, w: 0.7114496}
+      leftFoot:
+        position: {x: 1.9751254, y: 0.09636861, z: 1.0844312}
+        rotation: {x: 0.0028190028, y: 0.0046600075, z: 0.056036726, w: 0.9984141}
+      rightFoot:
+        position: {x: 2.1080155, y: 0.23807669, z: 0.77789915}
+        rotation: {x: 0.5404144, y: 0.14492859, z: 0.005257705, w: 0.8288068}
+    rootOverride:
+      position: {x: 2.0404508, y: 0.8790941, z: 1.0408504}
+      rotation: {x: 0.07197899, y: -0.0025152322, z: -0.03843368, w: 0.99666226}
+    carryEffectorsWithRoot: 0
+    constraintMode: fullbody
+    sampleTime: 23.36669921875
+  pathData:
+    type: forward
+    length: 1
+    sourceHumanScale: 1
+    inverse: 0
+    knots: []
 --- !u!114 &-2807316597933768438
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -1314,6 +1611,151 @@ MonoBehaviour:
     - {x: -0.008400714, y: -0.000000021238266, z: -9.686271e-10}
     - {x: 0, y: 0, z: 0}
     sampledJointIndices: 000000000100000002000000030000000400000005000000060000000700000008000000090000000a0000000b0000000c0000000d0000000e0000000f000000100000001100000012000000130000001400000015000000160000001700000018000000190000001a0000001b0000001c0000001d0000001e0000001f000000200000002100000022000000230000002400000025000000260000002700000028000000290000002a0000002b0000002c0000002d0000002e0000002f000000300000003100000032000000330000003400000035000000360000003700000038000000390000003a0000003b0000003c0000003d0000003e0000003f000000400000004100000042000000430000004400000045000000460000004700000048000000490000004a0000004b0000004c000000
+--- !u!114 &-1965562703411371039
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 87e740c332e138f438368ba13793dbb7, type: 3}
+  m_Name: Kimodo Constraint Marker
+  m_EditorClassIdentifier: 
+  m_Time: 4.48330020904541
+  frame: 0
+  eventKind: 
+  message: 
+  color: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  sourceClipKey: 
+  sourceRole: 
+  constraintEnabled: 1
+  autoSample: 0
+  constraintMode: 1
+  markerType: 0
+  sampleData:
+    sampleData:
+      data:
+      - -0.22444402
+      - 0.017940205
+      - 0.008748998
+      - 0.017790066
+      - -0.011232996
+      - 0.0018964099
+      - -0.65218675
+      - -0.04834217
+      - 0.08588247
+      - -0.26608485
+      - -0.1032891
+      - -0.0786499
+      - 0.12440656
+      - 0.020555947
+      - -0.00094356516
+      - -0.11354011
+      - 0.3468588
+      - 0.15350685
+      - -0.33081934
+      - 0.16729064
+      - 0.33768302
+      - -0.16222309
+      - -0.6863451
+      - -0.121496305
+      - 0.39146432
+      - 0.10974105
+      - -0.3268587
+      - -0.006446801
+      - 0.65526766
+      - 0.501495
+      - -0.71761364
+      - -0.9003538
+      - 0.0038022834
+      - -0.13891736
+      - 0.41044566
+      - -0.24050042
+      - -0.027997816
+      - -0.35950264
+      - 0.21021312
+      - -0.24487674
+      - -1.4184662
+      - 0.10216711
+      - -0.22255869
+      - 0.24908647
+      - -0.17595612
+      - 0.048926055
+      - -0.37031543
+      - -0.063496195
+      - 0.09056385
+      - -0.43707412
+      - 0.7895737
+      - -0.2675809
+      - -0.2736076
+      - -0.0071235066
+      - -0.008319314
+      - 0.96177906
+      - -0.05123312
+      - -0.6231534
+      - -0.18672931
+      - 0.04030511
+      - 0.46993876
+      - -0.24092099
+      - 0.84822774
+      - 0.11819963
+      - -0.5944616
+      - -0.19554791
+      - -0.10178722
+      - 0.7274083
+      - 0.08158303
+      - 0.6736919
+    enableMask:
+      muscle: 1
+      rootTQ: 1
+      leftFootTQ: 1
+      rightFootTQ: 1
+      rootPosition: 1
+      rootHeading: 1
+      leftFoot: 0
+      rightFoot: 0
+      leftHand: 1
+      rightHand: 1
+    validMask:
+      muscle: 1
+      rootTQ: 1
+      leftFootTQ: 1
+      rightFootTQ: 1
+      rootPosition: 1
+      rootHeading: 1
+      leftFoot: 1
+      rightFoot: 1
+      leftHand: 1
+      rightHand: 1
+    enabled: 1
+    creationOrder: 0
+    effectors:
+      leftHand:
+        position: {x: -0.52395207, y: 0.9242358, z: -0.08874297}
+        rotation: {x: -0.18726456, y: 0.7763722, z: 0.14345624, w: 0.5844643}
+      rightHand:
+        position: {x: -0.22492763, y: 0.9496157, z: -0.10503445}
+        rotation: {x: -0.12984885, y: -0.77061653, z: -0.24356812, w: 0.574425}
+      leftFoot:
+        position: {x: -0.49968377, y: 0.21264893, z: -0.05151406}
+        rotation: {x: 0.32655406, y: -0.3139334, z: 0.13456352, w: 0.8813064}
+      rightFoot:
+        position: {x: -0.30000544, y: 0.21297255, z: -0.041638494}
+        rotation: {x: 0.470143, y: 0.12094314, z: 0.028921142, w: 0.87378603}
+    rootOverride:
+      position: {x: -0.4070757, y: 0.6573924, z: -0.23942116}
+      rotation: {x: -0.30452916, y: -0.024480253, z: -0.0058167432, w: 0.95217055}
+    carryEffectorsWithRoot: 0
+    constraintMode: fullbody
+    sampleTime: 4.48330020904541
+  pathData:
+    type: forward
+    length: 1
+    sourceHumanScale: 1
+    inverse: 0
+    knots: []
 --- !u!114 &-1903077558138677463
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -1504,6 +1946,295 @@ MonoBehaviour:
     - {x: 0.0037186397, y: 0.000000637853, z: 0.00000014596256}
     - {x: 0, y: 0, z: 0}
     sampledJointIndices: 000000000100000002000000030000000400000005000000060000000700000008000000090000000a0000000b0000000c0000000d0000000e0000000f000000100000001100000012000000130000001400000015000000160000001700000018000000190000001a0000001b0000001c0000001d0000001e0000001f000000200000002100000022000000230000002400000025000000260000002700000028000000290000002a0000002b0000002c0000002d0000002e0000002f000000300000003100000032000000330000003400000035000000360000003700000038000000390000003a0000003b0000003c0000003d0000003e0000003f000000400000004100000042000000430000004400000045000000460000004700000048000000490000004a0000004b0000004c000000
+--- !u!114 &-1268595434604172422
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 87e740c332e138f438368ba13793dbb7, type: 3}
+  m_Name: Kimodo Constraint Marker
+  m_EditorClassIdentifier: 
+  m_Time: 19.983299255371094
+  frame: 0
+  eventKind: 
+  message: 
+  color: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  sourceClipKey: 
+  sourceRole: 
+  constraintEnabled: 1
+  autoSample: 0
+  constraintMode: 1
+  markerType: 0
+  sampleData:
+    sampleData:
+      data:
+      - 0.08064053
+      - -0.07289317
+      - 0.011413756
+      - 0.14806922
+      - -0.024463795
+      - -0.013447454
+      - -0.5104116
+      - -0.08288462
+      - 0.10932667
+      - -0.087153144
+      - -0.026632627
+      - -0.0670284
+      - 0.25935787
+      - -0.0020744905
+      - -0.03622763
+      - 0.1899594
+      - -0.06783618
+      - 0.019124305
+      - 0.7133342
+      - -0.008425893
+      - -0.07767263
+      - -0.24852616
+      - -0.052708585
+      - 0.31247225
+      - 0.18061443
+      - 0.08602107
+      - 0.22623748
+      - 0.07416327
+      - 0.33867314
+      - -0.06415764
+      - -0.10747002
+      - -0.8001893
+      - -0.47247362
+      - -0.47727767
+      - 0.29141402
+      - -0.21031563
+      - 0.70967627
+      - 0.21713546
+      - 0.077811494
+      - 0.03486321
+      - -0.8052321
+      - -0.6352172
+      - -0.52901065
+      - 0.33764184
+      - -0.15574928
+      - 0.62380916
+      - 0.09928613
+      - 0.04242102
+      - 0.09273332
+      - 2.2053936
+      - 0.97581387
+      - 1.115068
+      - 0.008503629
+      - 0.009097675
+      - -0.009866845
+      - 0.99987376
+      - -0.04904909
+      - -0.9608279
+      - 0.06830742
+      - -0.53298795
+      - 0.46089384
+      - -0.47104064
+      - 0.5306803
+      - 0.07443957
+      - -0.7610846
+      - -0.34284282
+      - -0.23130482
+      - 0.74600637
+      - -0.07143895
+      - 0.62037826
+    enableMask:
+      muscle: 1
+      rootTQ: 1
+      leftFootTQ: 1
+      rightFootTQ: 1
+      rootPosition: 1
+      rootHeading: 1
+      leftFoot: 1
+      rightFoot: 1
+      leftHand: 1
+      rightHand: 1
+    validMask:
+      muscle: 1
+      rootTQ: 1
+      leftFootTQ: 1
+      rightFootTQ: 1
+      rootPosition: 1
+      rootHeading: 1
+      leftFoot: 1
+      rightFoot: 1
+      leftHand: 1
+      rightHand: 1
+    enabled: 1
+    creationOrder: 0
+    effectors:
+      leftHand:
+        position: {x: 1.8954961, y: 0.8585551, z: 1.0394306}
+        rotation: {x: 0.07146008, y: 0.20558895, z: 0.65654224, w: 0.72220486}
+      rightHand:
+        position: {x: 2.1952584, y: 0.8690717, z: 1.0211638}
+        rotation: {x: 0.08222911, y: -0.21696244, z: -0.6633296, w: 0.7114496}
+      leftFoot:
+        position: {x: 1.9751254, y: 0.09636861, z: 1.0844312}
+        rotation: {x: 0.0028190028, y: 0.0046600075, z: 0.056036726, w: 0.9984141}
+      rightFoot:
+        position: {x: 2.1080155, y: 0.23807669, z: 0.77789915}
+        rotation: {x: 0.5404144, y: 0.14492859, z: 0.005257705, w: 0.8288068}
+    rootOverride:
+      position: {x: 2.0404508, y: 0.8790941, z: 1.0408504}
+      rotation: {x: 0.07197899, y: -0.0025152322, z: -0.03843368, w: 0.99666226}
+    carryEffectorsWithRoot: 0
+    constraintMode: fullbody
+    sampleTime: 19.983299255371094
+  pathData:
+    type: forward
+    length: 1
+    sourceHumanScale: 1
+    inverse: 0
+    knots: []
+--- !u!114 &-898070938511905452
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d21dcc2386d650c4597f3633c75a1f98, type: 3}
+  m_Name: Animation Track (1)
+  m_EditorClassIdentifier: 
+  m_Version: 3
+  m_AnimClip: {fileID: 0}
+  m_Locked: 0
+  m_Muted: 0
+  m_CustomPlayableFullTypename: 
+  m_Curves: {fileID: 0}
+  m_Parent: {fileID: 11400000}
+  m_Children: []
+  m_Clips:
+  - m_Version: 1
+    m_Start: 19.95
+    m_ClipIn: 0
+    m_Asset: {fileID: 3374393809416141744}
+    m_Duration: 1.4000000000000004
+    m_TimeScale: 1
+    m_ParentTrack: {fileID: -898070938511905452}
+    m_EaseInDuration: 0
+    m_EaseOutDuration: 0
+    m_BlendInDuration: -1
+    m_BlendOutDuration: -1
+    m_MixInCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    m_MixOutCurve:
+      serializedVersion: 2
+      m_Curve: []
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    m_BlendInCurveMode: 0
+    m_BlendOutCurveMode: 0
+    m_ExposedParameterNames: []
+    m_AnimationCurves: {fileID: 0}
+    m_Recordable: 0
+    m_PostExtrapolationMode: 1
+    m_PreExtrapolationMode: 1
+    m_PostExtrapolationTime: Infinity
+    m_PreExtrapolationTime: 0
+    m_DisplayName: turn left loop
+  - m_Version: 1
+    m_Start: 18.1
+    m_ClipIn: 0
+    m_Asset: {fileID: 5220667558162907821}
+    m_Duration: 1.4000000000000004
+    m_TimeScale: 1
+    m_ParentTrack: {fileID: -898070938511905452}
+    m_EaseInDuration: 0
+    m_EaseOutDuration: 0
+    m_BlendInDuration: -1
+    m_BlendOutDuration: -1
+    m_MixInCurve:
+      serializedVersion: 2
+      m_Curve: []
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    m_MixOutCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    m_BlendInCurveMode: 0
+    m_BlendOutCurveMode: 0
+    m_ExposedParameterNames: []
+    m_AnimationCurves: {fileID: 0}
+    m_Recordable: 0
+    m_PostExtrapolationMode: 1
+    m_PreExtrapolationMode: 1
+    m_PostExtrapolationTime: 0.4499999999999993
+    m_PreExtrapolationTime: 18.1
+    m_DisplayName: turn left loop
+  m_Markers:
+    m_Objects:
+    - {fileID: -1268595434604172422}
+  m_InfiniteClipPreExtrapolation: 0
+  m_InfiniteClipPostExtrapolation: 0
+  m_InfiniteClipOffsetPosition: {x: 0, y: 0, z: 0}
+  m_InfiniteClipOffsetEulerAngles: {x: 0, y: 0, z: 0}
+  m_InfiniteClipTimeOffset: 0
+  m_InfiniteClipRemoveOffset: 0
+  m_InfiniteClipApplyFootIK: 1
+  mInfiniteClipLoop: 0
+  m_MatchTargetFields: 63
+  m_Position: {x: 0, y: 0, z: 0}
+  m_EulerAngles: {x: 0, y: 0, z: 0}
+  m_AvatarMask: {fileID: 0}
+  m_ApplyAvatarMask: 1
+  m_TrackOffset: 0
+  m_InfiniteClip: {fileID: 0}
+  m_OpenClipOffsetRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_Rotation: {x: 0, y: 0, z: 0, w: 1}
+  m_ApplyOffsets: 0
 --- !u!114 &-620307563089755545
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -1837,9 +2568,9 @@ MonoBehaviour:
     m_DisplayName: StandUp
   m_Markers:
     m_Objects:
-    - {fileID: 2013234037094079595}
     - {fileID: 3728785880591473372}
     - {fileID: 993796054691707209}
+    - {fileID: -1965562703411371039}
   m_InfiniteClipPreExtrapolation: 0
   m_InfiniteClipPostExtrapolation: 0
   m_InfiniteClipOffsetPosition: {x: 0, y: 0, z: 0}
@@ -1876,6 +2607,7 @@ MonoBehaviour:
   - {fileID: 1355477785087672729}
   - {fileID: 2384964765174586638}
   - {fileID: -7120347021972973726}
+  - {fileID: -898070938511905452}
   m_FixedDuration: 0
   m_EditorSettings:
     m_Framerate: 60
@@ -1895,6 +2627,12 @@ MonoBehaviour:
   m_Name: Kimodo Constraint Marker
   m_EditorClassIdentifier: 
   m_Time: 0.3833
+  frame: 0
+  eventKind: 
+  message: 
+  color: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  sourceClipKey: 
+  sourceRole: 
   constraintEnabled: 1
   autoSample: 0
   constraintMode: 1
@@ -2012,7 +2750,7 @@ MonoBehaviour:
     rootOverride:
       position: {x: -0.0039952695, y: 0.87148184, z: -0.038191944}
       rotation: {x: 0.06985153, y: -0.012693187, z: -0.03038531, w: 0.9970138}
-    rootOverrideAfterEffectors: 0
+    carryEffectorsWithRoot: 0
     constraintMode: fullbody
     sampleTime: 0.3833
   pathData:
@@ -2031,9 +2769,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260825_111125_630
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_162526_376
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: 27bb73d1702065e4d8fe258d3d315931, type: 2}
+  m_Clip: {fileID: 7400000, guid: a646ac8c06eba7848aae1effdb2b0b7a, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -2299,7 +3037,7 @@ MonoBehaviour:
   m_Children: []
   m_Clips:
   - m_Version: 1
-    m_Start: 0
+    m_Start: 9.966666666666667
     m_ClipIn: 0
     m_Asset: {fileID: -7144928600445500288}
     m_Duration: 4.966666666666667
@@ -2365,7 +3103,7 @@ MonoBehaviour:
     m_PostExtrapolationMode: 1
     m_PreExtrapolationMode: 1
     m_PostExtrapolationTime: Infinity
-    m_PreExtrapolationTime: 0
+    m_PreExtrapolationTime: 9.966666666666667
     m_DisplayName: Push the button
   m_Markers:
     m_Objects:
@@ -2388,145 +3126,6 @@ MonoBehaviour:
   m_OpenClipOffsetRotation: {x: 0, y: 0, z: 0, w: 1}
   m_Rotation: {x: 0, y: 0, z: 0, w: 1}
   m_ApplyOffsets: 0
---- !u!114 &2013234037094079595
-MonoBehaviour:
-  m_ObjectHideFlags: 1
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 87e740c332e138f438368ba13793dbb7, type: 3}
-  m_Name: Kimodo Constraint Marker
-  m_EditorClassIdentifier: 
-  m_Time: 4.6
-  constraintEnabled: 1
-  autoSample: 0
-  constraintMode: 1
-  markerType: 0
-  sampleData:
-    sampleData:
-      data:
-      - -0.22654906
-      - 0.0154242115
-      - 0.00771425
-      - 0.018040592
-      - -0.01212539
-      - 0.0032517754
-      - -0.66167396
-      - -0.06002666
-      - 0.09114451
-      - -0.26146773
-      - -0.118207164
-      - -0.07868044
-      - 0.13331746
-      - 0.020940324
-      - 0.013193613
-      - -0.08351059
-      - 0.35728344
-      - 0.18892723
-      - -0.31188303
-      - 0.17750439
-      - 0.26010242
-      - -0.1685509
-      - -0.6366838
-      - -0.10235614
-      - 0.41212535
-      - 0.10967538
-      - -0.31548852
-      - -0.012986657
-      - 0.5741482
-      - 0.4832278
-      - -0.67902714
-      - -0.90692717
-      - -0.014204998
-      - -0.2437237
-      - 0.43272054
-      - -0.26807812
-      - -0.11382631
-      - -0.36375135
-      - 0.20911816
-      - -0.24619703
-      - -1.4111425
-      - 0.14170073
-      - -0.29054925
-      - 0.39236373
-      - -0.26351264
-      - -0.220169
-      - -0.37307525
-      - -0.070430614
-      - 0.07745581
-      - -0.43823963
-      - 0.7920231
-      - -0.27350962
-      - -0.27586496
-      - -0.0051556383
-      - -0.012413625
-      - 0.9611024
-      - -0.04168348
-      - -0.63407445
-      - -0.18959728
-      - 0.034880742
-      - 0.45203692
-      - -0.26629686
-      - 0.85060686
-      - 0.12425684
-      - -0.60251373
-      - -0.20007841
-      - -0.12886947
-      - 0.7269518
-      - 0.06696086
-      - 0.6711558
-    enableMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
-      rootHeading: 1
-      leftFoot: 1
-      rightFoot: 1
-      leftHand: 1
-      rightHand: 1
-    validMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
-      rootHeading: 1
-      leftFoot: 1
-      rightFoot: 1
-      leftHand: 1
-      rightHand: 1
-    enabled: 1
-    creationOrder: 0
-    effectors:
-      leftHand:
-        position: {x: -0.56858736, y: 0.7625032, z: -0.2685017}
-        rotation: {x: -0.21921508, y: 0.7440909, z: 0.20173174, w: 0.5979781}
-      rightHand:
-        position: {x: -0.3, y: 0.79, z: -0.2}
-        rotation: {x: -0.18336195, y: -0.8129736, z: -0.28577226, w: 0.4730621}
-      leftFoot:
-        position: {x: -0.49701077, y: 0.20881069, z: -0.055478156}
-        rotation: {x: 0.29858884, y: -0.33343446, z: 0.13655977, w: 0.8837524}
-      rightFoot:
-        position: {x: -0.30034092, y: 0.2106114, z: -0.04728055}
-        rotation: {x: 0.44192925, y: 0.12817737, z: 0.026968688, w: 0.88743573}
-    rootOverride:
-      position: {x: -0.40955436, y: 0.66265607, z: -0.24088673}
-      rotation: {x: -0.30754998, y: -0.025096357, z: -0.010557211, w: 0.9511424}
-    rootOverrideAfterEffectors: 0
-    constraintMode: fullbody
-    sampleTime: 4.6
-  pathData:
-    type: forward
-    length: 1
-    sourceHumanScale: 1
-    inverse: 0
-    knots: []
 --- !u!114 &2384964765174586638
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -2549,7 +3148,7 @@ MonoBehaviour:
   m_Children: []
   m_Clips:
   - m_Version: 1
-    m_Start: 0
+    m_Start: 14.933333333333334
     m_ClipIn: 0
     m_Asset: {fileID: -5781431601466680766}
     m_Duration: 4.966666666666667
@@ -2615,7 +3214,7 @@ MonoBehaviour:
     m_PostExtrapolationMode: 1
     m_PreExtrapolationMode: 1
     m_PostExtrapolationTime: Infinity
-    m_PreExtrapolationTime: 0
+    m_PreExtrapolationTime: 14.933333333333334
     m_DisplayName: Kick football
   m_Markers:
     m_Objects:
@@ -2638,145 +3237,6 @@ MonoBehaviour:
   m_OpenClipOffsetRotation: {x: 0, y: 0, z: 0, w: 1}
   m_Rotation: {x: 0, y: 0, z: 0, w: 1}
   m_ApplyOffsets: 0
---- !u!114 &2795993046300614937
-MonoBehaviour:
-  m_ObjectHideFlags: 1
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 87e740c332e138f438368ba13793dbb7, type: 3}
-  m_Name: Kimodo Constraint Marker
-  m_EditorClassIdentifier: 
-  m_Time: 1.8
-  constraintEnabled: 1
-  autoSample: 0
-  constraintMode: 1
-  markerType: 0
-  sampleData:
-    sampleData:
-      data:
-      - -0.31430545
-      - -0.054249365
-      - 0.0016339889
-      - 0.025477564
-      - -0.026710011
-      - 0.041437782
-      - -0.6806299
-      - -0.057814796
-      - 0.123287745
-      - 0.09131327
-      - 0.01799413
-      - -0.07355153
-      - 0.47122937
-      - 0.12299297
-      - -0.052421052
-      - -0.079695635
-      - 0.123391815
-      - -0.00251377
-      - -0.19489813
-      - 0.013289612
-      - 0.09006895
-      - -0.12585336
-      - -0.104748115
-      - -0.09591277
-      - 0.043446247
-      - 0.14757633
-      - 0.46347958
-      - -0.09261622
-      - -0.15687853
-      - 0.07274632
-      - -0.29063395
-      - -0.16801497
-      - -0.3536611
-      - -0.44413203
-      - 0.3715856
-      - -0.04428402
-      - -0.13051811
-      - 0.024551146
-      - 0.055125438
-      - -0.4202298
-      - -0.3449377
-      - -0.30235848
-      - -0.53444785
-      - 0.511198
-      - -0.09977081
-      - -0.38416472
-      - 0.06574899
-      - -0.06349746
-      - -0.37325346
-      - -0.19130619
-      - 0.94496536
-      - 2.620694
-      - 0.1710502
-      - -0.053634956
-      - 0.019215284
-      - 0.9836137
-      - -0.10335924
-      - -0.70794195
-      - -0.1437214
-      - -0.19692126
-      - 0.597191
-      - -0.31064713
-      - 0.7127997
-      - -0.0043617887
-      - -0.86811006
-      - 0.34411794
-      - -0.543579
-      - 0.42618388
-      - -0.60349506
-      - 0.3983504
-    enableMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
-      rootHeading: 1
-      leftFoot: 1
-      rightFoot: 1
-      leftHand: 1
-      rightHand: 1
-    validMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
-      rootHeading: 1
-      leftFoot: 1
-      rightFoot: 1
-      leftHand: 1
-      rightHand: 1
-    enabled: 1
-    creationOrder: 0
-    effectors:
-      leftHand:
-        position: {x: 1.674492, y: 0.94005567, z: 2.4724479}
-        rotation: {x: -0.23339407, y: 0.47476602, z: 0.6236792, w: 0.57545525}
-      rightHand:
-        position: {x: 1.9594308, y: 1.0139129, z: 2.4730277}
-        rotation: {x: -0.20583427, y: -0.50443745, z: -0.7003396, w: 0.46119365}
-      leftFoot:
-        position: {x: 1.7604201, y: 0.3344176, z: 2.1510756}
-        rotation: {x: 0.55223656, y: -0.15398225, z: 0.020293552, w: 0.81909245}
-      rightFoot:
-        position: {x: 1.8378464, y: 0.09350622, z: 2.4632707}
-        rotation: {x: 0.012656189, y: -0.0642461, z: -0.03560686, w: 0.9972183}
-    rootOverride:
-      position: {x: 1.8418735, y: 0.8323437, z: 2.3687038}
-      rotation: {x: 0.10105694, y: -0.077348635, z: -0.011105583, w: 0.99180716}
-    rootOverrideAfterEffectors: 0
-    constraintMode: fullbody
-    sampleTime: 1.8
-  pathData:
-    type: forward
-    length: 1
-    sourceHumanScale: 1
-    inverse: 0
-    knots: []
 --- !u!114 &2811406062615636571
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -2789,7 +3249,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 87e740c332e138f438368ba13793dbb7, type: 3}
   m_Name: Kimodo Constraint Marker
   m_EditorClassIdentifier: 
-  m_Time: 2.7167
+  m_Time: 19.08329963684082
+  frame: 0
+  eventKind: 
+  message: 
+  color: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  sourceClipKey: 
+  sourceRole: 
   constraintEnabled: 1
   autoSample: 0
   constraintMode: 2
@@ -2797,76 +3263,76 @@ MonoBehaviour:
   sampleData:
     sampleData:
       data:
-      - -0.3152256
-      - -0.09825477
-      - 0.055849675
-      - 0.01563876
-      - -0.02155467
-      - 0.11602756
-      - -0.5968744
-      - 0.028212052
-      - 0.38767445
-      - -0.26953235
-      - -0.0365353
-      - -0.047366183
-      - 0.1046006
-      - 0.13926591
-      - -0.07554344
-      - 0.7841897
-      - 0.17583561
-      - -0.14817613
-      - 0.05762327
-      - -0.06637516
-      - 0.59870595
-      - -0.32704076
-      - -0.020745302
-      - -0.47381392
-      - -0.13435258
-      - 0.054367367
-      - 0.8103802
-      - 0.017847506
-      - 0.16264287
-      - -0.7268343
-      - -0.035079427
-      - 0.16814369
-      - -0.75732285
-      - -0.18300903
-      - 0.37220508
-      - 0.19378023
-      - -0.6817213
-      - 0.14069514
-      - 0.25453368
-      - -0.31922764
-      - 0.075749435
-      - -0.09799145
-      - -0.44903243
-      - 0.49050352
-      - -0.14414929
-      - -0.03276408
-      - 0.051411692
-      - 0.08124853
-      - -0.21751624
-      - -0.33088773
-      - 1.1226016
-      - 7.626277
-      - 0.0052348585
-      - 0.16334164
-      - 0.015195919
-      - 0.98643863
-      - -0.08014073
-      - -0.61782366
-      - -0.54000413
-      - 0.09283049
-      - 0.61617565
-      - 0.03255992
-      - 0.781441
-      - -0.24606568
-      - -0.34542903
-      - 0.80973196
-      - -0.4043094
-      - 0.22400169
-      - -0.8834308
-      - 0.07685869
+      - -0.35967508
+      - 0.11537749
+      - 0.111628175
+      - -0.009646836
+      - 0.010876376
+      - 0.19235109
+      - -0.94244915
+      - 0.2161216
+      - 0.5449989
+      - -0.7256631
+      - -0.10218854
+      - -0.06294178
+      - 0.20153627
+      - 0.1300633
+      - -0.3222653
+      - 0.79131216
+      - 0.31070694
+      - 0.29730776
+      - 0.6572862
+      - 0.04060785
+      - 0.018018782
+      - -0.115816765
+      - -0.08986006
+      - -0.5090892
+      - -0.068997905
+      - 0.14134972
+      - 0.8285234
+      - 0.07253235
+      - -0.0032001263
+      - -0.5391246
+      - -0.018317593
+      - 0.44038042
+      - -1.4698764
+      - 0.066454224
+      - 0.19457301
+      - 0.17649297
+      - -0.587417
+      - -0.043286085
+      - -0.15331392
+      - -0.045514278
+      - 0.28688115
+      - -0.025721947
+      - -0.35484052
+      - 0.5735413
+      - -0.21335438
+      - 0.2397224
+      - -0.0739852
+      - 0.07651693
+      - -0.2671456
+      - -1.3919123
+      - 1.0827367
+      - 7.706354
+      - -0.04778513
+      - 0.16406846
+      - 0.017286835
+      - 0.9851393
+      - -0.009309885
+      - -1.0320207
+      - -0.16293296
+      - -0.19796112
+      - 0.30368885
+      - -0.56713116
+      - 0.7395586
+      - -0.2749784
+      - -0.19547248
+      - 0.8299704
+      - -0.44950682
+      - 0.1156976
+      - -0.8857237
+      - -0.0071592247
     enableMask:
       muscle: 1
       rootTQ: 1
@@ -2893,29 +3359,95 @@ MonoBehaviour:
     creationOrder: 0
     effectors:
       leftHand:
-        position: {x: -1.4134436, y: 1.3021342, z: 7.200587}
-        rotation: {x: -0.44617167, y: 0.8156827, z: 0.3262695, w: 0.17070696}
+        position: {x: -1.3392184, y: 1.3080751, z: 7.269241}
+        rotation: {x: -0.016308937, y: 0.9928076, z: 0.11698661, w: 0.019555753}
       rightHand:
-        position: {x: -1.0995204, y: 1.091795, z: 6.9490294}
-        rotation: {x: -0.24139726, y: -0.31125593, z: -0.50765055, w: 0.7662494}
+        position: {x: -1.0619061, y: 1.0332791, z: 6.849281}
+        rotation: {x: 0.015164766, y: -0.20168117, z: -0.50966614, w: 0.836263}
       leftFoot:
-        position: {x: -1.5155077, y: 0.4542894, z: 6.698857}
-        rotation: {x: 0.76479506, y: 0.003962099, z: -0.063523754, w: 0.64112216}
+        position: {x: -1.3122438, y: 0.11743134, z: 7.111384}
+        rotation: {x: 0.106234804, y: -0.24419448, z: 0.044900686, w: 0.96284336}
       rightFoot:
-        position: {x: -1.2388301, y: 0.7383653, z: 7.7860656}
-        rotation: {x: -0.5312153, y: -0.03985493, z: -0.21708515, w: 0.81798285}
+        position: {x: -1.2511331, y: 0.8982955, z: 7.8962283}
+        rotation: {x: -0.6818814, y: -0.05987372, z: -0.15478587, w: 0.7123865}
     rootOverride:
-      position: {x: -1.2874675, y: 0.95023733, z: 7.03945}
-      rotation: {x: -0.06858597, y: 0.061232656, z: 0.002558765, w: 0.99576104}
-    rootOverrideAfterEffectors: 0
+      position: {x: -1.2769835, y: 0.91162425, z: 7.1140113}
+      rotation: {x: -0.16248953, y: -0.000786975, z: 0.102032274, w: 0.9814204}
+    carryEffectorsWithRoot: 0
     constraintMode: effector
-    sampleTime: 2.7167
+    sampleTime: 19.08329963684082
   pathData:
     type: forward
     length: 1
     sourceHumanScale: 1
     inverse: 0
     knots: []
+--- !u!114 &3374393809416141744
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_163136_037
+  m_EditorClassIdentifier: 
+  m_Clip: {fileID: 7400000, guid: 0b6e7c58205fdc74fa6f40211e9bb061, type: 2}
+  m_Position: {x: 0, y: 0, z: 0}
+  m_EulerAngles: {x: -0, y: 0, z: 0}
+  m_UseTrackMatchFields: 1
+  m_MatchTargetFields: 63
+  m_RemoveStartOffset: 0
+  m_ApplyFootIK: 1
+  m_Loop: 0
+  m_Version: 1
+  m_Rotation: {x: 0, y: 0, z: 0, w: 1}
+  bridgeModelName: Kimodo-SOMA-RP-v1
+  textEncoderMode: 1
+  motionPrompt: turn left 90 walk loop
+  generationFrames: 150
+  diffusionSteps: 100
+  randomSeed: 0
+  seed: 1297364042
+  generateLoop: 1
+  overridePathAngle: 0
+  pathBeginAngleDegrees: 0
+  pathEndAngleDegrees: 0
+  overrideHeading: 0
+  headingDegrees: 0
+  analysisOptionsJson: 
+  generatedAssetName: 
+  generatedOutputFolder: 
+  generationOutputMode: 0
+  customRetargetAvatar: {fileID: 0}
+  inOutConstraintMode: 0
+  enableInConstraint: 1
+  enableOutConstraint: 1
+  ardyAutoHistory: 1
+  ardyHistoryWeight: 1
+  ardyTargetMaxSpeed: 1.25
+  ardyTargetMaxAcceleration: 1.5
+  showConstraint: 1
+  autoBeginAnchor: 0
+  isGenerated: 1
+  lastGeneratedPrompt: turn left 90 walk loop
+  autoRetargetOnBinding: 1
+  curveFilterOptions:
+    enabled: 1
+    positionError: 0.25
+    rotationError: 0.25
+    floatError: 0.25
+    ensureQuaternionContinuity: 1
+  frameCount: 42
+  jointCount: 77
+  fps: 30
+  splinePathEnabled: 0
+  splineKnots: []
+  splineWaypointCount: 8
+  splineDensePath: 1
+  splineIncludeHeading: 1
 --- !u!114 &3728785880591473372
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -2929,6 +3461,12 @@ MonoBehaviour:
   m_Name: Kimodo Constraint Marker
   m_EditorClassIdentifier: 
   m_Time: 9.45
+  frame: 0
+  eventKind: 
+  message: 
+  color: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  sourceClipKey: 
+  sourceRole: 
   constraintEnabled: 1
   autoSample: 0
   constraintMode: 1
@@ -3046,7 +3584,7 @@ MonoBehaviour:
     rootOverride:
       position: {x: -0.0039952695, y: 0.87148184, z: -0.038191944}
       rotation: {x: 0.06985153, y: -0.012693187, z: -0.03038531, w: 0.9970138}
-    rootOverrideAfterEffectors: 0
+    carryEffectorsWithRoot: 0
     constraintMode: fullbody
     sampleTime: 9.45
   pathData:
@@ -3245,6 +3783,72 @@ MonoBehaviour:
     - {x: -0.0277851, y: -0.00000011659594, z: -0.0000001156555}
     - {x: 0, y: 0, z: 0}
     sampledJointIndices: 000000000100000002000000030000000400000005000000060000000700000008000000090000000a0000000b0000000c0000000d0000000e0000000f000000100000001100000012000000130000001400000015000000160000001700000018000000190000001a0000001b0000001c0000001d0000001e0000001f000000200000002100000022000000230000002400000025000000260000002700000028000000290000002a0000002b0000002c0000002d0000002e0000002f000000300000003100000032000000330000003400000035000000360000003700000038000000390000003a0000003b0000003c0000003d0000003e0000003f000000400000004100000042000000430000004400000045000000460000004700000048000000490000004a0000004b0000004c000000
+--- !u!114 &5220667558162907821
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_163202_025
+  m_EditorClassIdentifier: 
+  m_Clip: {fileID: 7400000, guid: 26f69e6dfce874a4283c4f84784b6125, type: 2}
+  m_Position: {x: 0, y: 0, z: 0}
+  m_EulerAngles: {x: -0, y: 0, z: 0}
+  m_UseTrackMatchFields: 1
+  m_MatchTargetFields: 63
+  m_RemoveStartOffset: 0
+  m_ApplyFootIK: 1
+  m_Loop: 0
+  m_Version: 1
+  m_Rotation: {x: 0, y: 0, z: 0, w: 1}
+  bridgeModelName: Kimodo-SOMA-RP-v1
+  textEncoderMode: 1
+  motionPrompt: turn left 90 walk loop
+  generationFrames: 150
+  diffusionSteps: 100
+  randomSeed: 0
+  seed: 1297364042
+  generateLoop: 1
+  overridePathAngle: 0
+  pathBeginAngleDegrees: 0
+  pathEndAngleDegrees: 0
+  overrideHeading: 0
+  headingDegrees: 0
+  analysisOptionsJson: 
+  generatedAssetName: 
+  generatedOutputFolder: 
+  generationOutputMode: 0
+  customRetargetAvatar: {fileID: 0}
+  inOutConstraintMode: 0
+  enableInConstraint: 1
+  enableOutConstraint: 1
+  ardyAutoHistory: 1
+  ardyHistoryWeight: 1
+  ardyTargetMaxSpeed: 1.25
+  ardyTargetMaxAcceleration: 1.5
+  showConstraint: 1
+  autoBeginAnchor: 0
+  isGenerated: 1
+  lastGeneratedPrompt: turn left 90 walk loop
+  autoRetargetOnBinding: 1
+  curveFilterOptions:
+    enabled: 1
+    positionError: 0.25
+    rotationError: 0.25
+    floatError: 0.25
+    ensureQuaternionContinuity: 1
+  frameCount: 42
+  jointCount: 77
+  fps: 30
+  splinePathEnabled: 0
+  splineKnots: []
+  splineWaypointCount: 8
+  splineDensePath: 1
+  splineIncludeHeading: 1
 --- !u!114 &5492147158723399585
 MonoBehaviour:
   m_ObjectHideFlags: 1
@@ -3257,7 +3861,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 87e740c332e138f438368ba13793dbb7, type: 3}
   m_Name: Kimodo Constraint Marker
   m_EditorClassIdentifier: 
-  m_Time: 0.0167
+  m_Time: 19.899999618530273
+  frame: 0
+  eventKind: 
+  message: 
+  color: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  sourceClipKey: 
+  sourceRole: 
   constraintEnabled: 1
   autoSample: 0
   constraintMode: 1
@@ -3265,76 +3875,76 @@ MonoBehaviour:
   sampleData:
     sampleData:
       data:
-      - 0.08064436
-      - -0.07289701
-      - 0.011414227
-      - 0.14807376
-      - -0.024464162
-      - -0.013448268
-      - -0.5104195
-      - -0.08288575
-      - 0.10932968
-      - -0.08715893
-      - -0.026634963
-      - -0.06703328
-      - 0.25936234
-      - -0.0020746097
-      - -0.036228057
-      - 0.22855742
-      - -0.080207944
-      - -0.028559249
-      - 0.75421476
-      - 0.026049731
-      - -0.048009038
-      - -0.26623535
-      - -0.052720204
-      - 0.33815637
-      - 0.17797081
-      - 0.08977405
-      - 0.24635918
-      - 0.074242204
-      - 0.34506857
-      - -0.062049713
-      - -0.107478015
-      - -0.8002023
-      - -0.47248372
-      - -0.47871906
-      - 0.28745356
-      - -0.211543
-      - 0.7193928
-      - 0.22009872
-      - 0.07980247
-      - 0.033430945
-      - -0.805242
-      - -0.6352273
-      - -0.52792406
-      - 0.33745247
-      - -0.15828276
-      - 0.62389547
-      - 0.102183916
-      - 0.044484567
-      - 0.09207704
-      - 0.050482083
-      - 0.97604215
-      - 1.114119
-      - 0.008502669
-      - 0.009098227
-      - -0.009869565
+      - 0.08064053
+      - -0.07289317
+      - 0.011413756
+      - 0.14806922
+      - -0.024463795
+      - -0.013447454
+      - -0.5104116
+      - -0.08288462
+      - 0.10932667
+      - -0.087153144
+      - -0.026632627
+      - -0.0670284
+      - 0.25935787
+      - -0.0020744905
+      - -0.03622763
+      - 0.1899594
+      - -0.06783618
+      - 0.019124305
+      - 0.7133342
+      - -0.008425893
+      - -0.07767263
+      - -0.24852616
+      - -0.052708585
+      - 0.31247225
+      - 0.18061443
+      - 0.08602107
+      - 0.22623748
+      - 0.07416327
+      - 0.33867314
+      - -0.06415764
+      - -0.10747002
+      - -0.8001893
+      - -0.47247362
+      - -0.47727767
+      - 0.29141402
+      - -0.21031563
+      - 0.70967627
+      - 0.21713546
+      - 0.077811494
+      - 0.03486321
+      - -0.8052321
+      - -0.6352172
+      - -0.52901065
+      - 0.33764184
+      - -0.15574928
+      - 0.62380916
+      - 0.09928613
+      - 0.04242102
+      - 0.09273332
+      - 2.2053936
+      - 0.97581387
+      - 1.115068
+      - 0.008503629
+      - 0.009097675
+      - -0.009866845
       - 0.99987376
-      - -0.048605926
-      - -0.96742755
-      - 0.06933526
-      - -0.532988
-      - 0.46089303
-      - -0.4710385
-      - 0.53068286
-      - 0.07324296
-      - -0.76409566
-      - -0.34764183
-      - -0.2313029
-      - 0.74600726
-      - -0.071436375
-      - 0.6203782
+      - -0.04904909
+      - -0.9608279
+      - 0.06830742
+      - -0.53298795
+      - 0.46089384
+      - -0.47104064
+      - 0.5306803
+      - 0.07443957
+      - -0.7610846
+      - -0.34284282
+      - -0.23130482
+      - 0.74600637
+      - -0.07143895
+      - 0.62037826
     enableMask:
       muscle: 1
       rootTQ: 1
@@ -3361,23 +3971,23 @@ MonoBehaviour:
     creationOrder: 0
     effectors:
       leftHand:
-        position: {x: 1.8956047, y: 0.8587274, z: 1.0404913}
-        rotation: {x: 0.07276796, y: 0.20339784, z: 0.6549588, w: 0.7241293}
+        position: {x: 1.8954961, y: 0.8585551, z: 1.0394306}
+        rotation: {x: 0.07146008, y: 0.20558895, z: 0.65654224, w: 0.72220486}
       rightHand:
-        position: {x: 2.195332, y: 0.86998355, z: 1.0221934}
-        rotation: {x: 0.0816449, y: -0.21675816, z: -0.66294575, w: 0.7119362}
+        position: {x: 2.1952584, y: 0.8690717, z: 1.0211638}
+        rotation: {x: 0.08222911, y: -0.21696244, z: -0.6633296, w: 0.7114496}
       leftFoot:
-        position: {x: 1.9757885, y: 0.09043443, z: 1.0843955}
-        rotation: {x: 0.00282006, y: 0.004659987, z: 0.056036808, w: 0.9984139}
+        position: {x: 1.9751254, y: 0.09636861, z: 1.0844312}
+        rotation: {x: 0.0028190028, y: 0.0046600075, z: 0.056036726, w: 0.9984141}
       rightFoot:
-        position: {x: 2.1071272, y: 0.23559237, z: 0.77254164}
-        rotation: {x: 0.54041654, y: 0.14492835, z: 0.0052548693, w: 0.8288052}
+        position: {x: 2.1080155, y: 0.23807669, z: 0.77789915}
+        rotation: {x: 0.5404144, y: 0.14492859, z: 0.005257705, w: 0.8288068}
     rootOverride:
-      position: {x: 2.0405664, y: 0.88001895, z: 1.0418963}
-      rotation: {x: 0.07197912, y: -0.0025153076, z: -0.038437452, w: 0.9966621}
-    rootOverrideAfterEffectors: 0
+      position: {x: 2.0404508, y: 0.8790941, z: 1.0408504}
+      rotation: {x: 0.07197899, y: -0.0025152322, z: -0.03843368, w: 0.99666226}
+    carryEffectorsWithRoot: 0
     constraintMode: fullbody
-    sampleTime: 0.0167
+    sampleTime: 19.899999618530273
   pathData:
     type: forward
     length: 1
@@ -3698,9 +4308,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260825_104328_239
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_162455_533
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: 10b558fe11693344f9b1d73152867566, type: 2}
+  m_Clip: {fileID: 7400000, guid: c52fb2ce2a9a45142bd07cf954423ef7, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
