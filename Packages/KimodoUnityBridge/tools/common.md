@@ -9,6 +9,15 @@ description: Shared execution contract for all Kimodo capability tools.
 
 ## Input and Session
 
+### Parameter tiers / 参数分层
+
+- **Core**：只传完成任务所需的明确对象、范围和动作语义。
+- **Advanced**：带有 `x-kimodo-advanced: true` 的参数只在需要覆盖默认值、选择模型/输出或施加路径与 Pose 约束时传入。
+- Session-scoped command 固定使用当前 Session；command 不再接受 `session_id`。
+- `animation_analyze` 只接受一个 Clip，默认生成固定 16:9 的 20-tile composite（宽度由 resolution 决定）；比较多个候选时分别调用分析。
+- 需要单张图片时传 `picture: {output: "tile", tile_index: N}`；`tile_index` 从 1 开始，`resolution` 在该模式表示高度，默认 720px，宽度按 4:3 自适应。
+- `kimodo_generate_animation` 的普通调用只需要 `character` 与 `prompt`；模型、采样、命名、存储和分析覆盖项均可省略。
+
 - 只使用用户明确提供的 source、target、range、pose、path 和 constraint。
 - 只要生成请求指定了动作，先检查当前活动场景对应 Session 中的语义匹配动画；“修复/改进/替换/续作/变体 + 指定动作”绝不能跳过这一步。检查结果要记录为上下文证据，不能把发现的动画自动升级为生成约束。
 - `session_get_or_create` 立即创建并返回专用可见 Session GameObject；后续生成、采样、分析和渲染均在该对象下执行。对象仅包含基础地面、灯光、角色和 Timeline Director。
@@ -46,7 +55,7 @@ description: Shared execution contract for all Kimodo capability tools.
 
 Humanoid analysis 使用破坏性的新契约 `analysis_schema_version=2-phase-track-v1`
 与 `phase_track_version=1-temporal-cluster-v1`。图片同时返回
-`pictures.render_version`；识别/比较必须记录并校验这些版本，版本不匹配时返回
+`pictures.render_version=51-unified-picture-space`；识别/比较必须记录并校验这些版本，版本不匹配时返回
 `UNKNOWN` 并要求更新提示词。旧的均分关键帧
 列表不再是阶段证据；`phase_track` 是唯一阶段来源。每项必须覆盖连续帧区间，
 区间首尾相接、无重叠、无空洞，并包含：`start_frame`、`end_frame`、

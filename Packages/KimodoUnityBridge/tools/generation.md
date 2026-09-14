@@ -141,9 +141,9 @@ if request_names_one_or_more_actions():
     if request_semantics_include_fix_or_variant_of_named_actions() and related_clips is empty:
         record_context_evidence("No matching action clip found; this is a new baseline generation.")
     if related_clips is not empty:
-        related_analysis = animation_analyze(related_clips, level="middle", resolution=512)
+        related_analysis = animation_analyze(related_clips, picture={"output": "composite"}, resolution=512)
         source_profile = related_analysis.clips[0].motion_profile
-        source_keyframes = related_analysis.clips[0].keyframes
+        source_keyframes = related_analysis.clips[0].phase_track[*].anchor_frame
         if request_is_repair_or_variant_of_related_clip():
             derive_loop_path_and_heading_decisions_from(
                 source_profile,
@@ -163,7 +163,7 @@ heading，再决定是否覆盖。关键帧列表用于动作阶段、采样帧�
 `-90°`，右转终点 `+90°`；仅在语义明确时启用对应覆盖。
 
 ```pseudo
-analysis_frame_anchors = source_analysis.clips[0].keyframes
+analysis_frame_anchors = source_analysis.clips[0].phase_track[*].anchor_frame
 verification_frames = choose_phase_and_endpoint_frames(analysis_frame_anchors)
 path_constraint = source_analysis.clips[0].root_trajectory.path
 path_angle = derive_path_angle_from_motion_profile_and_request(source_profile, request)
@@ -177,20 +177,18 @@ function execute_generate_skill(request):
     )
 
     session = session_get_or_create({name: OPTIONAL_SESSION_NAME})
-    session_id = session.session_id
     character = ensure_character_with_session_add(session, CHARACTER)
 
     if REQUEST_IS_RANGE_OPERATION == YES:
         ASSERT request_explicitly_supplies_start_frame_end_frame_and_character()
         final_output = kimodo_record_range({
-            session_id: session_id,
             start_frame: request.start_frame,
             end_frame: request.end_frame,
             character: character,
             remove_root_motion: request.remove_root_motion if supplied,
             speed: request.speed if supplied,
             name: request.name if supplied,
-            output_folder: request.output_folder if supplied
+            output_folder: request.output.folder if supplied
         })
         final_ref = {
             character: final_output.character,
@@ -198,7 +196,6 @@ function execute_generate_skill(request):
         }
         GENERATION_COMPLETED = YES
         return verify_final_output(
-            session_id,
             final_ref,
             runtime_evidence = final_output
         )
@@ -215,12 +212,11 @@ function execute_generate_skill(request):
             TARGET_CHARACTER
         )
         final_output = kimodo_retarget_animation({
-            session_id: session_id,
             source_character: character,
             animation: source_clip,
             target_character: target_character,
             name: request.name if supplied,
-            output_folder: request.output_folder if supplied
+            output_folder: request.output.folder if supplied
         })
         final_ref = {
             character: final_output.character,
@@ -228,7 +224,6 @@ function execute_generate_skill(request):
         }
         GENERATION_COMPLETED = YES
         return verify_final_output(
-            session_id,
             final_ref,
             runtime_evidence = final_output
         )
@@ -237,20 +232,19 @@ function execute_generate_skill(request):
     if HAS_SOURCE_ANIMATION == YES:
         source_clip = ensure_clip_with_session_add(session, character, SOURCE_CLIP)
         source_analysis = animation_analyze({
-            session_id: session_id,
             clips: [{
                 role: "source",
                 character: character,
                 clip: source_clip
             }],
-            level: "middle",
+            picture: {"output": "composite"},
             resolution: 512
         })
         source_image_path = source_analysis.pictures.image_path
         source_picture_map = source_analysis.pictures.images
         ASSERT OPEN_WITH_AVAILABLE_VISUAL_TOOL(source_image_path) == YES
         source_profile = source_analysis.clips[0].motion_profile
-        source_keyframes = source_analysis.clips[0].keyframes
+        source_keyframes = source_analysis.clips[0].phase_track[*].anchor_frame
         if request_is_repair_or_variant_of_source_clip():
             derive_loop_path_and_heading_decisions_from(
                 source_profile,
@@ -288,7 +282,11 @@ function execute_generate_skill(request):
         args.duration_frames = DURATION_FRAMES
 
     if SHOULD_LOOP == YES:
-        args.loop = true
+        args.loop = {
+            enabled: true,
+            lock_pos: { x: false, y: true, z: false },
+            lock_rot: { x: true, y: false, z: true }
+        }
 
     if request_semantics_contain_explicit_facing_or_path_direction():
         SHOULD_OVERRIDE_PATH_DIRECTIONS = YES
@@ -301,11 +299,14 @@ function execute_generate_skill(request):
     if SHOULD_OVERRIDE_PATH_DIRECTIONS == YES:
         // Supply both values deliberately; do not rely on the omitted-peer default.
         // 明确提供起点和终点，不能依赖缺省另一端为零。
-        args.path_begin_angle_degrees = PATH_BEGIN_YAW_DEGREES
-        args.path_end_angle_degrees = PATH_END_YAW_DEGREES
+        args.path = {
+            start_angle: PATH_BEGIN_YAW_DEGREES,
+            end_angle: PATH_END_YAW_DEGREES,
+            distance: OVERRIDE_DISTANCE,
+            heading: FIXED_HEADING_DEGREES,
+        }
 
     if SHOULD_OVERRIDE_FIXED_HEADING == YES:
-        args.override_heading_degrees = FIXED_HEADING_DEGREES
 
     if constraints is not empty:
         args.constraints = constraints
@@ -314,8 +315,7 @@ function execute_generate_skill(request):
         request,
         args,
         fields = [
-            "model", "text_encoder_model", "seed", "diffusion_steps",
-            "output_mode", "output_folder", "name", "analysis_option"
+            "generation", "output"
         ]
     )
 
@@ -374,12 +374,11 @@ function execute_generate_skill(request):
             TARGET_CHARACTER
         )
         retargeted_output = kimodo_retarget_animation({
-            session_id: session_id,
             source_character: character,
             animation: generated_ref.clip,
             target_character: target_character,
             name: request.retarget_name if supplied,
-            output_folder: request.output_folder if supplied
+            output_folder: request.output.folder if supplied
         })
         generated_ref = {
             character: retargeted_output.character,
@@ -388,20 +387,18 @@ function execute_generate_skill(request):
         runtime_payload.retargeted = retargeted_output
 
     return verify_final_output(
-        session_id,
         generated_ref,
         runtime_evidence = runtime_payload
     )
 
-function verify_final_output(session_id, final_ref, runtime_evidence):
+function verify_final_output(final_ref, runtime_evidence):
     final_analysis = animation_analyze({
-        session_id: session_id,
         clips: [{
             role: "target",
             character: final_ref.character,
             clip: final_ref.clip
         }],
-        level: "middle",
+        picture: {"output": "composite"},
         resolution: 512
     })
 
@@ -414,7 +411,9 @@ function verify_final_output(session_id, final_ref, runtime_evidence):
     Fill ACTION_MATCH, LOOP_MATCH, PATH_MATCH, HEADING_MATCH, POSE_MATCH,
     CONTACT_MATCH, and ENDING_MATCH with YES, NO, UNKNOWN, or NOT_APPLICABLE.
     Only required intent fields participate in the final decision.
-    A requested loop is not proof of a seamless boundary.
+    A requested loop is not proof of a seamless boundary. The fixed default
+    lock set is pos.y plus rot.x/rot.z; change an axis only when the user
+    explicitly requests that axis. Verify the resulting endpoint after generation.
 
     将生成结果与已声明请求意图对照，只填写 YES、NO、UNKNOWN 或
     NOT_APPLICABLE。只有请求要求的项目参与最终决策；请求循环不等于
@@ -506,7 +505,6 @@ function ensure_character_with_session_add(session, character_ref):
         return character_ref
 
     added_character = session_add({
-        session_id: session.session_id,
         kind: "character",
         character: character_ref
     })
@@ -517,7 +515,6 @@ function ensure_clip_with_session_add(session, character_ref, clip_ref):
         return clip_ref
 
     added_clip = session_add({
-        session_id: session.session_id,
         kind: "clip",
         character: character_ref,
         clip: clip_ref
@@ -528,14 +525,13 @@ function derive_supported_correction_from_failed_macros():
     if PATH_MATCH == NO and explicit_path_directions_exist():
         return same_seed_request_with(
             seed = LAST_COMPLETED_SEED,
-            path_begin_angle_degrees = PATH_BEGIN_YAW_DEGREES,
-            path_end_angle_degrees = PATH_END_YAW_DEGREES
+            path = { start_angle: PATH_BEGIN_YAW_DEGREES, end_angle: PATH_END_YAW_DEGREES }
         )
 
     if HEADING_MATCH == NO and explicit_fixed_heading_exists():
         return same_seed_request_with(
             seed = LAST_COMPLETED_SEED,
-            override_heading_degrees = FIXED_HEADING_DEGREES
+            path.heading = FIXED_HEADING_DEGREES
         )
 
     if POSE_MATCH == NO or CONTACT_MATCH == NO:
@@ -557,6 +553,8 @@ ASSERT source_motion_profile_precedes_prompt_heuristics()
 ASSERT direct_pose_edit_requires_explicit_user_confirmation_and_opt_in()
 ASSERT analyzed_path_is_a_constraint_only_when_root_trajectory_path_is_reused()
 ASSERT path_override_and_loop_are_independent_and_may_coexist()
+ASSERT default_loop_locks_are_pos_y_and_rot_xz()
+ASSERT loop_lock_axes_change_only_on_explicit_user_request()
 ASSERT fixed_heading_overrides_path_tangent_heading_but_not_path_positions()
 ASSERT explicit_root2d_at_a_frame_overrides_root_path_at_that_frame()
 ASSERT same_frame_precedence_is_fullbody_then_root2d_then_effectors()
@@ -566,7 +564,7 @@ ASSERT failed_canceled_or_fallback_results_are_reported_as_returned()
 
 ## Root path and path-angle constraints / Root 路径统一采样
 
-`root_path` 与 `path_begin_angle_degrees/path_end_angle_degrees` 使用同一条
+`root_path` 与 `path.start_angle/path.end_angle` 使用同一条
 稀疏 Root2D 约束管线。两者的区别仅在路径采样对象：
 
 ```pseudo
@@ -582,8 +580,8 @@ if PATH_ANGLE_OVERRIDE:
     first_pass_clip = materialize_first_pass_motion_as_transient_animationclip()
     path_samples = sample_animationclip_root_trajectory_with_angles(
         first_pass_clip,
-        path_begin_angle_degrees,
-        path_end_angle_degrees
+        path.start_angle,
+        path.end_angle
     )
 
 emit_one_sparse_root2d_constraint(path_samples, sample_frames)

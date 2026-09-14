@@ -117,6 +117,87 @@ namespace KimodoUnityBridge.Command
             return new PropertyDefinition(name, type, description, false);
         }
 
+        private static PropertyDefinition OptionalLoop()
+        {
+            JObject axis = new JObject
+            {
+                ["type"] = "object",
+                ["additionalProperties"] = false,
+                ["properties"] = new JObject
+                {
+                    ["x"] = new JObject { ["type"] = "boolean" },
+                    ["y"] = new JObject { ["type"] = "boolean" },
+                    ["z"] = new JObject { ["type"] = "boolean" }
+                }
+            };
+            JObject structured = new JObject
+            {
+                ["type"] = "object",
+                ["additionalProperties"] = false,
+                ["properties"] = new JObject
+                {
+                    ["enabled"] = new JObject
+                    {
+                        ["type"] = "boolean",
+                        ["description"] = "Enable bounded loop preprocessing; defaults to true when the loop object is supplied."
+                    },
+                    ["lock_pos"] = axis.DeepClone(),
+                    ["lock_rot"] = axis.DeepClone()
+                }
+            };
+            return new PropertyDefinition("loop", new JObject
+            {
+                ["description"] = "Enable loop preprocessing, or provide per-axis endpoint locks with {enabled, lock_pos:{x,y,z}, lock_rot:{x,y,z}}.",
+                ["oneOf"] = new JArray(
+                    new JObject { ["type"] = "boolean" },
+                    structured)
+            }, false);
+        }
+
+        private static PropertyDefinition OptionalObject(string name, JObject properties, string description)
+        {
+            return new PropertyDefinition(name, new JObject
+            {
+                ["type"] = "object",
+                ["additionalProperties"] = false,
+                ["properties"] = properties,
+                ["description"] = description
+            }, false);
+        }
+
+        private static PropertyDefinition OptionalPath()
+        {
+            return OptionalObject("path", new JObject
+            {
+                ["start_angle"] = new JObject { ["type"] = "number" },
+                ["end_angle"] = new JObject { ["type"] = "number" },
+                ["distance"] = new JObject { ["type"] = "number", ["minimum"] = 0 },
+                ["heading"] = new JObject { ["type"] = "number" }
+            }, "Optional Root2D path override. Any angle enables path override; distance replaces the measured path length; heading is applied after path composition.");
+        }
+
+        private static PropertyDefinition OptionalGeneration()
+        {
+            return OptionalObject("generation", new JObject
+            {
+                ["model"] = new JObject { ["type"] = "string" },
+                ["text_encoder"] = new JObject { ["type"] = "string", ["enum"] = new JArray("high_performance", "high_precision") },
+                ["seed"] = new JObject { ["type"] = "integer" },
+                ["diffusion_steps"] = new JObject { ["type"] = "integer" }
+            }, "Optional model and deterministic generation settings.");
+        }
+
+        private static PropertyDefinition OptionalOutput()
+        {
+            return OptionalObject("output", new JObject
+            {
+                ["mode"] = new JObject { ["type"] = "string", ["enum"] = new JArray("humanoid_muscle", "character_bone", "model_bone") },
+                ["folder"] = new JObject { ["type"] = "string" },
+                ["name"] = new JObject { ["type"] = "string" }
+            }, "Optional animation output settings.");
+        }
+
+
         private static PropertyDefinition OptionalArray(string name, string itemType, string description)
         {
             return new PropertyDefinition(name, new JObject

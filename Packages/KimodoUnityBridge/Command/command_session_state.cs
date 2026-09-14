@@ -987,10 +987,10 @@ namespace KimodoUnityBridge.Command
                     throw new InvalidOperationException("clips must contain one or two {character,clip,role?} objects.");
                 }
 
-                string level = NormalizeAnalysisPictureLevel(arguments.Value<string>("level"));
-                if (level == "-test" && requestedClips?.Count != 1)
+                JObject picture = AnalysisPictureRequest.Parse(arguments["picture"] as JObject).ToJson();
+                if (requestedClips.Count != 1)
                 {
-                    throw new InvalidOperationException("-test analysis accepts exactly one clip.");
+                    throw new InvalidOperationException("picture rendering currently accepts exactly one clip.");
                 }
                 int pictureResolution = ResolveAnalysisPictureResolution(arguments["resolution"]);
                 JObject requestedAnalysisOptions = null;
@@ -999,9 +999,7 @@ namespace KimodoUnityBridge.Command
                 {
                     requestedAnalysisOptions = JObject.Parse(requestedAnalysisOptionsJson);
                 }
-                JObject analysisOptions = BuildEffectiveAnalysisOptions(
-                    level,
-                    requestedAnalysisOptions);
+                JObject analysisOptions = BuildEffectiveAnalysisOptions(requestedAnalysisOptions);
                 var subjects = new List<AnalysisSubject>(requestedClips.Count);
                 var roles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 for (int index = 0; index < requestedClips.Count; index++)
@@ -1070,12 +1068,12 @@ namespace KimodoUnityBridge.Command
                     subjects.Add(new AnalysisSubject(role, character, animation, record, startFrame, endFrame));
                 }
 
-                JObject pictures = RenderAnalysisPictures(session, subjects, level, pictureResolution);
+                JObject pictures = RenderAnalysisPictures(session, subjects, picture, pictureResolution);
                 SaveTimelineSession(session);
                 string analysisImagePath = pictures?.Value<string>("image_path") ?? string.Empty;
                 var analysisLog = new JObject
                 {
-                    ["level"] = level,
+                    ["picture"] = picture.DeepClone(),
                     ["clips"] = new JArray(subjects.Select(subject => new JObject
                     {
                         ["role"] = subject.Role,
@@ -1092,7 +1090,7 @@ namespace KimodoUnityBridge.Command
                 return Ok(new JObject
                 {
                     ["analysis_schema_version"] = AnalysisContractVersion,
-                    ["level"] = level,
+                    ["picture"] = picture.DeepClone(),
                     ["clips"] = new JArray(subjects.Select(BuildAnimationAnalyzeClipResult)),
                     ["pictures"] = pictures
                 });
@@ -1233,7 +1231,6 @@ namespace KimodoUnityBridge.Command
                 ["clip"] = subject.Animation.Name,
                 ["analysis_schema_version"] = AnalysisContractVersion,
                 ["analysis_mode"] = humanoid ? "humanoid" : "mesh",
-                ["keyframes"] = subject.Record.Analysis?["keyframes"]?.DeepClone() ?? new JArray(),
                 ["phase_track_version"] = humanoid
                     ? subject.Record.Analysis?.Value<string>("phase_track_version") ?? string.Empty
                     : "NOT_APPLICABLE",
@@ -1499,16 +1496,6 @@ namespace KimodoUnityBridge.Command
                 targetRotation);
         }
 
-        private static string NormalizeAnalysisPictureLevel(string level)
-        {
-            string normalized = (level ?? "middle").Trim().ToLowerInvariant();
-            if (normalized != "low" && normalized != "middle" && normalized != "high" && normalized != "-test")
-            {
-                throw new InvalidOperationException("level must be low, middle, high, or -test.");
-            }
-            return normalized;
-        }
-
         private static int ResolveAnalysisPictureResolution(JToken value)
         {
             if (value == null || value.Type == JTokenType.Null) return 512;
@@ -1569,19 +1556,12 @@ namespace KimodoUnityBridge.Command
             analysis["source"] = "quickserver_analysis_only";
         }
 
-        private static JObject BuildEffectiveAnalysisOptions(string level, JObject requested)
+        private static JObject BuildEffectiveAnalysisOptions(JObject requested)
         {
             JObject result = requested != null
                 ? (JObject)requested.DeepClone()
                 : new JObject();
-            if (level == "-test")
-            {
-                int count = result.Value<int?>("keyframe_count") ?? 8;
-                if (count <= 0) throw new InvalidOperationException("analysis_option.keyframe_count must be a positive integer.");
-                result["keyframe_count"] = count;
-                return result;
-            }
-            // Legacy keyframe_count/max_count are intentionally not read in
+            // keyframe_count/max_count are intentionally not read in
             // the v2 command. The phase tracker is deterministic and owns
             // temporal segmentation.
             result.Remove("keyframe_count");
@@ -1816,12 +1796,13 @@ namespace KimodoUnityBridge.Command
                     RemoveRecordedRootMotion(boneFrames);
                 }
 
-                string assetName = arguments.Value<string>("name")?.Trim();
+                JObject outputOptions = arguments["output"] as JObject;
+                string assetName = outputOptions?.Value<string>("name")?.Trim();
                 if (string.IsNullOrWhiteSpace(assetName))
                 {
                     assetName = $"{source.Name}_Record_{DateTime.Now:yyyyMMdd_HHmmss_fff}";
                 }
-                string folder = KimodoEditorOutputPathUtility.NormalizeOutputFolder(arguments.Value<string>("output_folder"));
+                string folder = KimodoEditorOutputPathUtility.NormalizeOutputFolder(outputOptions?.Value<string>("folder"));
                 output = KimodoEditorClipWritebackService.CreateGeneratedAnimationClipAsset(assetName, folder);
                 output.frameRate = frameRate;
                 WriteRecordedBoneCurves(output, transforms, paths, boneFrames, frameRate);
@@ -1872,14 +1853,15 @@ namespace KimodoUnityBridge.Command
                 AnimationClip output = null;
                 try
                 {
-                    string assetName = arguments.Value<string>("name")?.Trim();
+                    JObject outputOptions = arguments["output"] as JObject;
+                    string assetName = outputOptions?.Value<string>("name")?.Trim();
                     if (string.IsNullOrWhiteSpace(assetName))
                     {
                         assetName = $"{sourceAnimation.Name}_To_{target.Name}";
                     }
                     output = KimodoEditorClipWritebackService.CreateGeneratedAnimationClipAsset(
                         assetName,
-                        KimodoEditorOutputPathUtility.NormalizeOutputFolder(arguments.Value<string>("output_folder")));
+                        KimodoEditorOutputPathUtility.NormalizeOutputFolder(outputOptions?.Value<string>("folder")));
                     KimodoEditorClipUtility.CopyClipData(sourceAnimation.Clip, output);
                     AnimationClip providedHumanoidClip = sourceAnimation.Clip.isHumanMotion
                         ? sourceAnimation.Clip
