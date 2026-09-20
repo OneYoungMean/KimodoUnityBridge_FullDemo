@@ -38,7 +38,22 @@ namespace KimodoUnityBridge.Command
             return samples;
         }
 
+        // The analysis picture is the fixed 16:9 test-layout composite: four
+        // overview tiles plus eight key poses and eight step poses.
         private static JObject RenderAnalysisPictures(
+            TimelineSessionRecord session,
+            IReadOnlyList<AnalysisSubject> subjects,
+            JObject picture,
+            int requestedResolution)
+        {
+            if (subjects == null || subjects.Count != 1)
+            {
+                throw new InvalidOperationException("Analysis picture rendering accepts exactly one clip.");
+            }
+            return RenderTestAnalysisPictures(session, subjects[0], requestedResolution);
+        }
+
+        private static JObject RenderUnifiedAnalysisPictures(
             TimelineSessionRecord session,
             IReadOnlyList<AnalysisSubject> subjects,
             JObject picture,
@@ -220,6 +235,11 @@ namespace KimodoUnityBridge.Command
         {
             if (subject == null) throw new InvalidOperationException("-test analysis requires one clip.");
             SubjectPictureData data = BuildSubjectPictureData(session, subject);
+            EnsurePhaseTrack(data);
+            AnalysisCache[data.Subject.Record.Id] = data.Subject.Record;
+            WriteJsonAtomically(
+                AnalysisCachePath(session, data.Subject.Record.Id),
+                data.Subject.Record.ToJson());
             var tiles = BuildTestAnalysisTiles(data);
             TestPictureLayout layout = TestPictureLayout.ForResolution(requestedResolution);
             DateTime capturedAt = DateTime.Now;

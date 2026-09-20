@@ -53,7 +53,7 @@ namespace KimodoUnityBridge.Command
             {
                 EnsureTimelineSessionsRestored();
                 TimelineSessionRecord session = currentTimelineSession;
-                if (session == null) { error = "No active command Session. Create/select a Session before rendering analysis pictures."; return false; }
+                if (session == null) { error = "No active scene context is available for rendering analysis pictures."; return false; }
                 AnalysisPictureRequest pictureRequest = AnalysisPictureRequest.Parse(picture);
                 var subjects = new System.Collections.Generic.List<AnalysisSubject>();
                 foreach (TimelineClip selectedClip in selectedClips ?? Array.Empty<TimelineClip>())
@@ -105,7 +105,7 @@ namespace KimodoUnityBridge.Command
                     session,
                     subjects,
                     pictureRequest.ToJson(),
-                    resolution < 64 ? 512 : resolution);
+                    resolution < 64 ? 1920 : resolution);
                 imagePath = pictures?.Value<string>("image_path") ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(imagePath)) { error = "Analysis picture rendering completed without an image path."; return false; }
                 return true;

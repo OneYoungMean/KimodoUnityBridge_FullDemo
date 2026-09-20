@@ -45,10 +45,13 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            Animator animator = director.GetGenericBinding(track) as Animator;
-            if (animator == null || animator.transform == null)
+            if (!KimodoConstraintMarkerEditorUtility.TryGetTrackAnimatorBinding(
+                    director,
+                    track,
+                    out Animator animator) ||
+                animator.transform == null)
             {
-                error = "Animation track has no Animator binding.";
+                error = "Animation track and its parent tracks have no Animator binding.";
                 return false;
             }
 
@@ -86,7 +89,8 @@ namespace KimodoBridge.Editor
             {
                 sample.constraintMode = marker.ConstraintMode == KimodoConstraintMode.Root2D
                     ? "root2d"
-                    : marker.ConstraintMode == KimodoConstraintMode.Effector ? "effector" : "fullbody";
+                    : marker.ConstraintMode == KimodoConstraintMode.Effector ? "effector"
+                    : marker.ConstraintMode == KimodoConstraintMode.Mix ? "mix" : "fullbody";
             }
             KimodoMarkerSampleResult preview = MergeAutoSampledChannels(marker, sample);
             if (preview == null)

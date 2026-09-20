@@ -35,10 +35,12 @@ public static bool TryBuildRenderContextForMarker(KimodoConstraintMarker marker,
                 return false;
             }
 
-            Animator animator = director.GetGenericBinding(track) as Animator;
-            if (animator == null)
+            if (!KimodoConstraintMarkerEditorUtility.TryGetTrackAnimatorBinding(
+                    director,
+                    track,
+                    out Animator animator))
             {
-                error = "animation track has no animator binding";
+                error = "animation track and its parent tracks have no animator binding";
                 return false;
             }
 
@@ -101,9 +103,8 @@ public static bool TryBuildRenderContextForMarker(KimodoConstraintMarker marker,
                 SampleData = normalizedSample,
                 ConstraintType = marker.ConstraintType,
                 ConstraintMode = marker.ConstraintMode,
-                // Root2D uses the same FK/root pipeline as FullBody, while
-                // its effector stage is explicitly disabled. Its only
-                // presentation difference is the single root handle.
+                // Root2D displays its support pose through the FullBody
+                // preview calculation, with only the root handle enabled.
                 PreviewSemantic = ConstraintPreviewSemantic.ExistingFullBodyPreview,
                 HandlesEnabled = handlesEnabled && !marker.IsAnalysis,
                 HighlightJoints = KimodoMarkerSamplingUtility.BuildHighlightJointsForMarker(marker, context.ModelName),
