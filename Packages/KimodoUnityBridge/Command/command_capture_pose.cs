@@ -112,7 +112,8 @@ namespace KimodoUnityBridge.Command
             Color tint,
             float alpha)
         {
-            return CreateSnapshotVirtualPose(snapshot, tint, alpha, null, false);
+            // Test poses use the resolved tint while retaining the source material and textures.
+            return CreateSnapshotVirtualPose(snapshot, tint, alpha, null, true);
         }
 
         private static TestVirtualPose CreateTestVirtualPose(
@@ -121,7 +122,8 @@ namespace KimodoUnityBridge.Command
             float alpha,
             Vector3? targetPosition)
         {
-            return CreateSnapshotVirtualPose(snapshot, tint, alpha, targetPosition, false);
+            // Test poses use the resolved tint while retaining the source material and textures.
+            return CreateSnapshotVirtualPose(snapshot, tint, alpha, targetPosition, true);
         }
 
         private static TestVirtualPose CreateGhostVirtualPose(
@@ -153,12 +155,11 @@ namespace KimodoUnityBridge.Command
             snapshot.Apply(preview);
             var transientMaterials = new List<Material>();
             var originalMaterials = new List<Tuple<Renderer, Material[]>>();
-            bool usesGhostMaterial = useGhostMaterial;
-            ApplyAnalysisMaterials(preview, tint, useGhostMaterial ? alpha : 1f, transientMaterials, originalMaterials);
+            ApplyPoseMaterials(preview, tint, useGhostMaterial, transientMaterials, originalMaterials);
             SetPreviewRenderersEnabled(preview, false);
             TestVirtualPose result = targetPosition.HasValue
-                ? new TestVirtualPose(preview, transientMaterials, alpha, usesGhostMaterial, targetPosition.Value)
-                : new TestVirtualPose(preview, transientMaterials, alpha, usesGhostMaterial);
+                ? new TestVirtualPose(preview, transientMaterials, alpha, targetPosition.Value)
+                : new TestVirtualPose(preview, transientMaterials, alpha);
             result.SetOriginalMaterials(originalMaterials);
             return result;
         }
@@ -172,10 +173,9 @@ namespace KimodoUnityBridge.Command
             EvaluatedPosePreview preview = CreateAnalysisPosePreview(subject, frame);
             var transientMaterials = new List<Material>();
             var originalMaterials = new List<Tuple<Renderer, Material[]>>();
-            bool usesGhostMaterial = true;
-            ApplyAnalysisMaterials(preview.Root, tint, alpha, transientMaterials, originalMaterials);
+            ApplyPoseMaterials(preview.Root, tint, true, transientMaterials, originalMaterials);
             SetPreviewRenderersEnabled(preview.Root, false);
-            TestVirtualPose result = new TestVirtualPose(preview, transientMaterials, alpha, usesGhostMaterial);
+            TestVirtualPose result = new TestVirtualPose(preview, transientMaterials, alpha);
             result.SetOriginalMaterials(originalMaterials);
             return result;
         }
@@ -299,10 +299,9 @@ namespace KimodoUnityBridge.Command
 
         private static List<int> BuildGhostFrames(SubjectPictureData subject, out HashSet<int> promotedFrames)
         {
-            // Ghost3D and Track3D must use the same temporal sampling rule:
-            // preserve every authored event and insert auxiliary poses so no
-            // interval exceeds ten session frames. This keeps both views
-            // spatially comparable instead of one appearing half-covered.
+            // Ghost3D and Track3D share the same temporal sampling rule:
+            // preserve every authored event and insert auxiliary poses only
+            // when a gap exceeds twenty session frames.
             return BuildTestSampleFrames(
                 subject,
                 new HashSet<int>(subject.KeyFrameSet).Concat(FootTransitionFrames(subject)),
@@ -325,49 +324,62 @@ namespace KimodoUnityBridge.Command
                 .OrderBy(frame => frame)
                 .ToList();
 
-            // Keyframe panels compact nearby events. Foot-transition panels keep
-            // every authored transition, even when two events are within 10 frames.
-            for (int index = 1; !preserveAllPrimaryFrames && index < events.Count;)
-            {
-                int previous = events[index - 1];
-                int current = events[index];
-                if (current - previous >= 10)
-                {
-                    index++;
-                    continue;
-                }
-                if (current == lastFrame && previous != 0)
-                {
-                    events.RemoveAt(index - 1);
-                    if (index > 1) index--;
-                }
-                else
-                {
-                    events.RemoveAt(index);
-                }
-            }
-
-            int maximumGap = preserveAllPrimaryFrames ? 10 : 20;
-            var result = new List<int> { events[0] };
-            for (int index = 1; index < events.Count; index++)
-            {
-                int from = events[index - 1];
-                int to = events[index];
-                int gap = to - from;
-                int divisions = gap > maximumGap ? Mathf.CeilToInt(gap / (float)maximumGap) : 1;
-                for (int part = 1; part < divisions; part++)
-                {
-                    result.Add(from + Mathf.RoundToInt(gap * part / (float)divisions));
-                }
-                result.Add(to);
-            }
+            List<int> result = InsertTestGhostFrames(events);
             var protectedFrames = new HashSet<int>((primaryFrames ?? Enumerable.Empty<int>())
                 .Select(frame => Mathf.Clamp(frame, 0, lastFrame)))
             {
                 0,
                 lastFrame
             };
+            if (preserveAllPrimaryFrames)
+            {
+                promotedFrames = new HashSet<int>();
+                return FilterOverlappingGhostFrames(subject.Pelvis, result, protectedFrames);
+            }
             return FilterStationaryBlankFrames(subject, result, protectedFrames, out promotedFrames);
+        }
+
+        private static List<int> InsertTestGhostFrames(IReadOnlyList<int> events)
+        {
+            var result = new List<int>();
+            if (events == null || events.Count == 0) return result;
+            result.Add(events[0]);
+            for (int index = 1; index < events.Count; index++)
+            {
+                int from = events[index - 1];
+                int to = events[index];
+                int gap = to - from;
+                int divisions = gap > 20 ? Mathf.CeilToInt(gap / 20f) : 1;
+                for (int part = 1; part < divisions; part++) result.Add(from + Mathf.RoundToInt(gap * part / (float)divisions));
+                result.Add(to);
+            }
+            return result;
+        }
+
+        private static List<int> FilterOverlappingGhostFrames(Vector3[] pelvis, IReadOnlyList<int> frames, ISet<int> protectedFrames)
+        {
+            var result = new List<int>();
+            foreach (int frame in (frames ?? Array.Empty<int>()).Distinct().OrderBy(item => item))
+            {
+                bool isProtected = protectedFrames != null && protectedFrames.Contains(frame);
+                bool overlaps = (protectedFrames != null && protectedFrames.Any(protectedFrame =>
+                {
+                    if (protectedFrame == frame) return false;
+                    Vector3 a = pelvis[protectedFrame];
+                    Vector3 b = pelvis[frame];
+                    a.y = b.y = 0f;
+                    return Vector3.Distance(a, b) < .5f;
+                })) || result.Any(previous =>
+                {
+                    if (isProtected && protectedFrames.Contains(previous)) return false;
+                    Vector3 a = pelvis[previous];
+                    Vector3 b = pelvis[frame];
+                    a.y = b.y = 0f;
+                    return Vector3.Distance(a, b) < .5f;
+                });
+                if (!overlaps || isProtected) result.Add(frame);
+            }
+            return result;
         }
 
         private static List<int> FilterStationaryBlankFrames(
@@ -430,14 +442,6 @@ namespace KimodoUnityBridge.Command
             return Mathf.Lerp(separated ? 1f : .3f, 1f, index / (float)(count - 1));
         }
 
-        private static Color FootTint(SubjectPictureData subject, int frame)
-        {
-            // Auxiliary samples are intentionally neutral.  Using white here
-            // makes every non-event pose wash out the source material when
-            // several poses are composited into a ghost/trajectory tile.
-            return TryGetFootTransitionTint(subject, frame, out Color tint) ? tint : Color.gray;
-        }
-
         private static IReadOnlyList<int> FootTransitionFrames(SubjectPictureData subject)
         {
             // Use only QuickServer events here. The KMB contact channel has a
@@ -445,6 +449,7 @@ namespace KimodoUnityBridge.Command
             // fallback or merged into the rendered markers.
             return (subject.Subject.Record.Analysis?["foot_contacts"] as JArray ?? new JArray())
                 .OfType<JObject>()
+                .Where(IsFootLandingEvent)
                 .Select(item => Mathf.Clamp(item.Value<int?>("frame") ?? 0, 0, Math.Max(0, subject.Pelvis.Length - 1)))
                 .Distinct()
                 .OrderBy(frame => frame)
@@ -459,19 +464,23 @@ namespace KimodoUnityBridge.Command
             bool right = false;
             foreach (JObject item in (subject.Subject.Record.Analysis?["foot_contacts"] as JArray ?? new JArray()).OfType<JObject>())
             {
+                if (!IsFootLandingEvent(item)) continue;
                 int eventFrame = Mathf.Clamp(item.Value<int?>("frame") ?? 0, 0, Math.Max(0, subject.Pelvis.Length - 1));
                 if (eventFrame != frame) continue;
                 string foot = item.Value<string>("foot") ?? string.Empty;
                 left |= foot.IndexOf("left", StringComparison.OrdinalIgnoreCase) >= 0;
                 right |= foot.IndexOf("right", StringComparison.OrdinalIgnoreCase) >= 0;
             }
-            if (left)
+            // When both feet share one frame, keep the event visibly distinct
+            // from the left-foot blue marker by giving the right-foot red
+            // marker precedence.
+            if (right)
             {
-                tint = new Color(.2f, .45f, 1f);
+                tint = new Color(1f, .2f, .2f);
                 return true;
             }
-            tint = right ? new Color(1f, .2f, .2f) : Color.white;
-            return right;
+            tint = left ? new Color(.2f, .45f, 1f) : Color.white;
+            return left;
         }
 
         private static bool IsKeyframe(SubjectPictureData subject, int frame)

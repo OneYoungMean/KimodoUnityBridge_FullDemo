@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Linq.Expressions;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
@@ -27,7 +26,7 @@ namespace KimodoUnityBridge.Command
         {
             private readonly List<Tuple<Light, bool>> restoredLights = new List<Tuple<Light, bool>>();
 
-            public AnalysisCaptureLightScope()
+            private void DisableSceneLights()
             {
                 foreach (Light light in Resources.FindObjectsOfTypeAll<Light>())
                 {
@@ -37,9 +36,22 @@ namespace KimodoUnityBridge.Command
                         continue;
                     }
 
-                    restoredLights.Add(Tuple.Create(light, light.enabled));
+                    if (!restoredLights.Any(item => item.Item1 == light))
+                    {
+                        restoredLights.Add(Tuple.Create(light, light.enabled));
+                    }
                     light.enabled = false;
                 }
+            }
+
+            public AnalysisCaptureLightScope()
+            {
+                DisableSceneLights();
+            }
+
+            public void Refresh()
+            {
+                DisableSceneLights();
             }
 
             public void Dispose()
@@ -73,6 +85,7 @@ namespace KimodoUnityBridge.Command
                 {
                     for (int index = 0; index < tiles.Count; index++)
                     {
+                        captureLights.Refresh();
                         images[index] = RenderPictureTileSupersampled(
                             tiles[index], tileWidth, tileHeight, trajectoryScale, supersample);
                         int panel = subjects.ToList().FindIndex(item => ReferenceEquals(item, tiles[index].Subject));
@@ -140,6 +153,7 @@ namespace KimodoUnityBridge.Command
                 string type = tile.TestTileType ?? string.Empty;
                 if (type == "3d_track") return RenderRoot2DPictureTile(PictureTile.TestRoot2D(tile.Subject, tile.Direction), width, height);
                 if (type == "height_time_track") return RenderTestHeightTimeTile(tile, width, height);
+                if (type == "3d_ghost" || type == "3d_ghost_track") return RenderTestPictureTile(tile, width, height, trajectoryScale);
                 PictureTile mapped = type == "3d_ghost"
                     ? PictureTile.TestKeyframes(tile.Subject, tile.Direction)
                     : type == "3d_ghost_track"
@@ -164,7 +178,7 @@ namespace KimodoUnityBridge.Command
                 try
                 {
                     Texture2D result = RenderCamera(meshCamera, width, height, new Color(.12f, .12f, .12f, 1f));
-                    RenderPoseOnto(result, meshCamera, meshEnvironment, tile.Subject, tile.Frame, Color.white, 1f);
+                    RenderPoseOnto(result, meshCamera, meshEnvironment, tile.Subject, tile.Frame, 1f);
                     return result;
                 }
                 finally
@@ -218,8 +232,7 @@ namespace KimodoUnityBridge.Command
                 else if (tile.Presentation == "key" || tile.Presentation == "foot_contact" || tile.Presentation == "foot_fallback")
                 {
                     result = RenderCamera(camera, size, new Color(.12f, .12f, .12f, 1f));
-                    Color tint = tile.Presentation == "key" ? TestKeyframeTint : FootTint(tile.Subject, tile.Frame);
-                    RenderPoseOnto(result, camera, environment, tile.Subject, tile.Frame, tint, 1f);
+                    RenderPoseOnto(result, camera, environment, tile.Subject, tile.Frame, 1f);
                 }
                 return result;
             }
@@ -233,17 +246,73 @@ namespace KimodoUnityBridge.Command
             }
         }
 
+        private static List<int> BuildHeightTimePoseFrames(SubjectPictureData subject)
+        {
+            int lastFrame = Math.Max(0, subject?.Pelvis?.Length - 1 ?? 0);
+            var frames = (subject?.KeyFrameSet ?? new HashSet<int>())
+                .Append(0)
+                .Append(lastFrame)
+                .Select(frame => Mathf.Clamp(frame, 0, lastFrame))
+                .Distinct()
+                .OrderBy(frame => frame)
+                .ToList();
+            if (subject == null || frames.Count <= 2) return frames;
+
+            // 1-2 is a height-versus-time view. Start with every authored
+            // keyframe and the two time boundaries. If near-identical events
+            // force the time axis to become more than five times the pose
+            // height, remove the later frame from the closest interior pair.
+            // This keeps the temporal endpoints and never reduces the sample
+            // set below two poses.
+            const float maximumWidthToHeight = 5f;
+            const float layoutAspect = 4f / 3f;
+            while (frames.Count > 2)
+            {
+                float poseHeight = CalculateHeightTimePoseHeight(subject, frames);
+                float length = CalculateHeightTimeLength(subject, frames, layoutAspect);
+                if (length / Mathf.Max(.001f, poseHeight) <= maximumWidthToHeight) break;
+
+                int removeIndex = -1;
+                int closestGap = int.MaxValue;
+                for (int index = 0; index < frames.Count - 1; index++)
+                {
+                    if (frames[index + 1] == lastFrame) continue;
+                    int gap = frames[index + 1] - frames[index];
+                    if (gap <= closestGap)
+                    {
+                        closestGap = gap;
+                        removeIndex = index + 1;
+                    }
+                }
+                if (removeIndex < 0) break;
+                frames.RemoveAt(removeIndex);
+            }
+            return frames;
+        }
+
+        private static float CalculateHeightTimePoseHeight(
+            SubjectPictureData subject,
+            IReadOnlyList<int> poseFrames)
+        {
+            float minY = float.PositiveInfinity;
+            float maxY = float.NegativeInfinity;
+            for (int index = 0; index < poseFrames.Count; index++)
+            {
+                int frame = Mathf.Clamp(poseFrames[index], 0, Math.Max(0, subject.Pelvis.Length - 1));
+                Bounds pose = CalculateRawPreviewPoseBounds(subject, frame);
+                minY = Mathf.Min(minY, pose.min.y);
+                maxY = Mathf.Max(maxY, pose.max.y);
+            }
+            if (float.IsInfinity(minY) || float.IsInfinity(maxY)) return 1f;
+            return Mathf.Max(.001f, maxY - minY);
+        }
+
         private static Texture2D RenderTestHeightTimeTile(PictureTile tile, int width, int height)
         {
             SubjectPictureData subject = tile.Subject;
             int lastFrame = Math.Max(0, subject.Pelvis.Length - 1);
             float aspect = width / (float)Mathf.Max(1, height);
-            List<int> poseFrames = subject.KeyFrameSet
-                .Append(0)
-                .Append(lastFrame)
-                .Distinct()
-                .OrderBy(frame => frame)
-                .ToList();
+            List<int> poseFrames = BuildHeightTimePoseFrames(subject);
             float length = CalculateHeightTimeLength(subject, poseFrames, aspect);
             var poseTargets = new Dictionary<int, Vector3>();
             var curvePoints = new List<Vector3>(Math.Max(1, subject.Pelvis.Length));
@@ -273,26 +342,32 @@ namespace KimodoUnityBridge.Command
 
                 float minY = contentBounds.min.y;
                 float maxY = contentBounds.max.y;
-                float axisX = contentBounds.min.x;
-                Color gridColor = new Color(.55f, .62f, .68f, .45f);
+                // Keep the time/height diagnostic plane through the sampled
+                // hips path. Using the bounds edge can place every line on a
+                // clipped silhouette edge when the preview root has an
+                // import offset, which makes the second overview panel look
+                // empty even though its geometry was created.
+                float axisX = 0f;
+                Color gridColor = new Color(.65f, .72f, .78f, .8f);
+                float baseLineWidth = Mathf.Max(.025f, length * 2f / Mathf.Max(1, width));
                 var environment = new List<GameObject>();
                 CreateEvidenceLights(environment, contentBounds.center);
                 for (int index = 0; index <= 5; index++)
                 {
                     float z = length * index / 5f;
                     bool edge = index == 0 || index == 5;
-                    CreateWorldLine(environment, new Vector3(axisX, minY, z), new Vector3(axisX, maxY, z), edge ? .012f : .006f, gridColor, true);
+                    CreateWorldLine(environment, new Vector3(axisX, minY, z), new Vector3(axisX, maxY, z), edge ? baseLineWidth : baseLineWidth * .5f, gridColor, true);
                 }
                 const int horizontalDivisions = 5;
                 for (int index = 0; index <= horizontalDivisions; index++)
                 {
                     float y = Mathf.Lerp(minY, maxY, index / (float)horizontalDivisions);
                     bool edge = index == 0 || index == horizontalDivisions;
-                    CreateWorldLine(environment, new Vector3(axisX, y, 0f), new Vector3(axisX, y, length), edge ? .016f : .006f, gridColor, true);
+                    CreateWorldLine(environment, new Vector3(axisX, y, 0f), new Vector3(axisX, y, length), edge ? baseLineWidth : baseLineWidth * .5f, gridColor, true);
                 }
-                CreateDiagnosticLine(environment, curvePoints, new Color(.15f, .9f, .25f, 1f), .025f);
-                CreateWorldLine(environment, new Vector3(axisX, minY, 0f), new Vector3(axisX, minY, length), .022f, Color.white, true);
-                CreateWorldLine(environment, new Vector3(axisX, minY, 0f), new Vector3(axisX, maxY, 0f), .022f, Color.white, true);
+                CreateDiagnosticLine(environment, curvePoints, new Color(.15f, .9f, .25f, 1f), baseLineWidth * 1.25f);
+                CreateWorldLine(environment, new Vector3(axisX, minY, 0f), new Vector3(axisX, minY, length), baseLineWidth * 1.4f, Color.white, true);
+                CreateWorldLine(environment, new Vector3(axisX, minY, 0f), new Vector3(axisX, maxY, 0f), baseLineWidth * 1.4f, Color.white, true);
                 float diagnosticMargin = Mathf.Max(.05f, contentBounds.size.magnitude * .03f);
                 contentBounds.Expand(Vector3.one * diagnosticMargin);
 
@@ -316,7 +391,11 @@ namespace KimodoUnityBridge.Command
                     0f);
                 try
                 {
-                    return RenderTestPoseLayers(camera, environment, poses, width, height, new Color(.12f, .12f, .12f, 1f));
+                    // Use the same depth-aware pose compositor as the other
+                    // evidence tiles. Direct Camera.Render() is unreliable for
+                    // these transient HDRP pose clones and can drop every pose.
+                    return RenderTestPoseLayers(camera, environment, poses, width, height,
+                        new Color(.12f, .12f, .12f, 1f));
                 }
                 finally
                 {
@@ -355,6 +434,8 @@ namespace KimodoUnityBridge.Command
             {
                 widthAtLength = Mathf.Max(widthAtLength, poses[index].max.z);
             }
+            float minimumLength = CalculateHeightTimeSeparationLength(
+                poses, poseFrames, Math.Max(1, subject.Pelvis.Length - 1), HeightTimePoseGapMeters);
 
             Func<float, float> horizontalWidth = length =>
             {
@@ -373,7 +454,7 @@ namespace KimodoUnityBridge.Command
 
             float upper = Mathf.Max(1f, targetWidth + widthAtLength - poses[0].min.z);
             while (horizontalWidth(upper) < targetWidth && upper < 100000f) upper *= 2f;
-            if (horizontalWidth(0f) >= targetWidth) return .001f;
+            if (horizontalWidth(0f) >= targetWidth) return Mathf.Max(.001f, minimumLength);
             float lower = 0f;
             for (int iteration = 0; iteration < 32; iteration++)
             {
@@ -381,7 +462,72 @@ namespace KimodoUnityBridge.Command
                 if (horizontalWidth(middle) < targetWidth) lower = middle;
                 else upper = middle;
             }
-            return Mathf.Max(.001f, upper);
+            return Mathf.Max(.001f, upper, minimumLength);
+        }
+
+        private static Texture2D ComposePictureCanvasGpu(
+            IReadOnlyList<Texture2D> tiles, IReadOnlyList<RectInt> rects, int width, int height)
+        {
+            ComputeShader compositor = Resources.Load<ComputeShader>("KimodoPictureCanvasComposite");
+            if (compositor == null) throw new InvalidOperationException("KimodoPictureCanvasComposite compute shader is unavailable.");
+            if (tiles == null || rects == null || tiles.Count != rects.Count || tiles.Count > 20)
+                throw new ArgumentException("Picture canvas tile and rect counts must match and fit the GPU compositor.");
+            int kernel = compositor.FindKernel("CompositeTiles");
+            var descriptor = new RenderTextureDescriptor(width, height, RenderTextureFormat.ARGB32, 0)
+            {
+                enableRandomWrite = true,
+                sRGB = QualitySettings.activeColorSpace == ColorSpace.Linear
+            };
+            var target = new RenderTexture(descriptor)
+            {
+                filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp
+            };
+            target.Create();
+            try
+            {
+                compositor.SetInt("_Width", width);
+                compositor.SetInt("_Height", height);
+                compositor.SetInt("_TileCount", tiles.Count);
+                compositor.SetInt("_HeaderHeight", 60);
+                compositor.SetVectorArray("_Rects", rects.Select(rect => new Vector4(rect.x, rect.y, rect.width, rect.height)).ToArray());
+                compositor.SetVectorArray("_Labels", rects.Select((_, index) => new Vector4(
+                    index < 4 ? 1 : index < 12 ? 2 : 3,
+                    index < 4 ? index + 1 : index < 12 ? index - 3 : index - 11, 0f, 0f)).ToArray());
+                for (int index = 0; index < tiles.Count; index++)
+                    compositor.SetTexture(kernel, "_Tile" + index.ToString(CultureInfo.InvariantCulture), tiles[index]);
+                compositor.SetTexture(kernel, "_Canvas", target);
+                compositor.Dispatch(kernel, (width + 7) / 8, (height + 7) / 8, 1);
+                RenderTexture previous = RenderTexture.active;
+                RenderTexture.active = target;
+                try
+                {
+                    var result = new Texture2D(width, height, TextureFormat.RGBA32, false);
+                    result.ReadPixels(new Rect(0, 0, width, height), 0, 0, false);
+                    result.Apply(false, false);
+                    return result;
+                }
+                finally { RenderTexture.active = previous; }
+            }
+            finally
+            {
+                target.Release();
+                UnityEngine.Object.DestroyImmediate(target);
+            }
+        }
+
+        private static float CalculateHeightTimeSeparationLength(
+            IReadOnlyList<Bounds> poses, IReadOnlyList<int> frames, int lastFrame, float gap)
+        {
+            float length = 0f;
+            for (int right = 1; right < poses.Count; right++)
+            for (int left = 0; left < right; left++)
+            {
+                int frameGap = frames[right] - frames[left];
+                if (frameGap <= 0) continue;
+                length = Mathf.Max(length,
+                    (poses[left].max.z - poses[right].min.z + gap) * lastFrame / frameGap);
+            }
+            return length;
         }
 
         private static void CreateDiagnosticLine(List<GameObject> objects, IReadOnlyList<Vector3> points, Color color, float width)
@@ -454,30 +600,19 @@ namespace KimodoUnityBridge.Command
             IReadOnlyList<GameObject> environment,
             SubjectPictureData subject,
             int localFrame,
-            Color tint,
-            float alpha,
-            bool useTestGhostMaterial = false)
+            float alpha)
         {
             EvaluatedPosePreview preview = CreateAnalysisPosePreview(subject, localFrame);
             var transientMaterials = new List<Material>();
             var originalMaterials = new List<Tuple<Renderer, Material[]>>();
             try
             {
-                if (useTestGhostMaterial)
-                {
-                    ApplyAnalysisMaterials(preview.Root, tint, alpha, transientMaterials, originalMaterials);
-                }
-                else
-                {
-                    ApplyAnalysisMaterials(preview.Root, tint, 1f, transientMaterials, originalMaterials);
-                }
+                ApplyPoseMaterials(preview.Root, Color.white, false, transientMaterials, originalMaterials);
                 SetEvidenceVisualsEnabled(environment, false);
                 Texture2D layer = RenderCamera(camera, destination.width, new Color(0f, 0f, 0f, 0f));
                 try
                 {
-                    // GhostAlpha is already encoded in the transparent shader;
-                    // applying it again here would square the opacity.
-                    Composite(destination, layer, useTestGhostMaterial ? 1f : alpha);
+                    Composite(destination, layer, alpha);
                 }
                 finally
                 {
@@ -526,9 +661,8 @@ namespace KimodoUnityBridge.Command
                             GhostAlpha(index, frames.Count, separated),
                             TestGhostAlphaMin,
                             TestGhostAlphaMax);
-                        if (keyframe) alpha += .3f;
-                        if (footTransition) alpha += .2f;
-                        if (tile.StationaryBoostFrames.Contains(frame))
+                        if (keyframe || footTransition) alpha = .96f;
+                        if (!keyframe && !footTransition && tile.StationaryBoostFrames.Contains(frame))
                         {
                             alpha = Mathf.Min(MaxPromotedGhostAlpha, alpha + StationaryTrajectoryAlphaBoost);
                         }
@@ -768,7 +902,10 @@ namespace KimodoUnityBridge.Command
                         layer = RenderCameraToTexture(camera, width, height, Color.clear, RenderTextureFormat.ARGB32, false);
                         depth = RenderCameraDepthToTexture(
                             camera, depthShader, width, height, new[] { pose.Preview });
-                        composite.SetFloat("_PoseAlpha", pose.UsesGhostMaterial ? 1f : pose.Alpha);
+                        // Default materials stay opaque. The compositor owns
+                        // ghost opacity for every pose so Lit never needs a
+                        // transparent material variant.
+                        composite.SetFloat("_PoseAlpha", pose.Alpha);
                         composite.SetTexture(poseKernel, "_PoseColor", layer);
                         composite.SetTexture(poseKernel, "_PoseDepth", depth);
                         composite.SetTexture(poseKernel, "_BaseColor", baseLayer);
@@ -847,21 +984,6 @@ namespace KimodoUnityBridge.Command
             return texture;
         }
 
-        private sealed class HdrpAovState
-        {
-            public readonly Dictionary<string, object> Handles = new Dictionary<string, object>(StringComparer.Ordinal);
-            public bool Completed;
-        }
-
-        private static bool IsHdrpCapturePipeline()
-        {
-            string pipelineName = GraphicsSettings.currentRenderPipeline == null
-                ? string.Empty
-                : GraphicsSettings.currentRenderPipeline.GetType().FullName ?? string.Empty;
-            return pipelineName.IndexOf("HighDefinition", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                pipelineName.IndexOf("HDRP", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
         private static Type FindLoadedType(string fullName)
         {
             return AppDomain.CurrentDomain.GetAssemblies()
@@ -869,137 +991,11 @@ namespace KimodoUnityBridge.Command
                 .FirstOrDefault(type => type != null);
         }
 
-        private static object ResolveHdrpAovTarget(object stateObject, object bufferId)
-        {
-            HdrpAovState state = (HdrpAovState)stateObject;
-            string name = bufferId == null ? string.Empty : bufferId.ToString();
-            if (state.Handles.TryGetValue(name, out object handle)) return handle;
-            // HDRP invokes the allocator for every requested buffer. Returning
-            // the color target for an unknown enum keeps this path compatible
-            // with minor AOV enum additions while preserving one allocation.
-            return state.Handles.TryGetValue("Color", out handle) ? handle : null;
-        }
-
-        private static void CompleteHdrpAov(object stateObject, object commandBuffer, object buffers)
-        {
-            ((HdrpAovState)stateObject).Completed = true;
-        }
-
-        private static Delegate CreateHdrpAllocator(Type delegateType, HdrpAovState state)
-        {
-            MethodInfo invoke = delegateType.GetMethod("Invoke");
-            ParameterInfo parameter = invoke.GetParameters()[0];
-            ParameterExpression parameterExpression = Expression.Parameter(parameter.ParameterType, "bufferId");
-            MethodInfo resolver = typeof(command_context).GetMethod(
-                nameof(ResolveHdrpAovTarget), BindingFlags.NonPublic | BindingFlags.Static);
-            Expression body = Expression.Call(
-                resolver,
-                Expression.Constant(state, typeof(object)),
-                Expression.Convert(parameterExpression, typeof(object)));
-            body = Expression.Convert(body, invoke.ReturnType);
-            return Expression.Lambda(delegateType, body, parameterExpression).Compile();
-        }
-
-        private static Delegate CreateHdrpCallback(Type delegateType, HdrpAovState state)
-        {
-            MethodInfo invoke = delegateType.GetMethod("Invoke");
-            ParameterExpression[] parameters = invoke.GetParameters()
-                .Select(parameter => Expression.Parameter(parameter.ParameterType, parameter.Name))
-                .ToArray();
-            MethodInfo complete = typeof(command_context).GetMethod(
-                nameof(CompleteHdrpAov), BindingFlags.NonPublic | BindingFlags.Static);
-            Expression body = Expression.Call(
-                complete,
-                Expression.Constant(state, typeof(object)),
-                Expression.Convert(parameters[0], typeof(object)),
-                Expression.Convert(parameters[1], typeof(object)));
-            return Expression.Lambda(delegateType, body, parameters).Compile();
-        }
-
-        private static RenderTexture RenderHdrpAovToTexture(
-            Camera camera,
-            int width,
-            int height,
-            RenderTextureFormat format,
-            string bufferName)
-        {
-            Type additionalCameraDataType = FindLoadedType("UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData");
-            Type builderType = FindLoadedType("UnityEngine.Rendering.HighDefinition.AOVRequestBuilder");
-            Type requestType = FindLoadedType("UnityEngine.Rendering.HighDefinition.AOVRequest");
-            Type buffersType = FindLoadedType("UnityEngine.Rendering.HighDefinition.AOVBuffers");
-            Type allocatorType = FindLoadedType("UnityEngine.Rendering.HighDefinition.AOVRequestBufferAllocator");
-            Type callbackType = FindLoadedType("UnityEngine.Rendering.HighDefinition.FramePassCallback");
-            Type rtHandlesType = FindLoadedType("UnityEngine.Rendering.RTHandles");
-            if (additionalCameraDataType == null || builderType == null || requestType == null ||
-                buffersType == null || allocatorType == null || callbackType == null || rtHandlesType == null)
-            {
-                throw new InvalidOperationException("HDRP AOV capture types are unavailable.");
-            }
-
-            RenderTexture target = NewAnalysisRenderTexture(width, height, format, false,
-                format == RenderTextureFormat.ARGB32 ? 24 : 0);
-            RenderTexture result = NewAnalysisRenderTexture(width, height, format, false,
-                format == RenderTextureFormat.ARGB32 ? 24 : 0);
-            var state = new HdrpAovState();
-            Rect previousPixelRect = camera.pixelRect;
-            MethodInfo alloc = rtHandlesType.GetMethod(
-                "Alloc", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(RenderTexture) }, null);
-            try
-            {
-                if (alloc == null) throw new InvalidOperationException("HDRP RTHandle allocator is unavailable.");
-                object handle = alloc.Invoke(null, new object[] { target });
-                state.Handles[bufferName] = handle;
-
-                Component additionalCameraData = camera.GetComponent(additionalCameraDataType) ??
-                    camera.gameObject.AddComponent(additionalCameraDataType);
-                object request = requestType.GetMethod("NewDefault", BindingFlags.Public | BindingFlags.Static)
-                    .Invoke(null, null);
-                object builder = Activator.CreateInstance(builderType);
-                MethodInfo add = builderType.GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                    .Where(method => method.Name == "Add")
-                    .First(method => method.GetParameters().Length == 5);
-                object buffer = System.Enum.Parse(buffersType, bufferName);
-                Delegate allocator = CreateHdrpAllocator(allocatorType, state);
-                Delegate callback = CreateHdrpCallback(callbackType, state);
-                Array requestedBuffers = Array.CreateInstance(buffersType, 1);
-                requestedBuffers.SetValue(buffer, 0);
-                add.Invoke(builder, new object[] { request, allocator, null, requestedBuffers, callback });
-                object collection = builderType.GetMethod("Build", BindingFlags.Public | BindingFlags.Instance)
-                    .Invoke(builder, null);
-                additionalCameraDataType.GetMethod("SetAOVRequests", BindingFlags.Public | BindingFlags.Instance)
-                    .Invoke(additionalCameraData, new object[] { collection });
-                additionalCameraDataType.GetField("backgroundColorHDR")?.SetValue(additionalCameraData, camera.backgroundColor);
-                additionalCameraDataType.GetProperty("backgroundColorHDR")?.SetValue(additionalCameraData, camera.backgroundColor);
-                camera.targetTexture = null;
-                camera.pixelRect = new Rect(0f, 0f, width, height);
-                camera.Render();
-                camera.pixelRect = previousPixelRect;
-                Graphics.CopyTexture(target, result);
-                additionalCameraDataType.GetMethod("SetAOVRequests", BindingFlags.Public | BindingFlags.Instance)
-                    .Invoke(additionalCameraData, new object[] { null });
-                DestroyAnalysisRenderTexture(target);
-                target = null;
-                return result;
-            }
-            catch
-            {
-                DestroyAnalysisRenderTexture(target);
-                DestroyAnalysisRenderTexture(result);
-                throw;
-            }
-            finally
-            {
-                camera.pixelRect = previousPixelRect;
-            }
-        }
-
         private static RenderTexture RenderCameraToTexture(Camera camera, int width, int height, Color background, RenderTextureFormat format, bool randomWrite)
         {
             // Analysis layers must be captured through a plain camera target
-            // texture. The HDRP AOV request route (RenderHdrpAovToTexture) hands
-            // back an all-black buffer for these transient analysis cameras, so
-            // CompositePose/BlendLayer composited nothing and every character tile
-            // rendered black.
+            // texture. The transient analysis camera must render directly into
+            // this target so the compositor receives the actual color layer.
             RenderTexture target = NewAnalysisRenderTexture(width, height, format, randomWrite);
             RenderTexture previous = RenderTexture.active;
             try
@@ -1118,8 +1114,10 @@ namespace KimodoUnityBridge.Command
                 groundBounds.Expand(new Vector3(0f, 0f, groundWidth / aspect - groundDepth));
             }
 
+            WriteFirstTileLightSnapshot("root2d_entry", tile, groundBounds, null);
             var environment = new List<GameObject>();
             CreatePictureEnvironment(environment, groundBounds);
+            WriteFirstTileLightSnapshot("after_environment", tile, groundBounds, null);
             CreateWorldLine(environment, groundPoints, new Color(.1f, .85f, .25f, .95f), .06f);
             var keyframes = new HashSet<int>(tile.PrimaryFrames);
             foreach (int frame in tile.TrajectoryFrames.Where(frame => !keyframes.Contains(frame)))
@@ -1141,10 +1139,26 @@ namespace KimodoUnityBridge.Command
                 CreateHeadingArrow(environment, origin, forward, .45f, tint);
             }
 
+            WriteFirstTileLightSnapshot("before_camera", tile, groundBounds, null);
             Camera camera = CreateTestAnalysisPictureCamera(groundBounds, tile.Direction, aspect, 0f);
             try
             {
-                return RenderCamera(camera, width, height, new Color(.12f, .12f, .12f, 1f));
+                WriteFirstTileLightSnapshot("after_camera", tile, groundBounds, camera);
+                // HDRP can omit transient mesh geometry when the camera uses
+                // the old direct Camera.Render() readback path. Render into an
+                // explicit target, matching the other evidence tiles, so the
+                // cloned scene ground is included in 1-1.
+                RenderTexture target = RenderCameraToTexture(
+                    camera, width, height, new Color(.12f, .12f, .12f, 1f),
+                    RenderTextureFormat.ARGB32, false);
+                try
+                {
+                    return ReadRenderTexture(target, width, height);
+                }
+                finally
+                {
+                    DestroyAnalysisRenderTexture(target);
+                }
             }
             finally
             {
@@ -1153,6 +1167,78 @@ namespace KimodoUnityBridge.Command
                 {
                     if (item != null) UnityEngine.Object.DestroyImmediate(item);
                 }
+            }
+        }
+
+        private static void WriteFirstTileLightSnapshot(
+            string stage,
+            PictureTile tile,
+            Bounds bounds,
+            Camera camera)
+        {
+            var lines = new List<string>
+            {
+                $"Kimodo 1-1 light snapshot ({stage})",
+                $"presentation={tile?.Presentation ?? string.Empty}",
+                $"test_tile_type={tile?.TestTileType ?? string.Empty}",
+                $"bounds={bounds}",
+                $"camera={camera?.name ?? string.Empty}",
+                $"active_pipeline={GraphicsSettings.currentRenderPipeline?.GetType().FullName ?? "BuiltIn"}",
+                $"color_space={QualitySettings.activeColorSpace}",
+                $"ambient_intensity={RenderSettings.ambientIntensity}",
+                $"ambient_light={RenderSettings.ambientLight}",
+                $"skybox={RenderSettings.skybox?.name ?? "none"}"
+            };
+
+            foreach (Light light in Resources.FindObjectsOfTypeAll<Light>()
+                .Where(item => item != null && item.gameObject != null && item.gameObject.scene.IsValid())
+                .OrderBy(item => item.gameObject.scene.name)
+                .ThenBy(item => item.name))
+            {
+                Component hdrpData = light.GetComponent("HDAdditionalLightData");
+                PropertyInfo intensityProperty = hdrpData?.GetType().GetProperty("intensity");
+                string hdrpIntensity = intensityProperty == null
+                    ? "n/a"
+                    : Convert.ToString(intensityProperty.GetValue(hdrpData), CultureInfo.InvariantCulture);
+                lines.Add(
+                    $"light name={light.name};hash={light.GetHashCode()};" +
+                    $"scene={light.gameObject.scene.name};scene_path={light.gameObject.scene.path};" +
+                    $"scene_handle={light.gameObject.scene.handle};scene_loaded={light.gameObject.scene.isLoaded};" +
+                    $"parent={(light.transform.parent == null ? "none" : light.transform.parent.name)};" +
+                    $"hide_flags={light.gameObject.hideFlags};persistent={EditorUtility.IsPersistent(light)};" +
+                    $"active={light.gameObject.activeInHierarchy};enabled={light.enabled};" +
+                    $"type={light.type};intensity={light.intensity.ToString(CultureInfo.InvariantCulture)};" +
+                    $"hdrp_intensity={hdrpIntensity};culling_mask={light.cullingMask}");
+            }
+
+            foreach (Component volume in Resources.FindObjectsOfTypeAll<Component>()
+                .Where(item => item != null && item.GetType().FullName == "UnityEngine.Rendering.Volume" &&
+                    item.gameObject != null && item.gameObject.scene.IsValid())
+                .OrderBy(item => item.gameObject.scene.name)
+                .ThenBy(item => item.name))
+            {
+                Type volumeType = volume.GetType();
+                bool isGlobal = Convert.ToBoolean(volumeType.GetProperty("isGlobal")?.GetValue(volume) ?? false);
+                float priority = Convert.ToSingle(volumeType.GetProperty("priority")?.GetValue(volume) ?? 0f);
+                bool volumeEnabled = (volume as Behaviour)?.enabled ?? false;
+                lines.Add(
+                    $"volume name={volume.name};scene={volume.gameObject.scene.name};" +
+                    $"active={volume.gameObject.activeInHierarchy};enabled={volumeEnabled};" +
+                    $"global={isGlobal};priority={priority.ToString(CultureInfo.InvariantCulture)}");
+            }
+
+            string snapshot = string.Join(Environment.NewLine, lines);
+            Debug.Log(snapshot);
+            string path = Path.GetFullPath(Path.Combine(
+                Application.dataPath, "..", "Library", "KimodoData", "light_snapshot_1_1.txt"));
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            if (string.Equals(stage, "before_camera", StringComparison.Ordinal))
+            {
+                File.WriteAllText(path, snapshot + Environment.NewLine, Encoding.UTF8);
+            }
+            else
+            {
+                File.AppendAllText(path, snapshot + Environment.NewLine, Encoding.UTF8);
             }
         }
 

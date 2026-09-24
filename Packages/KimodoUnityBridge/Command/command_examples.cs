@@ -18,6 +18,8 @@ namespace KimodoUnityBridge.Command
                     @"{'clips':[{'character':'<character>','clip':'<clip>'}],'picture':{'output':'composite'},'resolution':512}");
                 case RetargetAnimationCommand: return Examples("Retarget a loaded Clip to another scene character.",
                     @"{'source_character':'<source character>','animation':'<clip>','target_character':'<target character>','output':{'name':'RetargetedMotion'}}");
+                case TransformCaptureCommand: return Examples("Capture the External Pose returned by pose_get together with scene objects, without moving the scene character.",
+                    @"{'pose':{'track':'<returned pose track>','index':0},'transforms':['@pose','<table hierarchy path>','<apple hierarchy path>'],'resolution':768}");
                 case GenerateAnimationCommand: return new JArray(
                     Example("Generate two seconds and poll the returned request_id.",
                         @"{'character':'<character>','prompt':'Stand still and breathe naturally','duration_frames':120}"),
@@ -27,8 +29,11 @@ namespace KimodoUnityBridge.Command
                         @"{'character':'<character>','prompt':'Reach for the apple and pick it up','duration_frames':120,'loop':false,'constraints':[{'inout':{'in':{'source':{'clip':'<previous clip>'},'window_frames':30,'sample_count':5},'out':{'source':{'clip':'<next clip>'},'window_frames':12,'sample_count':3}}}]}"),
                     Example("Keep sampled opening and closing windows inside the returned Clip.",
                         @"{'character':'<character>','prompt':'Bend down then stand up','duration_frames':120,'loop':false,'constraints':[{'inout':{'mode':'inside','in':{'source':{'clip':'<reference clip>','frame':0},'window_frames':12,'sample_count':3},'out':{'source':{'clip':'<reference clip>'},'window_frames':12,'sample_count':3}}}]}"));
-                case PoseGetCommand: return Examples("Capture a source Clip's local frame at 60 FPS; reuse the returned {track,index}.",
-                    @"{'source':{'character':'<character>','clip':'<clip>','frame':30},'full_data':true}");
+                case PoseGetCommand: return new JArray(
+                    Example("Capture a pose at an absolute Timeline-global time in seconds.",
+                        @"{'source':{'character':'<character>','timeline_time_seconds':1.5},'full_data':true}"),
+                    Example("Capture a pose at a time relative to a target Clip's Timeline range.",
+                        @"{'source':{'character':'<character>','clip':'<clip>','clip_time_seconds':0.5},'full_data':true}"));
                 case PoseSetCommand: return Examples("Edit the root of the Pose slot returned by pose_get; position is in Character world space.",
                     @"{'pose':{'track':'<returned pose track>','index':0},'root':{'position':[0,1,0],'rotation':[0,0,0,1]}}");
                 case PoseSetRootTransformCommand: return Examples("Set a returned Pose slot's root position.",

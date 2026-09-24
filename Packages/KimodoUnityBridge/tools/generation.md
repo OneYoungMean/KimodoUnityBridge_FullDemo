@@ -13,7 +13,7 @@ Inside samples the current clip's opening/closing windows. Outside samples the p
 
 Samples are evenly spaced on integer model frames; two or more samples include both endpoints, while one sample keeps the pose nearest the seam. Short source ranges limit the effective window and sample count. Overlapping Inside windows are rejected rather than silently overriding poses. `Show Constraint` displays the actual samples on a selected clip (In: blue; Out: orange); `Refresh` resamples them. Export applies one shared world-to-track transform to all samples, preserving relative motion.
 
-The hidden context is a generation workspace, not the final playback Timeline. These controls belong to `KimodoPlayableClip` in the actual Timeline and are created on demand. Generation completion alone does not establish visual seam quality: verify consecutive playback of the resulting clips, including root motion and foot contacts.
+Generation uses the actual `KimodoPlayableClip` Timeline; it is not the final playback result. Generation completion alone does not establish visual seam quality: verify consecutive playback of the resulting clips, including root motion and foot contacts.
 
 ## Decision program / 决策程序
 
@@ -161,7 +161,7 @@ if request_names_one_or_more_actions():
     if related_clips is not empty:
         related_analysis = animation_analyze(related_clips, picture={"output": "composite"}, resolution=512)
         source_profile = related_analysis.clips[0].motion_profile
-        source_keyframes = related_analysis.clips[0].phase_track[*].anchor_frame
+        source_keyframes = related_analysis.clips[0].phase_track[*].anchor_frame_60
         if request_is_repair_or_variant_of_related_clip():
             derive_loop_path_and_heading_decisions_from(
                 source_profile,
@@ -181,7 +181,7 @@ heading，再决定是否覆盖。关键帧列表用于动作阶段、采样帧�
 `-90°`，右转终点 `+90°`；仅在语义明确时启用对应覆盖。
 
 ```pseudo
-analysis_frame_anchors = source_analysis.clips[0].phase_track[*].anchor_frame
+analysis_frame_anchors = source_analysis.clips[0].phase_track[*].anchor_frame_60
 verification_frames = choose_phase_and_endpoint_frames(analysis_frame_anchors)
 path_constraint = source_analysis.clips[0].root_trajectory.path
 path_angle = derive_path_angle_from_motion_profile_and_request(source_profile, request)
@@ -237,7 +237,7 @@ function execute_generate_skill(request):
         source_picture_map = source_analysis.pictures.images
         ASSERT OPEN_WITH_AVAILABLE_VISUAL_TOOL(source_image_path) == YES
         source_profile = source_analysis.clips[0].motion_profile
-        source_keyframes = source_analysis.clips[0].phase_track[*].anchor_frame
+        source_keyframes = source_analysis.clips[0].phase_track[*].anchor_frame_60
         if request_is_repair_or_variant_of_source_clip():
             derive_loop_path_and_heading_decisions_from(
                 source_profile,

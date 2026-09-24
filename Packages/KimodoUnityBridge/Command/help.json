@@ -50,7 +50,7 @@
     },
     {
       "name": "animation_analyze",
-      "description": "Analyze one immutable animation clip and render unified graph-space picture evidence. Select standard tile types explicitly and choose composite, individual tiles, or both outputs. Results include root_trajectory, endpoint_pose_comparison, motion_profile, foot_contacts, phase_track, and evidence paths. Completed Clips are never modified.",
+      "description": "Analyze one immutable animation clip at the fixed command time base of 60 FPS and render unified graph-space picture evidence. Select standard tile types explicitly and choose composite, individual tiles, or both outputs. Results include root_trajectory, endpoint_pose_comparison, motion_profile, foot_contacts, phase_track, keyframes with timeline_frame_60, and evidence paths. Completed Clips are never modified.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -63,13 +63,6 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "role": {
-                  "type": "string",
-                  "enum": [
-                    "source",
-                    "target"
-                  ]
-                },
                 "character": {
                   "type": "string"
                 },
@@ -113,6 +106,70 @@
               "output": "composite"
             },
             "resolution": 512
+          }
+        }
+      ]
+    },
+    {
+      "name": "transform_capture",
+      "description": "Capture the current scene or an External Pose returned by pose_get together with scene objects, in world space. Returns a four-view image and evaluated joint positions; does not change scene poses.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "character_path": {
+            "type": "string",
+            "description": "Active-scene character hierarchy path; required unless pose is supplied."
+          },
+          "pose": {
+            "type": "object",
+            "description": "External Pose slot in the current scene context.",
+            "additionalProperties": false,
+            "properties": {
+              "track": {
+                "type": "string"
+              },
+              "index": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "track",
+              "index"
+            ]
+          },
+          "transforms": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "Scene hierarchy paths or character-relative paths. With pose, use @pose for the evaluated character or @pose/<relative bone path>. Include environment paths to frame them together."
+          },
+          "resolution": {
+            "type": "integer",
+            "description": "Per-view pixel size, 64 through 4096; defaults to 1024. To capture an animation frame, first call pose_get and pass its pose reference."
+          }
+        },
+        "required": [
+          "transforms"
+        ],
+        "additionalProperties": false
+      },
+      "examples": [
+        {
+          "description": "Capture the External Pose returned by pose_get together with scene objects, without moving the scene character.",
+          "arguments": {
+            "pose": {
+              "track": "<returned pose track>",
+              "index": 0
+            },
+            "transforms": [
+              "@pose",
+              "<table hierarchy path>",
+              "<apple hierarchy path>"
+            ],
+            "resolution": 768
           }
         }
       ]
@@ -180,7 +237,7 @@
     },
     {
       "name": "kimodo_generate_animation",
-      "description": "Start asynchronous generation for a character in the current scene context. The accepted request is recorded in generation metadata and must be polled by request_id.",
+      "description": "Start asynchronous generation for a character in the current scene context. The accepted request is recorded in the generation result and must be polled by request_id.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -822,7 +879,7 @@
     },
     {
       "name": "pose_get",
-      "description": "Sample one current-animation clip frame into a new External Pose slot. Returns the only reusable pose identity: {track,index}.",
+      "description": "Sample one Timeline time or Clip-local time into a new External Pose slot. Use exactly one source mode: timeline_time_seconds, or clip with clip_time_seconds. Returns the reusable pose identity {track,index}.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -836,15 +893,52 @@
               "clip": {
                 "type": "string"
               },
-              "frame": {
-                "type": "integer",
-                "minimum": 0
+              "timeline_time_seconds": {
+                "type": "number",
+                "description": "Absolute Timeline-global time in seconds."
+              },
+              "clip_time_seconds": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Time in seconds relative to the selected Clip's Timeline range."
               }
             },
             "required": [
-              "character",
-              "clip",
-              "frame"
+              "character"
+            ],
+            "oneOf": [
+              {
+                "required": [
+                  "character",
+                  "timeline_time_seconds"
+                ],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "clip"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "clip_time_seconds"
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "character",
+                  "clip",
+                  "clip_time_seconds"
+                ],
+                "not": {
+                  "required": [
+                    "timeline_time_seconds"
+                  ]
+                }
+              }
             ]
           },
           "full_data": {
@@ -859,12 +953,22 @@
       },
       "examples": [
         {
-          "description": "Capture a source Clip's local frame at 60 FPS; reuse the returned {track,index}.",
+          "description": "Capture a pose at an absolute Timeline-global time in seconds.",
+          "arguments": {
+            "source": {
+              "character": "<character>",
+              "timeline_time_seconds": 1.5
+            },
+            "full_data": true
+          }
+        },
+        {
+          "description": "Capture a pose at a time relative to a target Clip's Timeline range.",
           "arguments": {
             "source": {
               "character": "<character>",
               "clip": "<clip>",
-              "frame": 30
+              "clip_time_seconds": 0.5
             },
             "full_data": true
           }

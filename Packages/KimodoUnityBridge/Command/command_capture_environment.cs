@@ -25,25 +25,47 @@ namespace KimodoUnityBridge.Command
         private static void CreatePictureEnvironment(List<GameObject> objects, Bounds bounds)
         {
             const int captureLayer = SessionCaptureLayer;
-            float size = Mathf.Ceil(Mathf.Max(bounds.size.x, bounds.size.z) * .5f) * 2f;
-            GameObject floor = MoveToAnalysisSessionRoot(GameObject.CreatePrimitive(PrimitiveType.Plane));
-            floor.hideFlags = HideFlags.HideAndDontSave;
-            floor.transform.position = new Vector3(bounds.center.x, 0f, bounds.center.z);
-            floor.transform.localScale = Vector3.one * (size / 10f);
-            SetLayerRecursively(floor, captureLayer);
-            floor.GetComponent<Renderer>().sharedMaterial = MakeMaterial(new Color(.31f, .31f, .31f, 1f));
+            GameObject floor = CloneSceneGround(captureLayer);
+            if (floor == null)
+            {
+                // Analysis fixtures may not contain an authored floor. Keep a
+                // visible diagnostic fallback in that case; authored scene
+                // floors always take the clone path above.
+                CreateTestPictureEnvironment(objects, bounds);
+                return;
+            }
             objects.Add(floor);
-            for (float x = bounds.min.x; x <= bounds.max.x; x += .25f)
-            {
-                CreateWorldLine(objects, new Vector3(x, .006f, bounds.min.z), new Vector3(x, .006f, bounds.max.z),
-                    Mathf.Abs(x % 1f) < .01f ? .010f : .003f, new Color(.65f, .65f, .65f, .25f));
-            }
-            for (float z = bounds.min.z; z <= bounds.max.z; z += .25f)
-            {
-                CreateWorldLine(objects, new Vector3(bounds.min.x, .006f, z), new Vector3(bounds.max.x, .006f, z),
-                    Mathf.Abs(z % 1f) < .01f ? .010f : .003f, new Color(.65f, .65f, .65f, .25f));
-            }
             CreateEvidenceLights(objects, bounds.center);
+        }
+
+        private static GameObject CloneSceneGround(int captureLayer)
+        {
+            GameObject source = Resources.FindObjectsOfTypeAll<Renderer>()
+                .Where(renderer => renderer != null && renderer.gameObject != null &&
+                    renderer.gameObject.scene.IsValid() && !EditorUtility.IsPersistent(renderer) &&
+                    renderer.gameObject.activeInHierarchy && !IsSessionObject(renderer.gameObject))
+                .Select(renderer => renderer.gameObject)
+                .Where(gameObject =>
+                    string.Equals(gameObject.name, "Plane", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(gameObject.name, "Ground", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(gameObject.name, "Terrain", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(gameObject => string.Equals(gameObject.name, "Ground", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .FirstOrDefault();
+            if (source == null)
+            {
+                Terrain terrain = Resources.FindObjectsOfTypeAll<Terrain>()
+                    .FirstOrDefault(item => item != null && item.gameObject != null &&
+                        item.gameObject.scene.IsValid() && !EditorUtility.IsPersistent(item) &&
+                        item.gameObject.activeInHierarchy && !IsSessionObject(item.gameObject));
+                source = terrain?.gameObject;
+            }
+            if (source == null) return null;
+
+            GameObject clone = MoveToAnalysisSessionRoot(UnityEngine.Object.Instantiate(source));
+            clone.name = "Kimodo Scene Ground";
+            clone.hideFlags = HideFlags.HideAndDontSave;
+            SetLayerRecursively(clone, captureLayer);
+            return clone;
         }
 
         private static Bounds IncludeGroundInBounds(Bounds bounds)
@@ -128,7 +150,7 @@ namespace KimodoUnityBridge.Command
             MeshFilter filter = floor.AddComponent<MeshFilter>();
             filter.sharedMesh = mesh;
             MeshRenderer renderer = floor.AddComponent<MeshRenderer>();
-            Material material = MakeMaterial(Color.white);
+            Material material = MakeEnvironmentMaterial(Color.white);
             if (gridTexture != null)
             {
                 if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", gridTexture);
@@ -143,7 +165,6 @@ namespace KimodoUnityBridge.Command
         private static Camera CreateAnalysisPictureCamera(Bounds bounds, Vector3 direction, bool orthographic)
         {
             Camera camera = CreateAnalysisPictureCamera("Kimodo Analysis Picture Camera");
-            ConfigureAnalysisCameraExposure(camera);
             camera.cullingMask = 1 << SessionCaptureLayer;
             camera.orthographic = orthographic;
             camera.nearClipPlane = .01f;
@@ -163,36 +184,23 @@ namespace KimodoUnityBridge.Command
             Vector3 direction,
             float aspect)
         {
-            Camera camera = CreateTestAnalysisPictureCameraBase("Kimodo Test Analysis Picture Camera", aspect);
+            Camera camera = CreateAnalysisPictureCamera("Kimodo Test Analysis Picture Camera");
+            camera.cullingMask = 1 << SessionCaptureLayer;
+            camera.orthographic = true;
+            camera.aspect = Mathf.Max(.1f, aspect);
+            camera.nearClipPlane = .01f;
+            camera.farClipPlane = 1000f;
+            camera.clearFlags = CameraClearFlags.SolidColor;
             Vector3 normalizedDirection = direction.sqrMagnitude > .0001f ? direction.normalized : new Vector3(1f, .75f, -1f).normalized;
-            CalculateTestViewExtents(
-                subject,
-                normalizedDirection,
-                out Vector3 viewCenter,
-                out float maxHorizontal,
-                out float maxVertical,
-                out float maxDepth);
+            CalculateTestViewExtents(subject, normalizedDirection, out Vector3 viewCenter, out float maxHorizontal, out float maxVertical, out float maxDepth);
             float distance = Mathf.Max(8f, bounds.extents.magnitude * 4f);
             camera.transform.position = viewCenter + normalizedDirection * distance;
             Vector3 up = Mathf.Abs(Vector3.Dot(normalizedDirection, Vector3.up)) > .95f ? Vector3.forward : Vector3.up;
             camera.transform.LookAt(viewCenter, up);
-
-            float horizontalHalf = maxHorizontal * TestCameraFitScale + TestCameraMarginMeters;
-            float verticalHalf = maxVertical * TestCameraFitScale + TestCameraMarginMeters;
-            camera.orthographicSize = Mathf.Max(
-                .5f,
-                verticalHalf,
-                horizontalHalf / camera.aspect);
+            camera.orthographicSize = Mathf.Max(.5f, maxVertical * TestCameraFitScale + TestCameraMarginMeters,
+                (maxHorizontal * TestCameraFitScale + TestCameraMarginMeters) / camera.aspect);
             camera.farClipPlane = Mathf.Max(100f, distance + maxDepth + 10f);
             return camera;
-        }
-
-        private static Camera CreateTestAnalysisPictureCamera(
-            Bounds bounds,
-            Vector3 direction,
-            float aspect)
-        {
-            return CreateTestAnalysisPictureCamera(bounds, direction, aspect, TestCameraMarginMeters);
         }
 
         private static Camera CreateTestAnalysisPictureCamera(
@@ -248,7 +256,6 @@ namespace KimodoUnityBridge.Command
         private static Camera CreateTestAnalysisPictureCameraBase(string name, float aspect)
         {
             Camera camera = CreateAnalysisPictureCamera(name);
-            ConfigureAnalysisCameraExposure(camera);
             camera.cullingMask = 1 << SessionCaptureLayer;
             camera.orthographic = true;
             camera.aspect = Mathf.Max(.0001f, aspect);
@@ -258,41 +265,25 @@ namespace KimodoUnityBridge.Command
             return camera;
         }
 
-        private static void ConfigureAnalysisCameraExposure(Camera camera)
-        {
-            // The camera is intentionally assigned to a layer with no Volume
-            // components. HDRP resolves volume overrides using this mask, so
-            // scene exposure/tonemapping cannot wash the analysis pose white.
-            if (camera == null) return;
-            Type type = FindLoadedType("UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData");
-            if (type == null) return;
-            Component data = camera.GetComponent(type);
-            if (data == null) return;
-            FieldInfo mask = type.GetField("volumeLayerMask", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            if (mask != null) mask.SetValue(data, (LayerMask)0);
-            else type.GetProperty("volumeLayerMask", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.SetValue(data, (LayerMask)0);
-        }
-
         private static Camera CreateAnalysisPictureCamera(string name)
         {
             GameObject cameraObject = MoveToAnalysisSessionRoot(
                 new GameObject(name) { hideFlags = HideFlags.HideAndDontSave });
             Camera camera = cameraObject.AddComponent<Camera>();
-            ConfigureRenderPipelineAnalysisCamera(camera);
+            ConfigureAnalysisCamera(camera);
             return camera;
         }
 
-        private static void ConfigureRenderPipelineAnalysisCamera(Camera camera)
+        private static void ConfigureAnalysisCamera(Camera camera)
         {
-            if (camera == null || GraphicsSettings.currentRenderPipeline == null) return;
+            if (camera == null) return;
+            camera.allowHDR = false;
 
-            string pipelineName = GraphicsSettings.currentRenderPipeline.GetType().FullName ?? string.Empty;
-            string cameraDataTypeName = pipelineName.IndexOf("HighDefinition", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                pipelineName.IndexOf("HDRP", StringComparison.OrdinalIgnoreCase) >= 0
-                    ? "UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData"
-                    : pipelineName.IndexOf("Universal", StringComparison.OrdinalIgnoreCase) >= 0
-                        ? "UnityEngine.Rendering.Universal.UniversalAdditionalCameraData"
-                        : null;
+            string cameraDataTypeName = GetCapturePipeline() == CapturePipeline.Hdrp
+                ? "UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData"
+                : GetCapturePipeline() == CapturePipeline.Urp
+                    ? "UnityEngine.Rendering.Universal.UniversalAdditionalCameraData"
+                    : null;
             if (cameraDataTypeName == null) return;
 
             Type additionalCameraDataType = AppDomain.CurrentDomain.GetAssemblies()
@@ -311,8 +302,7 @@ namespace KimodoUnityBridge.Command
             {
                 additionalCameraDataType.GetProperty("volumeLayerMask")?.SetValue(additionalCameraData, (LayerMask)0);
             }
-            if (pipelineName.IndexOf("HighDefinition", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                pipelineName.IndexOf("HDRP", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (GetCapturePipeline() == CapturePipeline.Hdrp)
             {
                 Type clearColorModeType = additionalCameraDataType.GetNestedType(
                     "ClearColorMode", BindingFlags.Public | BindingFlags.NonPublic);
@@ -703,12 +693,23 @@ namespace KimodoUnityBridge.Command
 
         private static void CreateEvidenceLights(List<GameObject> objects, Vector3 center)
         {
-            bool isBuiltIn = IsBuiltInCapturePipeline();
+            // Characters use an Unlit evidence material, but the floor and
+            // other environment geometry remain Lit. Isolate them from
+            // arbitrary scene lights and provide a small, pipeline-aware rig.
+            foreach (Light light in UnityEngine.Object.FindObjectsByType<Light>(FindObjectsSortMode.None))
+            {
+                if (light != null && light.gameObject != null &&
+                    light.name.StartsWith("Kimodo Evidence Light", StringComparison.Ordinal))
+                {
+                    UnityEngine.Object.DestroyImmediate(light.gameObject);
+                }
+            }
+            bool hdrp = GetCapturePipeline() == CapturePipeline.Hdrp;
             var setups = new[]
             {
-                (name: "Key", position: new Vector3(-4f, 6f, -4f), intensity: isBuiltIn ? 1.125f : 3.3f),
-                (name: "Fill", position: new Vector3(4f, 3f, -2f), intensity: isBuiltIn ? .525f : 1.65f),
-                (name: "Rim", position: new Vector3(0f, 5f, 5f), intensity: isBuiltIn ? .30f : 1.05f)
+                (name: "Key", position: new Vector3(-4f, 6f, -4f), intensity: hdrp ? 16f : 1.05f),
+                (name: "Fill", position: new Vector3(4f, 3f, -2f), intensity: hdrp ? 4f : .45f),
+                (name: "Rim", position: new Vector3(0f, 5f, 5f), intensity: hdrp ? 1.5f : .20f)
             };
             var directions = new Vector4[setups.Length];
             for (int index = 0; index < setups.Length; index++)
@@ -718,7 +719,20 @@ namespace KimodoUnityBridge.Command
                     new GameObject("Kimodo Evidence Light " + setup.name) { hideFlags = HideFlags.HideAndDontSave });
                 Light light = lightObject.AddComponent<Light>();
                 light.type = LightType.Directional;
+                light.shadows = LightShadows.None;
+                Component hdrpLightData = null;
+                if (hdrp)
+                {
+                    Type type = FindLoadedType("UnityEngine.Rendering.HighDefinition.HDAdditionalLightData");
+                    if (type != null)
+                    {
+                        hdrpLightData = lightObject.AddComponent(type);
+                        type.GetMethod("InitDefaultHDAdditionalLightData", BindingFlags.Public | BindingFlags.Static)
+                            ?.Invoke(null, new object[] { hdrpLightData });
+                    }
+                }
                 light.intensity = setup.intensity;
+                hdrpLightData?.GetType().GetProperty("intensity")?.SetValue(hdrpLightData, setup.intensity);
                 light.color = Color.white;
                 light.cullingMask = 1 << SessionCaptureLayer;
                 lightObject.transform.position = center + setup.position;
@@ -749,22 +763,27 @@ namespace KimodoUnityBridge.Command
 
         private static Material MakeMaterial(Color color)
         {
-            string pipelineName = GraphicsSettings.currentRenderPipeline == null
-                ? string.Empty
-                : GraphicsSettings.currentRenderPipeline.GetType().FullName ?? string.Empty;
-            bool isHdrp = pipelineName.IndexOf("HighDefinition", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                pipelineName.IndexOf("HDRP", StringComparison.OrdinalIgnoreCase) >= 0;
-            bool isUrp = pipelineName.IndexOf("Universal", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                pipelineName.IndexOf("URP", StringComparison.OrdinalIgnoreCase) >= 0;
-            Shader shader = isHdrp
-                ? Shader.Find("HDRP/Unlit")
-                : isUrp
-                    ? Shader.Find("Universal Render Pipeline/Unlit")
-                    : Shader.Find("Sprites/Default") ?? Shader.Find("Standard");
-            shader ??= Shader.Find("Sprites/Default") ?? Shader.Find("Standard");
+            Shader shader = FindAnalysisShader(
+                "HDRP/Unlit",
+                "Universal Render Pipeline/Unlit",
+                "Sprites/Default") ?? Shader.Find("Standard");
+            if (shader == null) throw new InvalidOperationException("No analysis environment shader is available.");
             var material = new Material(shader) { hideFlags = HideFlags.HideAndDontSave, color = color };
             if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
             if (material.HasProperty("_UnlitColor")) material.SetColor("_UnlitColor", color);
+            return material;
+        }
+
+        private static Material MakeEnvironmentMaterial(Color color)
+        {
+            Shader shader = FindAnalysisShader(
+                "HDRP/Lit",
+                "Universal Render Pipeline/Lit",
+                "Standard") ?? Shader.Find("Standard");
+            if (shader == null) throw new InvalidOperationException("No analysis environment Lit shader is available.");
+            var material = new Material(shader) { hideFlags = HideFlags.HideAndDontSave, color = color };
+            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
+            if (material.HasProperty("_Color")) material.SetColor("_Color", color);
             return material;
         }
 
@@ -994,10 +1013,10 @@ namespace KimodoUnityBridge.Command
         {
             var signature = new JObject
             {
-                // v4 aligns native KMB analysis frames to the 60 FPS Session
+                // v5 aligns native KMB analysis frames to the fixed 60 FPS command
                 // time base before keyframe/contact extraction. Do not reuse
                 // v3 caches, whose markers are in the model's native FPS.
-                ["contract"] = "animation_analysis_picture_v4",
+                ["contract"] = "animation_analysis_picture_v5_command_60",
                 ["character_ref"] = character?.CharacterRef ?? string.Empty,
                 ["rig_type"] = IsHumanoidCharacter(character) ? "humanoid" : "mesh",
                 ["animation_id"] = animation?.Id.ToString("D") ?? string.Empty,
