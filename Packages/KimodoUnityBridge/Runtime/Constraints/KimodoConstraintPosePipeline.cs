@@ -55,20 +55,10 @@ namespace KimodoBridge
                 return false;
             }
 
-            // A Root2D constraint has no authored MuscleSample, but it still
-            // follows the same profile-skeleton path as FullBody: use the
-            // target avatar's initial pose as the FK input, apply the explicit
-            // hips override, then run the common IK stage.
-            KimodoMarkerSampleResult pipelineSample = sample;
-            if (IsRootOnlySample(sample))
-            {
-                if (!TryBuildRootOnlyPipelineSample(sample, cache, out pipelineSample, out error))
-                {
-                    return false;
-                }
-            }
-
-            if (!KimodoConstraintIkSolver.TryApply(pipelineSample, frameRate, cache, out error))
+            // Every command constraint is evaluated from its authored support
+            // pose. Mix may omit muscle, root, or effector channels; omitted
+            // channels remain untouched by the solver.
+            if (!KimodoConstraintIkSolver.TryApply(sample, frameRate, cache, out error))
             {
                 return false;
             }
@@ -114,60 +104,6 @@ namespace KimodoBridge
             return sample.rootOverride != null;
         }
 
-        private static bool TryBuildRootOnlyPipelineSample(
-            KimodoMarkerSampleResult source,
-            RetargetSkeleton cache,
-            out KimodoMarkerSampleResult result,
-            out string error)
-        {
-            result = null;
-            error = string.Empty;
-            if (source == null || cache == null || source.rootOverride == null)
-            {
-                error = "Root2D pipeline input is invalid.";
-                return false;
-            }
-
-            KimodoRetargetClipSamplingUtility.ResetRetargetSkeletonPose(cache);
-            if (!KimodoRetargetSamplingUtility.TryCaptureMuscleSample(
-                    cache,
-                    out MuscleSample initialPose,
-                    out error) ||
-                initialPose == null ||
-                !initialPose.IsValid)
-            {
-                if (string.IsNullOrEmpty(error))
-                {
-                    error = "Failed to capture the target skeleton initial pose for Root2D.";
-                }
-                return false;
-            }
-
-            result = source.Clone();
-            result.sampleData = initialPose;
-            result.constraintMode = "root2d";
-            result.enableMask ??= new KimodoConstraintMask();
-            result.validMask ??= new KimodoConstraintMask();
-            result.enableMask.muscle = false;
-            result.enableMask.rootTQ = false;
-            result.enableMask.leftFootTQ = false;
-            result.enableMask.rightFootTQ = false;
-            result.validMask.muscle = false;
-            result.validMask.rootTQ = false;
-            result.validMask.leftFootTQ = false;
-            result.validMask.rightFootTQ = false;
-            result.enableMask.leftHand = false;
-            result.enableMask.rightHand = false;
-            result.enableMask.leftFoot = false;
-            result.enableMask.rightFoot = false;
-            result.validMask.leftHand = false;
-            result.validMask.rightHand = false;
-            result.validMask.leftFoot = false;
-            result.validMask.rightFoot = false;
-            result.effectors = new KimodoConstraintEffectors();
-            return true;
-        }
-
     }
 
     /// <summary>
@@ -192,6 +128,7 @@ namespace KimodoBridge
             public Vector3 rightFootPosition;
             public Quaternion rightFootRotation;
             public bool applyRoot;
+            public bool applyRootPosition;
             public bool rootPlanar;
             public bool rootHeading;
             public Vector3 rootPosition;
@@ -241,13 +178,16 @@ namespace KimodoBridge
                 AnimationHumanStream human = stream.AsHuman();
                 Vector3 currentHipsPosition = hips.GetPosition(stream);
                 Quaternion currentHipsRotation = hips.GetRotation(stream).normalized;
-                Vector3 targetPosition = rootPosition;
+                Vector3 targetPosition = applyRootPosition ? rootPosition : currentHipsPosition;
                 Quaternion targetRotation = rootRotation.normalized;
                 if (rootPlanar)
                 {
-                    targetPosition = KimodoMotionMath.ApplyPlanarPosition(
-                        currentHipsPosition,
-                        targetPosition);
+                    if (applyRootPosition)
+                    {
+                        targetPosition = KimodoMotionMath.ApplyPlanarPosition(
+                            currentHipsPosition,
+                            targetPosition);
+                    }
                     targetRotation = rootHeading
                         ? KimodoMotionMath.ApplyPlanarHeading(currentHipsRotation, targetRotation)
                         : currentHipsRotation;
@@ -417,10 +357,12 @@ namespace KimodoBridge
                 any |= job.solveRightFoot = KimodoConstraintMask.IsActive(sample, "rightfoot");
             }
 
-            if (KimodoConstraintMask.IsActive(sample, "rootposition") &&
-                sample.rootOverride != null)
+            bool applyRootPosition = KimodoConstraintMask.IsActive(sample, "rootposition");
+            bool applyRootHeading = KimodoConstraintMask.IsActive(sample, "rootheading");
+            if ((applyRootPosition || applyRootHeading) && sample.rootOverride != null)
             {
                 job.applyRoot = true;
+                job.applyRootPosition = applyRootPosition;
                 job.rootPlanar = KimodoConstraintInternal.NormalizeMode(sample.constraintMode) == "root2d" ||
                     KimodoConstraintInternal.NormalizeMode(sample.constraintMode) == "mix";
                 job.rootHeading = KimodoConstraintMask.IsActive(sample, "rootheading");

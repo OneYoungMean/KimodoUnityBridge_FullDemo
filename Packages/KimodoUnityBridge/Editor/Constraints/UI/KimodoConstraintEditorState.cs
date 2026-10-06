@@ -75,11 +75,16 @@ namespace KimodoBridge.Editor
             SerializedProperty positionValid = so.FindProperty("sampleData.validMask.rootPosition");
             SerializedProperty headingValid = so.FindProperty("sampleData.validMask.rootHeading");
             SerializedProperty carryEffectorsWithRoot = so.FindProperty("sampleData.carryEffectorsWithRoot");
+            SerializedProperty mode = so.FindProperty("constraintMode");
+            bool isRoot2D = mode != null &&
+                (KimodoConstraintMode)mode.enumValueIndex == KimodoConstraintMode.Root2D;
             using (new EditorGUI.DisabledScope(IsAutoSample(so)))
             {
-                if (DrawTransform(
+                if (DrawFullTransform(
                         so.FindProperty("sampleData.rootOverride"),
-                        "Root Override (World Transform)"))
+                        "Root Override (World Transform)",
+                        showRotationToggle: false,
+                        rotationEnabled: allowHeading?.boolValue == true))
                 {
                     if (positionEnabled != null) positionEnabled.boolValue = true;
                     if (positionValid != null) positionValid.boolValue = true;
@@ -92,14 +97,14 @@ namespace KimodoBridge.Editor
                     EditorGUILayout.PropertyField(
                         allowHeading,
                         new GUIContent("Allow Heading", "Export Root2D heading and use it as FullBody yaw overlay."));
-                    if (EditorGUI.EndChangeCheck() && allowHeading.boolValue)
+                    if (EditorGUI.EndChangeCheck())
                     {
                         if (positionEnabled != null) positionEnabled.boolValue = true;
                         if (positionValid != null) positionValid.boolValue = true;
-                        if (headingValid != null) headingValid.boolValue = true;
+                        if (headingValid != null) headingValid.boolValue = allowHeading.boolValue;
                     }
                 }
-                if (carryEffectorsWithRoot != null)
+                if (!isRoot2D && carryEffectorsWithRoot != null)
                 {
                     EditorGUILayout.PropertyField(
                         carryEffectorsWithRoot,
@@ -182,7 +187,7 @@ namespace KimodoBridge.Editor
             // hide authored values while a non-AutoSample marker is edited.
             using (new EditorGUI.DisabledScope(autoSample))
             {
-                if (DrawTransform(so.FindProperty(transformPath), label))
+                if (DrawFullTransform(so.FindProperty(transformPath), label))
                 {
                     if (valid != null) valid.boolValue = true;
                     if (!showEnable && enabled != null) enabled.boolValue = true;
@@ -196,7 +201,11 @@ namespace KimodoBridge.Editor
             KimodoConstraintMuscleValueGUI.Draw(muscles);
         }
 
-        private static bool DrawTransform(SerializedProperty transform, string label)
+        private static bool DrawFullTransform(
+            SerializedProperty transform,
+            string label,
+            bool showRotationToggle = true,
+            bool rotationEnabled = true)
         {
             if (transform == null) return false;
             SerializedProperty position = transform.FindPropertyRelative("position");
@@ -212,7 +221,7 @@ namespace KimodoBridge.Editor
             if (rotation != null)
             {
                 SerializedProperty enableRotation = transform.FindPropertyRelative("enableRotation");
-                if (enableRotation != null)
+                if (enableRotation != null && showRotationToggle)
                 {
                     EditorGUILayout.PropertyField(enableRotation, new GUIContent("Enable Rotation"));
                     using (new EditorGUI.DisabledScope(!enableRotation.boolValue))
@@ -222,7 +231,10 @@ namespace KimodoBridge.Editor
                 }
                 else
                 {
-                    EditorGUILayout.PropertyField(rotation, new GUIContent("Rotation"));
+                    using (new EditorGUI.DisabledScope(!rotationEnabled))
+                    {
+                        EditorGUILayout.PropertyField(rotation, new GUIContent("Rotation"));
+                    }
                 }
             }
             bool changed = EditorGUI.EndChangeCheck();

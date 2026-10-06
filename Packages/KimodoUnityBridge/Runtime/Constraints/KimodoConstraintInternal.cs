@@ -52,8 +52,9 @@ namespace KimodoBridge
 
         /// <summary>
         /// Selects the protocol constraints for one canonical sample.
-        /// Mix applies one family per frame: fullbody, otherwise all enabled
-        /// effectors, otherwise root2d.
+        /// Mix preserves the authored root and all enabled effectors in the
+        /// same canonical sample; exporters may project each active channel
+        /// family into the model protocol without changing command semantics.
         /// </summary>
         internal static KimodoConstraintInternal[] GetConstraintInternal(
             KimodoMarkerSampleResult sample,
@@ -72,23 +73,20 @@ namespace KimodoBridge
                 if (KimodoConstraintMask.IsActive(sample, "muscle"))
                 {
                     result.Add(new KimodoFullBodyConstraintInternal(sample, modelType, exportContext));
-                    return result.ToArray();
                 }
-                AddEffectors(result, sample, modelType, exportContext);
-                if (result.Count > 0)
-                {
-                    return result.ToArray();
-                }
-                if (KimodoConstraintMask.IsActive(sample, "rootposition"))
+                if (KimodoConstraintMask.IsActive(sample, "rootposition") ||
+                    KimodoConstraintMask.IsActive(sample, "rootheading"))
                 {
                     result.Add(new KimodoRoot2DConstraintInternal(sample, modelType, exportContext));
                 }
+                AddEffectors(result, sample, modelType, exportContext);
                 return result.ToArray();
             }
 
             if (string.Equals(mode, "root2d", StringComparison.OrdinalIgnoreCase))
             {
-                if (KimodoConstraintMask.IsActive(sample, "rootposition"))
+                if (KimodoConstraintMask.IsActive(sample, "rootposition") ||
+                    KimodoConstraintMask.IsActive(sample, "rootheading"))
                 {
                     result.Add(new KimodoRoot2DConstraintInternal(sample, modelType, exportContext));
                 }
@@ -161,6 +159,9 @@ namespace KimodoBridge
             string mode = (value ?? string.Empty)
                 .Trim().ToLowerInvariant().Replace('_', '-');
             if (mode == string.Empty || mode == "constraint") return "fullbody";
+            // RootEffect is the public semantic name for the existing mixed
+            // root-plus-effector sample. Keep the solver/export family as mix.
+            if (mode == "root-effect") return "mix";
             return mode == "ik" ? "effector" : mode;
         }
     }

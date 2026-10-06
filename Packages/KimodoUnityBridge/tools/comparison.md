@@ -108,8 +108,12 @@ function compare(candidate_1, candidate_2):
     2. trajectory_quality: is the visible path unbroken and structurally coherent?
     3. foot_alternation_quality: do left and right contact events alternate without noise?
     4. required_phase_coverage: are required phases present, ordered, and long enough?
-    5. expression_strength: does each required phase have a clear anchor pose and
+    5. required_pose_coverage: how much of the declared semantic anchor Pose set
+       is present and expressed without conflict?
+    6. expression_strength: does each required phase have a clear anchor pose and
        sustained expression, rather than a momentary gesture?
+    7. transition_quality: when a neighboring or reference Clip is declared, is
+       the connection structurally and visually coherent?
 
     For n ordered semantic phases, use the duration prior w_i = 1/(i*i),
     normalized as p_i = w_i / sum(w_j). Compare observed phase coverage to this
@@ -124,6 +128,8 @@ function compare(candidate_1, candidate_2):
     tiles. A short accidental contact or ambiguous transition must not satisfy a
     required semantic phase merely because it has an anchor frame.
     Fill each required *_WINNER with CANDIDATE_1, CANDIDATE_2, TIE, or UNKNOWN.
+    For required_pose_coverage, more verified required Poses expressed without
+    conflict is stronger than fewer. Do not invent required Poses.
     Use structured and optional range evidence only as support. Do not calculate
     OVERALL_WINNER by score, vote, magnitude, displacement, contact count,
     or selected-frame count. Resolve conflicting criteria by relevance to the

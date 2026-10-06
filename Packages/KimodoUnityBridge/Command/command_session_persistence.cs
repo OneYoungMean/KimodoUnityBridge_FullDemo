@@ -26,7 +26,6 @@ namespace KimodoUnityBridge.Command
         public string sessionJsonPath;
         public bool isAutomatic;
         public bool isCurrent;
-        public bool sceneObjectsRemoved;
         public string updatedAtUtc;
         public List<KimodoCommandCharacterMetadata> characters = new List<KimodoCommandCharacterMetadata>();
         public List<KimodoCommandAnimationMetadata> animations = new List<KimodoCommandAnimationMetadata>();
@@ -414,24 +413,23 @@ namespace KimodoUnityBridge.Command
             ["updated_at_utc"] = value.updatedAtUtc ?? string.Empty
         };
 
-        private static void EnsureTimelineSessionsRestored(string requestedName = null)
+        private static void EnsureTimelineSessionsRestored()
         {
-            if (timelineSessionsRestored && (string.IsNullOrWhiteSpace(requestedName) ||
-                TimelineSessions.ContainsKey(requestedName)))
+            if (timelineSessionsRestored)
             {
                 return;
             }
-            timelineSessionsRestored = true;
-
             string[] guids = AssetDatabase.FindAssets("t:TimelineAsset", new[] { GeneratedTimelineFolder });
-            var restored = new List<TimelineSessionRecord>();
+            TimelineAsset latestAutomaticTimeline = null;
+            KimodoCommandSessionMetadata latestAutomaticMetadata = null;
+            string latestAutomaticPath = null;
             foreach (string guid in guids)
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid);
                 TimelineAsset timeline = AssetDatabase.LoadAssetAtPath<TimelineAsset>(path);
                 KimodoCommandSessionMetadata metadata = AssetDatabase.LoadAllAssetsAtPath(path)
                     .OfType<KimodoCommandSessionMetadata>().FirstOrDefault();
-                if (timeline == null || metadata == null || !Guid.TryParse(metadata.sessionId, out Guid sessionId))
+                if (timeline == null || metadata == null || !Guid.TryParse(metadata.sessionId, out _))
                 {
                     continue;
                 }
@@ -440,29 +438,76 @@ namespace KimodoUnityBridge.Command
                     Debug.LogWarning($"[Kimodo] Ignoring Session '{metadata.sessionName}' with unsupported schema '{metadata.schemaVersion}'. Expected '{SessionJsonSchemaVersion}'.");
                     continue;
                 }
-                if (TimelineSessions.ContainsKey(metadata.sessionName) ||
-                    (metadata.sceneObjectsRemoved && !string.Equals(
-                        metadata.sessionName, requestedName, StringComparison.OrdinalIgnoreCase)))
+                if (!metadata.isAutomatic)
                 {
                     continue;
                 }
-                metadata.sceneObjectsRemoved = false;
+                DateTime timestamp = DateTime.TryParse(
+                    metadata.updatedAtUtc,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind,
+                    out DateTime parsed)
+                    ? parsed
+                    : DateTime.MinValue;
+                DateTime latestTimestamp = latestAutomaticMetadata != null && DateTime.TryParse(
+                    latestAutomaticMetadata.updatedAtUtc,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind,
+                    out DateTime latestParsed)
+                    ? latestParsed
+                    : DateTime.MinValue;
+                if (latestAutomaticMetadata != null && timestamp <= latestTimestamp)
+                {
+                    continue;
+                }
+                latestAutomaticTimeline = timeline;
+                latestAutomaticMetadata = metadata;
+                latestAutomaticPath = path;
+            }
+
+            var restored = new List<TimelineSessionRecord>();
+            if (latestAutomaticTimeline != null && latestAutomaticMetadata != null &&
+                Guid.TryParse(latestAutomaticMetadata.sessionId, out Guid sessionId))
+            {
+                TimelineAsset timeline = latestAutomaticTimeline;
+                KimodoCommandSessionMetadata metadata = latestAutomaticMetadata;
+                string path = latestAutomaticPath;
                 PlayableDirector director = Resources.FindObjectsOfTypeAll<PlayableDirector>()
-                    .FirstOrDefault(item => item != null && item.playableAsset == timeline && item.gameObject.scene.IsValid());
+                    .FirstOrDefault(item => item != null && item.playableAsset == timeline &&
+                        item.gameObject.scene.IsValid() &&
+                        !IsArchivedSessionObject(item.gameObject) &&
+                        (item.name.StartsWith(KimodoRuntimeUtility.SessionDirectorPrefix, StringComparison.Ordinal) ||
+                         item.transform.parent != null && item.transform.parent.name.StartsWith(KimodoRuntimeUtility.SessionRootPrefix, StringComparison.Ordinal)));
+                string safeName = KimodoRuntimeUtility.SanitizeName(metadata.sessionName, "Session");
+                GameObject sessionRoot = director != null && director.transform.parent != null &&
+                    director.transform.parent.name.StartsWith(KimodoRuntimeUtility.SessionRootPrefix, StringComparison.Ordinal)
+                    ? director.transform.parent.gameObject
+                    : null;
+                if (sessionRoot == null)
+                {
+                    sessionRoot = new GameObject($"{KimodoRuntimeUtility.SessionRootPrefix}{safeName}")
+                    {
+                        layer = SessionCaptureLayer,
+                        hideFlags = HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild
+                    };
+                }
+                else
+                {
+                    sessionRoot.layer = SessionCaptureLayer;
+                    sessionRoot.hideFlags = HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild;
+                }
                 if (director == null)
                 {
-                    var directorObject = new GameObject($"{TimelineDirectorNamePrefix}{KimodoRuntimeUtility.SanitizeName(metadata.sessionName, "Session")}");
-                    directorObject.hideFlags = HideFlags.DontSaveInBuild | HideFlags.DontSaveInEditor;
+                    var directorObject = new GameObject($"{KimodoRuntimeUtility.SessionDirectorPrefix}{safeName}");
+                    directorObject.transform.SetParent(sessionRoot.transform, false);
                     director = directorObject.AddComponent<PlayableDirector>();
-                    director.playableAsset = timeline;
                 }
-                string safeName = KimodoRuntimeUtility.SanitizeName(metadata.sessionName, "Session");
-                GameObject sessionRoot = new GameObject($"KimodoSession_{safeName}")
+                director.playableAsset = timeline;
+                director.hideFlags = HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild;
+                if (director.transform.parent != sessionRoot.transform)
                 {
-                    hideFlags = HideFlags.DontSaveInBuild | HideFlags.DontSaveInEditor,
-                    layer = SessionCaptureLayer
-                };
-                director.transform.SetParent(sessionRoot.transform, false);
+                    director.transform.SetParent(sessionRoot.transform, false);
+                }
                 var session = new TimelineSessionRecord(sessionId, metadata.sessionName, director, timeline, path, metadata.isAutomatic, metadata, sessionRoot);
                 foreach (KimodoCommandCharacterMetadata savedCharacter in metadata.characters ?? new List<KimodoCommandCharacterMetadata>())
                 {
@@ -480,11 +525,7 @@ namespace KimodoUnityBridge.Command
                     }
                     KimodoLocalAvatarUtility.AvatarResolveResult avatarResult = KimodoLocalAvatarUtility.ResolveAvatarFromGameObject(root);
                     var character = new TimelineCharacterRecord(savedCharacter.characterRef, root, animator, avatarResult.Avatar, track, poseTrack, avatarResult.Error);
-                    if (animator != null)
-                    {
-                        director.SetGenericBinding(track, animator);
-                        KimodoTimelinePreviewRefreshUtility.InitializeSceneOffset(track, animator);
-                    }
+                    BindGhostCharacter(session, root, sourceRoot, animator, track);
                     session.Characters.Add(character);
                 }
                 foreach (KimodoCommandAnimationMetadata saved in metadata.animations ?? new List<KimodoCommandAnimationMetadata>())
@@ -534,6 +575,7 @@ namespace KimodoUnityBridge.Command
                 {
                     TimelineSessions[session.Name] = session;
                 }
+                firstTimelineSession ??= session;
                 restored.Add(session);
             }
             currentTimelineSession ??= restored.Where(item => item.Metadata.isCurrent)
@@ -549,6 +591,7 @@ namespace KimodoUnityBridge.Command
                     session.SessionRoot?.SetActive(false);
                 }
             }
+            timelineSessionsRestored = true;
         }
     }
 }

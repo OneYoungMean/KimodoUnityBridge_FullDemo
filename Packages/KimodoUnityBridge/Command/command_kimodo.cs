@@ -10,6 +10,7 @@ namespace KimodoUnityBridge.Command
         public const string RetargetAnimationCommand = command_context.RetargetAnimationCommand;
         public const string GetGenerationCommand = command_context.GetGenerationCommand;
         public const string CancelGenerationCommand = command_context.CancelGenerationCommand;
+        public const string SessionClearCommand = command_context.SessionClearCommand;
 
         public static string Help(string argumentsJson = "{}") => command_dispatcher.Invoke(HelpCommand, argumentsJson);
         public static string InstallServer(string argumentsJson = "{}") => command_dispatcher.Invoke(InstallServerCommand, argumentsJson);
@@ -18,5 +19,6 @@ namespace KimodoUnityBridge.Command
         public static string RetargetAnimation(string argumentsJson) => command_dispatcher.Invoke(RetargetAnimationCommand, argumentsJson);
         public static string GetGeneration(string argumentsJson) => command_dispatcher.Invoke(GetGenerationCommand, argumentsJson);
         public static string CancelGeneration(string argumentsJson) => command_dispatcher.Invoke(CancelGenerationCommand, argumentsJson);
+        public static string ClearSession(string argumentsJson = "{}") => command_dispatcher.Invoke(SessionClearCommand, argumentsJson);
     }
 }

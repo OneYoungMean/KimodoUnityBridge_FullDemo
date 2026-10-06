@@ -144,12 +144,6 @@ namespace KimodoBridge.Editor
 
         private static void DrawControllerHandles(SceneView _)
         {
-            Handles.BeginGUI();
-            GUI.Label(
-                new Rect(10f, 10f, 500f, 20f),
-                "Selected Handle: " + (selectedHandleKey ?? "<none>"));
-            Handles.EndGUI();
-
             // Handle callbacks can synchronously rebuild the edit preview.
             // Iterate snapshots so that replacing its scope cannot invalidate
             // this Scene GUI pass midway through a drag.

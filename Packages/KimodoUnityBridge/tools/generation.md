@@ -21,7 +21,28 @@ Command generation also accepts one standalone `constraints[].inout` entry. Read
 
 Command `window_frames` and `source.frame` use **60 FPS**, unlike the Timeline UI controls above. C# converts a window with `ceil(window_frames * model_fps / 60)` (minimum one model frame), samples complete poses including Timeline transforms, then uses the shared Character → Track → Muscle → Kimodo export. `outside` (default) samples the In source tail and Out source head as extra context and crops it off; `inside` samples the source head/tail into the output's first/last windows. Sources may be explicitly chosen from any completed Clip on the same character; they do not need to neighbor the output in the scene context.
 
-Command In/Out rejects insufficient source ranges, too many samples for distinct model frames, overlapping inside windows, same-frame explicit constraints, cross-character sources, loop generation, ARDY, and requests exceeding the model frame limit including context. These checks do not silently shorten or downgrade the request. Acceptance and `kimodo_get_generation` return `inout_sampling`: source-local and Timeline sample times, output/runtime model frames, padding counts, and the exclusive crop range. The output retains the requested duration. This metadata verifies sampling and transport, not visual seam quality.
+### RootEffect constraints
+
+The complete point-constraint contract is defined in [`constraints.md`](constraints.md).
+The sections below summarize the generation-specific behavior.
+
+`constraints[].type` accepts `fullbody`, `root2d`, or `root_effect`. The command parser normalizes each public type to the internal `mix` representation. `root_effect` carries optional `pose`, required `root2d.position/heading`, and required `effect` targets. Omitted channels remain from the support pose; generation returns non-blocking diagnostics.
+
+The three point types are a discriminated union and are never nested. See `constraints.md`
+for the complete shape and validation rules.
+
+This lets a pickup contact frame express "the character is here and the hand is here" as one constraint sample.
+
+### Root2D point constraints and support Pose
+
+The optional Reference Pose model, per-type schema, no-merge collision rules, and rejection
+conditions are defined in [`constraints.md`](constraints.md).
+需要指定支撑姿态时，在目标时间调用 `pose_get`，检查后把 Pose 引用放入 Root2D 约束。
+### Generation warning check
+
+每次生成接受后都会返回非阻断的 `check`。检查由 Editor 层共享服务执行，因此 Timeline、命令和其他 generator 使用同一套规则：`root_trajectory` 检查 Root2D 的 XZ/heading 与 FullBody 的 root（含可用 Y）连续性，`constraint_overlap` 检查同帧 root 描述冲突，`effectors` 检查 RootEffect 以及 FullBody 中有效的手脚目标。速度超过 7 m/s、加速度超过 5 m/s² 或约束之间出现跳变时，状态为 `warning`，任务仍会继续。`blocking` 仅用于协议级阻断，warning 不会设置为 true。
+
+Command In/Out rejects insufficient source ranges, too many samples for distinct model frames, overlapping inside windows, same-frame explicit constraints, cross-character sources, loop generation, ARDY, and requests exceeding the model frame limit including context. These checks do not silently shorten or downgrade the request. Acceptance and `kimodo_get_generation` return `inout_sampling`: source-local and Timeline sample times, output/runtime model frames, padding counts, and the exclusive crop range. The output retains the requested duration. This metadata verifies sampling and transport, not visual seam quality. Loop is enabled only by the explicit `loop` argument; prompt wording is never parsed as a loop flag.
 
 Every command's help entry includes `examples`. Replace illustrative names and request IDs with actual returned handles before executing them.
 
@@ -185,7 +206,9 @@ analysis_frame_anchors = source_analysis.clips[0].phase_track[*].anchor_frame_60
 verification_frames = choose_phase_and_endpoint_frames(analysis_frame_anchors)
 path_constraint = source_analysis.clips[0].root_trajectory.path
 path_angle = derive_path_angle_from_motion_profile_and_request(source_profile, request)
-// No pose_get/pose_set: anchors are metadata, path/path_angle are generation inputs.
+// Analysis anchors are metadata only. They may enter the independent Pose loop,
+// but never become generation inputs without explicit conversion and
+// confirmation. Path/path_angle remain generation inputs only when requested.
 ```
 
 function execute_generate_skill(request):
@@ -515,7 +538,7 @@ function derive_supported_correction_from_failed_macros():
         return no_supported_correction
 
     if LOOP_MATCH == NO and SHOULD_LOOP == YES:
-        return request_with_loop_enabled_unless_runtime_declares_loop_fallback()
+        return request_with_loop_enabled_after_explicit_review()
 
     return no_supported_correction
 
@@ -524,15 +547,17 @@ function required(required_flag, evidence):
 
 ASSERT analysis_keyframes_are_used_as_evidence_and_timing_anchors()
 ASSERT default_generation_does_not_materialize_or_edit_pose_assets()
-ASSERT source_motion_profile_precedes_prompt_heuristics()
+ASSERT analysis_candidates_do_not_enter_generation_directly()
+ASSERT only_confirmed_pose_set_entries_enter_generation()
+ASSERT loop_flag_is_explicit_and_prompt_text_never_enables_it()
 ASSERT direct_pose_edit_requires_explicit_user_confirmation_and_opt_in()
-ASSERT analyzed_path_is_a_constraint_only_when_root_trajectory_path_is_reused()
-ASSERT path_override_and_loop_are_independent_and_may_coexist()
+ASSERT analyzed_path_is_a_constraint_only_when_root_trajectory_path_is_explicitly_reused()
+ASSERT path_override_and_loop_are_independent_explicit_options()
 ASSERT default_loop_locks_are_pos_y_and_rot_xz()
 ASSERT loop_lock_axes_change_only_on_explicit_user_request()
 ASSERT fixed_heading_overrides_path_tangent_heading_but_not_path_positions()
-ASSERT explicit_root2d_at_a_frame_overrides_root_path_at_that_frame()
-ASSERT same_frame_precedence_is_fullbody_then_root2d_then_effectors()
+ASSERT root_path_and_point_frame_collisions_are_rejected()
+ASSERT duplicate_point_frames_are_rejected()
 ASSERT no_source_target_range_pose_path_contact_or_constraint_is_invented()
 ASSERT completed_outputs_are_preserved_and_corrections_are_derived_outputs()
 ASSERT failed_canceled_or_fallback_results_are_reported_as_returned()
@@ -540,13 +565,13 @@ ASSERT failed_canceled_or_fallback_results_are_reported_as_returned()
 ## Root path and path-angle constraints / Root 路径统一采样
 
 `root_path` 与 `path.start_angle/path.end_angle` 使用同一条
-稀疏 Root2D 约束管线。两者的区别仅在路径采样对象：
+稀疏 mix root 约束管线。两者的区别仅在路径采样对象：
 
 ```pseudo
 sample_frames = union(
     clip_start_frame,
     clip_end_frame,
-    frames_already_containing_root2d_or_fullbody_constraints
+    frames_already_containing_mix_constraints
 )
 
 if ROOT_PATH:
@@ -559,7 +584,7 @@ if PATH_ANGLE_OVERRIDE:
         path.end_angle
     )
 
-emit_one_sparse_root2d_constraint(path_samples, sample_frames)
+emit_one_sparse_mix_root_constraint(path_samples, sample_frames)
 ```
 
 路径约束默认只在起点、终点和当前 Clip 已有约束帧采样；固定 heading
@@ -569,7 +594,7 @@ emit_one_sparse_root2d_constraint(path_samples, sample_frames)
 的 Clip 采样器），然后与 `root_path` 走同一套采样和稀疏约束导出逻辑；不能仅凭
 prompt 推断轨迹数据。
 
-`Root2D` 只覆盖根节点的 XZ 和平面 heading；原动画/FullBody Pose 中的根 Y、高低、
+mix root 只覆盖根节点的 XZ 和平面 heading；原动画/支撑 Pose 中的根 Y、高低、
 Pitch 与 Roll 均是运动语义，必须保留，不能由路径约束静默归零或替换。
 
 if evidence_is_static_only():

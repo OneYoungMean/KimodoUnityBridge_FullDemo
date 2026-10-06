@@ -7,16 +7,52 @@ description: Shared execution contract for all Kimodo capability tools.
 
 所有工具都遵守同一套输入、证据、状态和报告规则。工具只实现自身能力，不重复定义安装流程。
 
+## Command execution / 命令执行
+
+能力文档中的命令写法是协议层伪代码。实际 CLI 或 `exec_editor_script` 调用必须经过 `KimodoUnityBridge.Command.command_dispatcher`：
+
+```csharp
+using Newtonsoft.Json.Linq;
+using KimodoUnityBridge.Command;
+
+string schema = command_dispatcher.GetCommandDefinitionsJson();
+string help = command_dispatcher.Invoke(
+    "kimodo_help",
+    new JObject { ["command"] = "kimodo_generate_animation" }.ToString());
+string response = command_dispatcher.Invoke(
+    "kimodo_generate_animation",
+    argumentsJson);
+```
+
+命令发现和调用规则：
+
+- 先读实时 schema 或 `kimodo_help`，再选择命令和参数。
+- 只使用 schema 的协议命令名；不要搜索 `GenerateAnimationAsset` 等内部方法名。
+- `command_kimodo` 是可选的包内便利 facade，不是命令目录，也不是 CLI 发现入口。
+- 公开 Bridge API 只覆盖后端生成；需要完整 Editor 资产流程时仍使用对应的协议命令，除非包内已有明确公开 facade。
+- 找不到原生能力工具时，报告工具缺失并改用 `exec_editor_script` + `command_dispatcher.Invoke`；不得猜测不存在的独立 CLI 方法。
+
+最小错误诊断：
+
+1. `unknown_command`：命令名不在实时 schema 中，重新读取 `GetCommandDefinitionsJson()`。
+2. `invalid_argument`：命令已路由成功，按 `kimodo_help(command=...)` 修正 JSON。
+3. 没有 `request_id`：不要开始轮询；先报告命令未接受或返回结构不符合协议。
+4. 任务已有 `request_id` 但未终态：固定间隔调用 `kimodo_get_generation`，不要重复提交同一请求。
+
 ## Input and scene context
 
 ### Parameter tiers / 参数分层
 
 - **Core**：只传完成任务所需的明确对象、范围和动作语义。
 - **Advanced**：带有 `x-kimodo-advanced: true` 的参数只在需要覆盖默认值、选择模型/输出或施加路径与 Pose 约束时传入。
-- Commands resolve inputs from the active scene; returned names, paths, and pose references are the public handles.
+- Commands resolve inputs from the active scene; returned names, paths, and pose references are the public handles. Character handles identify the source scene character (`role: "scene"`). Ghost evaluation clones (`role: "ghost"`) are implementation details and are rejected as command character references.
 - `animation_analyze` 只接受一个 Clip，默认生成固定 16:9 的 20-tile composite（宽度由 resolution 决定）；比较多个候选时分别调用分析。
 - 需要单张图片时传 `picture: {output: "tile", tile_index: N}`；`tile_index` 从 1 开始，`resolution` 在该模式表示高度，默认 720px，宽度按 4:3 自适应。
 - `kimodo_generate_animation` 的普通调用只需要 `character` 与 `prompt`；模型、采样、命名、存储和分析覆盖项均可省略。
+- generation 的 point constraints 允许 `fullbody`、`root2d` 和 `root_effect`，解析后统一转换为内部 `mix`，并遵守
+  [`constraints.md`](constraints.md)；末端目标通过 `root_effect.effect` 表达。
+- 每次接受生成都会带有 Editor 层共享的非阻断 `check`：检查 `root_trajectory`、
+  `constraint_overlap` 和 `effectors`。速度阈值为 7 m/s，加速度阈值为 5 m/s²；warning 不阻止任务。
 
 - 只使用用户明确提供的 source、target、range、pose、path 和 constraint。
 - 只要生成请求指定了动作，先检查当前活动场景中的语义匹配动画；“修复/改进/替换/续作/变体 + 指定动作”绝不能跳过这一步。检查结果要记录为上下文证据，不能把发现的动画自动升级为生成约束。
@@ -65,6 +101,22 @@ Mesh analysis 对该字段返回 `NOT_APPLICABLE`。
 `w_i = 1/(i*i)`，目标占比为 `p_i = w_i / sum(w_j)`。比较使用实际阶段覆盖
 时长与该先验的偏差；不把权重相加做总质量分数。允许语义覆盖重叠（例如边走边挥手），
 但 `idle`/站立背景阶段的总覆盖不得超过 50%，除非请求明确要求长时间 idle。
+
+Evaluation has two separate outputs:
+
+```text
+constraint_compliance:
+  loop, heading, path, distance, transition, pose, contact, ending
+semantic_pose_coverage:
+  required semantic poses present, expressed, and non-conflicting
+```
+
+For ordered semantic requirements, the duration prior remains `w_i = 1/(i*i)`.
+Required semantic Pose coverage is evaluated separately: more verified required
+semantic Poses expressed without conflict receives higher coverage. This is
+evaluation evidence, not confidence, and never converts an analysis candidate
+into a generation Pose. Idle/background is invalid when it contains a
+conflicting action, such as sitting while the requested semantic is standing.
 
 交接结果的最小外壳为：
 

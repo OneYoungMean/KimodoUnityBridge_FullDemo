@@ -231,7 +231,8 @@ namespace KimodoBridge
             double? clipDurationSeconds,
             double exportFps)
         {
-            if (KimodoConstraintMask.IsActive(sample, "rootposition") &&
+            if ((KimodoConstraintMask.IsActive(sample, "rootposition") ||
+                 KimodoConstraintMask.IsActive(sample, "rootheading")) &&
                 sample.rootOverride != null)
             {
                 KimodoConstraintProjectedPose projected = RequireProfileSkeletonPose(
@@ -245,8 +246,9 @@ namespace KimodoBridge
                 {
                     type = "root2d",
                     frame_indices = BuildFrameIndices(sample.sampleTime - clipStartSeconds, clipDurationSeconds, exportFps),
-                    smooth_root_2d = new List<float[]> { new[] { -root.x, root.z } }
                 };
+                if (KimodoConstraintMask.IsActive(sample, "rootposition"))
+                    canonical.smooth_root_2d = new List<float[]> { new[] { -root.x, root.z } };
                 if (KimodoConstraintMask.IsActive(sample, "rootheading"))
                 {
                     canonical.global_root_heading = new List<float[]> { new[] { forward.z, -forward.x } };

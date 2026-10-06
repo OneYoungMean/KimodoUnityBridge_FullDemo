@@ -28,10 +28,10 @@ public static bool TryBuildRenderContextForMarker(KimodoConstraintMarker marker,
 
             KimodoConstraintMarkerEditorUtility.TryGetClipRangeForMarker(marker, out TimelineClip clipRange);
 
-            PlayableDirector director = TimelineEditor.inspectedDirector;
-            if (director == null)
+            TimelineAsset timelineAsset = track.timelineAsset ?? TimelineEditor.inspectedAsset;
+            if (!KimodoDirectorResolver.TryResolve(timelineAsset, out PlayableDirector director, out string directorError))
             {
-                error = "Timeline inspected director is null";
+                error = string.IsNullOrWhiteSpace(directorError) ? "Unable to resolve a usable scene Director." : directorError;
                 return false;
             }
 

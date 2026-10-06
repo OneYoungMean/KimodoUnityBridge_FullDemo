@@ -38,10 +38,10 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            PlayableDirector director = TimelineEditor.inspectedDirector;
-            if (director == null)
+            TimelineAsset timelineAsset = track.timelineAsset ?? TimelineEditor.inspectedAsset;
+            if (!KimodoDirectorResolver.TryResolve(timelineAsset, out PlayableDirector director, out string directorError))
             {
-                error = "Timeline inspected director is null.";
+                error = string.IsNullOrWhiteSpace(directorError) ? "Unable to resolve a usable scene Director." : directorError;
                 return false;
             }
 

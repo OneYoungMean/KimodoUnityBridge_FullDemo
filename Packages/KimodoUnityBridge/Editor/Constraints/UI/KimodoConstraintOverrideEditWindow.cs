@@ -4,6 +4,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEditor.Timeline;
 using UnityEngine;
+using UnityEngine.Playables;
 using UnityEngine.SceneManagement;
 using UnityEngine.Timeline;
 
@@ -615,7 +616,12 @@ namespace KimodoBridge.Editor
             }
 
             Scene scene = SceneManager.GetActiveScene();
-            var director = TimelineEditor.inspectedDirector;
+            PlayableDirector director = null;
+            TimelineAsset timelineAsset = TimelineEditor.inspectedAsset;
+            if (KimodoDirectorResolver.TryResolve(timelineAsset, out PlayableDirector resolvedDirector, out _))
+            {
+                director = resolvedDirector;
+            }
             if (director != null && director.gameObject != null && director.gameObject.scene.IsValid())
             {
                 scene = director.gameObject.scene;

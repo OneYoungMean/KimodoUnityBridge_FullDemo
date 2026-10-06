@@ -148,6 +148,9 @@ namespace KimodoBridge
                 case "mix":
                     // Mixed channels are explicitly authored, never enabled by mode alone.
                     break;
+                case "root-effect":
+                    // Public RootEffect aliases the existing mixed channel set.
+                    break;
                 case "effector":
                     result.rootTQ = true;
                     result.leftFootTQ = true;

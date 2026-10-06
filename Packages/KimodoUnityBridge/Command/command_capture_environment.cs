@@ -695,7 +695,8 @@ namespace KimodoUnityBridge.Command
         {
             // Characters use an Unlit evidence material, but the floor and
             // other environment geometry remain Lit. Isolate them from
-            // arbitrary scene lights and provide a small, pipeline-aware rig.
+            // arbitrary scene lights and provide a pipeline-calibrated
+            // evidence rig for every supported rendering pipeline.
             foreach (Light light in UnityEngine.Object.FindObjectsByType<Light>(FindObjectsSortMode.None))
             {
                 if (light != null && light.gameObject != null &&
@@ -704,12 +705,13 @@ namespace KimodoUnityBridge.Command
                     UnityEngine.Object.DestroyImmediate(light.gameObject);
                 }
             }
-            bool hdrp = GetCapturePipeline() == CapturePipeline.Hdrp;
+            CapturePipeline pipeline = GetCapturePipeline();
             var setups = new[]
             {
-                (name: "Key", position: new Vector3(-4f, 6f, -4f), intensity: hdrp ? 16f : 1.05f),
-                (name: "Fill", position: new Vector3(4f, 3f, -2f), intensity: hdrp ? 4f : .45f),
-                (name: "Rim", position: new Vector3(0f, 5f, 5f), intensity: hdrp ? 1.5f : .20f)
+                // Keep the evidence rig calibrated per pipeline.
+                (name: "Key", position: new Vector3(-4f, 6f, -4f), intensity: pipeline == CapturePipeline.Hdrp ? 25f : pipeline == CapturePipeline.Urp ? 3f : 10f),
+                (name: "Fill", position: new Vector3(4f, 3f, -2f), intensity: pipeline == CapturePipeline.Hdrp ? 5f : pipeline == CapturePipeline.Urp ? 1.5f : 5f),
+                (name: "Rim", position: new Vector3(0f, 5f, 5f), intensity: pipeline == CapturePipeline.Hdrp ? 3f : pipeline == CapturePipeline.Urp ? .5f : 3f)
             };
             var directions = new Vector4[setups.Length];
             for (int index = 0; index < setups.Length; index++)
@@ -721,7 +723,7 @@ namespace KimodoUnityBridge.Command
                 light.type = LightType.Directional;
                 light.shadows = LightShadows.None;
                 Component hdrpLightData = null;
-                if (hdrp)
+                if (pipeline == CapturePipeline.Hdrp)
                 {
                     Type type = FindLoadedType("UnityEngine.Rendering.HighDefinition.HDAdditionalLightData");
                     if (type != null)

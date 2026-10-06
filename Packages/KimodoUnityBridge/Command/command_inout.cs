@@ -81,7 +81,7 @@ namespace KimodoUnityBridge.Command
                 JObject source = side["source"] as JObject ?? throw new InvalidOperationException($"inout.{key}.source is required.");
                 RequireInOutFields(source, "character", "clip", "frame");
                 string characterName = source.Value<string>("character") ?? trace.Character.Name;
-                var character = ResolveSessionCharacterByReference(trace.Session, characterName, addIfMissing: false);
+                var character = ResolveSessionCharacterByReference(trace.Session, characterName, addIfMissing: true);
                 if (!ReferenceEquals(character, trace.Character))
                     throw new InvalidOperationException("inout source.character must be the generation character; cross-character alignment is not supported.");
                 var animation = ResolveAnimation(new JObject { ["animation"] = RequiredStringValue(source, "clip") }, character);
@@ -134,10 +134,11 @@ namespace KimodoUnityBridge.Command
                     for (int i = 0; i < times.Length; i++)
                     {
                         if (!KimodoRetargetMarkerSamplingUtility.TryBuildMarkerSampleResultFromBoneSample(
-                            bones[i], sampler.TargetCache, model, "fullbody", plan.Window.OutputFrames[i] / (double)fps,
+                            bones[i], sampler.TargetCache, model, "mix", plan.Window.OutputFrames[i] / (double)fps,
                             out var sample, out error))
                             throw new InvalidOperationException($"In/Out pose capture failed: {error}");
-                        sample.enableMask = KimodoConstraintMask.ForType("fullbody");
+                        sample.enableMask = new KimodoConstraintMask { muscle = true };
+                        sample.constraintMode = "mix";
                         request.ConstraintSamples.Add(sample);
                     }
                 }

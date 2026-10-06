@@ -222,51 +222,7 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            PlayableDirector inspectedDirector = TimelineEditor.inspectedDirector;
-            if (inspectedDirector != null && inspectedDirector.playableAsset == timelineAsset)
-            {
-                director = inspectedDirector;
-                return true;
-            }
-
-            var candidates = new List<PlayableDirector>();
-            PlayableDirector[] directors = Resources.FindObjectsOfTypeAll<PlayableDirector>();
-            for (int i = 0; i < directors.Length; i++)
-            {
-                PlayableDirector candidate = directors[i];
-                if (candidate == null ||
-                    candidate.playableAsset != timelineAsset ||
-                    EditorUtility.IsPersistent(candidate) ||
-                    candidate.gameObject == null ||
-                    !candidate.gameObject.scene.IsValid())
-                {
-                    continue;
-                }
-
-                candidates.Add(candidate);
-            }
-
-            if (candidates.Count == 0)
-            {
-                error = "Timeline inspected director is null and no scene PlayableDirector references this TimelineAsset.";
-                return false;
-            }
-
-            PlayableDirector selectedDirector = TryResolveSelectedDirector(candidates);
-            if (selectedDirector != null)
-            {
-                director = selectedDirector;
-                return true;
-            }
-
-            if (candidates.Count == 1)
-            {
-                director = candidates[0];
-                return true;
-            }
-
-            error = "Timeline inspected director is null and multiple scene PlayableDirectors reference this TimelineAsset. Select/open the correct PlayableDirector in Timeline.";
-            return false;
+            return KimodoDirectorResolver.TryResolve(timelineAsset, out director, out error);
         }
 
         private static TimelineAsset ResolveTimelineAsset(TimelineClip sourceClip, TrackAsset track)
@@ -278,26 +234,6 @@ namespace KimodoBridge.Editor
             }
 
             return TimelineEditor.inspectedAsset;
-        }
-
-        private static PlayableDirector TryResolveSelectedDirector(List<PlayableDirector> candidates)
-        {
-            GameObject selectedGameObject = Selection.activeGameObject;
-            if (selectedGameObject == null)
-            {
-                return null;
-            }
-
-            PlayableDirector selectedDirector = selectedGameObject.GetComponent<PlayableDirector>();
-            if (selectedDirector != null && candidates.Contains(selectedDirector))
-            {
-                return selectedDirector;
-            }
-
-            selectedDirector = selectedGameObject.GetComponentInParent<PlayableDirector>();
-            return selectedDirector != null && candidates.Contains(selectedDirector)
-                ? selectedDirector
-                : null;
         }
 
         internal static void TryResolveNeighborTimelineClips(

@@ -25,13 +25,14 @@ namespace KimodoUnityBridge.Command
             TimelineCharacterRecord character = ResolveSessionCharacterByReference(
                 session,
                 RequiredStringValue(source, "character"),
-                addIfMissing: false);
+                addIfMissing: true);
             bool hasTimelineTime = source["timeline_time_seconds"] != null;
+            bool hasSceneTime = source["scene_time_seconds"] != null;
             bool hasClipTime = source["clip"] != null || source["clip_time_seconds"] != null;
-            if (hasTimelineTime == hasClipTime)
+            if (new[] { hasTimelineTime, hasSceneTime, hasClipTime }.Count(value => value) != 1)
             {
                 throw new InvalidOperationException(
-                    "source must use exactly one mode: timeline_time_seconds, or clip with clip_time_seconds.");
+                    "source must use exactly one mode: timeline_time_seconds, scene_time_seconds, or clip with clip_time_seconds.");
             }
 
             TimelineAnimationRecord animation = null;
@@ -41,6 +42,14 @@ namespace KimodoUnityBridge.Command
             {
                 timelineTime = ReadFiniteDouble(source["timeline_time_seconds"], "source.timeline_time_seconds");
                 ValidateTimelineTime(character, timelineTime, "source.timeline_time_seconds");
+            }
+            else if (hasSceneTime)
+            {
+                timelineTime = ReadFiniteDouble(source["scene_time_seconds"], "source.scene_time_seconds");
+                if (timelineTime < 0.0)
+                {
+                    throw new InvalidOperationException("source.scene_time_seconds must be non-negative.");
+                }
             }
             else
             {
@@ -66,7 +75,7 @@ namespace KimodoUnityBridge.Command
                 absoluteFrame + 1,
                 PoseGetCommand);
             bool fullData = arguments.Value<bool?>("full_data") ?? false;
-            KimodoMarkerSampleResult sourceSample = CaptureSampleResult(character, timelineTime);
+            KimodoMarkerSampleResult sourceSample = CaptureSampleResult(session, character, timelineTime);
             int index = AllocatePoseIndex(character.PoseCacheTrack);
             KimodoConstraintMarker marker = StoreExternalPose(character, index, sourceSample);
             SaveTimelineSession(session);
@@ -85,6 +94,10 @@ namespace KimodoUnityBridge.Command
             {
                 resultSource["clip"] = animation.Name;
                 resultSource["clip_time_seconds"] = clipTime;
+            }
+            else if (hasSceneTime)
+            {
+                resultSource["scene_time_seconds"] = timelineTime;
             }
             result["data"] = fullData
                 ? BuildPoseJson(marker.SampleData)
@@ -257,6 +270,7 @@ namespace KimodoUnityBridge.Command
         }
 
         private static KimodoMarkerSampleResult CaptureSampleResult(
+            TimelineSessionRecord session,
             TimelineCharacterRecord character,
             double sampleTime)
         {
@@ -277,7 +291,27 @@ namespace KimodoUnityBridge.Command
                     out KimodoTimelineInOutConstraintContext context,
                     out contextError))
             {
-                throw new InvalidOperationException($"Character '{character.Name}' has no retargetable Timeline clip: {contextError}");
+                context = new KimodoTimelineInOutConstraintContext
+                {
+                    SourceClip = null,
+                    Track = character.Track,
+                    Director = session.Director,
+                    Animator = character.Animator,
+                    ModelName = KimodoMotionModelProfiles.NormalizeName("Kimodo-SOMA-RP-v1")
+                };
+                if (!KimodoTimelineConstraintSampler.TrySampleMarker(
+                        context,
+                        sampleTime,
+                        sampleTime,
+                        "fullbody",
+                        context.ModelName,
+                        out KimodoMarkerSampleResult sceneSample,
+                        out string sceneError))
+                {
+                    throw new InvalidOperationException(
+                        $"Scene-time pose sampling failed for character '{character.Name}': {sceneError}");
+                }
+                return sceneSample;
             }
 
             if (KimodoMarkerSamplingUtility.TryResolveAnimationClipFromTimelineClip(
@@ -865,11 +899,10 @@ namespace KimodoUnityBridge.Command
                 rotation = sample.rootOverride.q;
                 return;
             }
-            if (sample.sampleData == null || !sample.sampleData.IsValid)
-            {
-                throw new InvalidOperationException("SampleResult has no valid sampleData payload.");
-            }
-            sample.sampleData.GetRoot(out position, out rotation);
+            // Muscle Root TQ is an internal Humanoid transport channel. It is
+            // not an implicit fallback for the command-level root field.
+            position = Vector3.zero;
+            rotation = Quaternion.identity;
         }
 
         private static Vector3 ReadVector3(JArray value, string name)

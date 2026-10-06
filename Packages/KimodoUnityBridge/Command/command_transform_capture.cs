@@ -174,12 +174,84 @@ namespace KimodoUnityBridge.Command
             camera.nearClipPlane = .01f;
             camera.farClipPlane = 100f;
             camera.clearFlags = CameraClearFlags.SolidColor;
-            camera.orthographicSize = Mathf.Max(.05f, bounds.extents.magnitude * 1.1f);
             camera.fieldOfView = 35f;
-            camera.transform.position = bounds.center + direction.normalized * Mathf.Max(7f, bounds.extents.magnitude * 3.2f);
-            Vector3 up = Mathf.Abs(Vector3.Dot(direction.normalized, Vector3.up)) > .95f ? Vector3.forward : Vector3.up;
-            camera.transform.LookAt(bounds.center, up);
+            Vector3 normalizedDirection = direction.sqrMagnitude > .0001f
+                ? direction.normalized
+                : new Vector3(1f, .75f, -1f).normalized;
+            CalculateTransformViewExtents(
+                bounds,
+                normalizedDirection,
+                out Vector3 viewCenter,
+                out float horizontalHalf,
+                out float verticalHalf,
+                out float depthHalf);
+            Vector3 up = Mathf.Abs(Vector3.Dot(normalizedDirection, Vector3.up)) > .95f
+                ? Vector3.forward
+                : Vector3.up;
+            float fitDistance = orthographic
+                ? Mathf.Max(7f, depthHalf * 3.2f)
+                : Mathf.Max(7f, depthHalf +
+                    Mathf.Max(horizontalHalf / Mathf.Max(.01f, camera.aspect), verticalHalf) /
+                    Mathf.Tan(camera.fieldOfView * Mathf.Deg2Rad * .5f) * 1.1f);
+            camera.transform.position = viewCenter + normalizedDirection * fitDistance;
+            camera.transform.LookAt(viewCenter, up);
+            if (orthographic)
+            {
+                camera.orthographicSize = Mathf.Max(
+                    .05f,
+                    verticalHalf * 1.1f,
+                    horizontalHalf * 1.1f / Mathf.Max(.01f, camera.aspect));
+            }
             return camera;
+        }
+
+        private static void CalculateTransformViewExtents(
+            Bounds bounds,
+            Vector3 direction,
+            out Vector3 viewCenter,
+            out float horizontalHalf,
+            out float verticalHalf,
+            out float depthHalf)
+        {
+            Vector3 up = Mathf.Abs(Vector3.Dot(direction, Vector3.up)) > .95f
+                ? Vector3.forward
+                : Vector3.up;
+            Quaternion inverseView = Quaternion.Inverse(Quaternion.LookRotation(-direction, up));
+            Vector3[] corners =
+            {
+                new Vector3(bounds.min.x, bounds.min.y, bounds.min.z),
+                new Vector3(bounds.min.x, bounds.min.y, bounds.max.z),
+                new Vector3(bounds.min.x, bounds.max.y, bounds.min.z),
+                new Vector3(bounds.min.x, bounds.max.y, bounds.max.z),
+                new Vector3(bounds.max.x, bounds.min.y, bounds.min.z),
+                new Vector3(bounds.max.x, bounds.min.y, bounds.max.z),
+                new Vector3(bounds.max.x, bounds.max.y, bounds.min.z),
+                new Vector3(bounds.max.x, bounds.max.y, bounds.max.z)
+            };
+            float minHorizontal = float.PositiveInfinity;
+            float maxHorizontal = float.NegativeInfinity;
+            float minVertical = float.PositiveInfinity;
+            float maxVertical = float.NegativeInfinity;
+            float minDepth = float.PositiveInfinity;
+            float maxDepth = float.NegativeInfinity;
+            foreach (Vector3 corner in corners)
+            {
+                Vector3 local = inverseView * corner;
+                minHorizontal = Mathf.Min(minHorizontal, local.x);
+                maxHorizontal = Mathf.Max(maxHorizontal, local.x);
+                minVertical = Mathf.Min(minVertical, local.y);
+                maxVertical = Mathf.Max(maxVertical, local.y);
+                minDepth = Mathf.Min(minDepth, local.z);
+                maxDepth = Mathf.Max(maxDepth, local.z);
+            }
+            Vector3 localCenter = new Vector3(
+                (minHorizontal + maxHorizontal) * .5f,
+                (minVertical + maxVertical) * .5f,
+                (minDepth + maxDepth) * .5f);
+            viewCenter = Quaternion.Inverse(inverseView) * localCenter;
+            horizontalHalf = (maxHorizontal - minHorizontal) * .5f;
+            verticalHalf = (maxVertical - minVertical) * .5f;
+            depthHalf = (maxDepth - minDepth) * .5f;
         }
 
         private static Bounds CalculateTransformBounds(Transform target, IEnumerable<Renderer> renderers)
@@ -210,6 +282,7 @@ namespace KimodoUnityBridge.Command
                 }
                 else if (renderer is MeshRenderer)
                 {
+                    if (renderer.bounds.size.sqrMagnitude < 0.000001f) continue;
                     if (!hasBounds) { bounds = renderer.bounds; hasBounds = true; } else bounds.Encapsulate(renderer.bounds);
                 }
             }

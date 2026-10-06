@@ -351,7 +351,11 @@ namespace KimodoUnityBridge.Command
                 Color gridColor = new Color(.65f, .72f, .78f, .8f);
                 float baseLineWidth = Mathf.Max(.025f, length * 2f / Mathf.Max(1, width));
                 var environment = new List<GameObject>();
-                CreateEvidenceLights(environment, contentBounds.center);
+                // All four test overview tiles share the same capture
+                // environment.  The height/time diagnostic keeps its own
+                // coordinate lines, but the floor and evidence lights are
+                // created by the common environment builder as well.
+                CreateTestPictureEnvironment(environment, IncludeGroundInBounds(contentBounds));
                 for (int index = 0; index <= 5; index++)
                 {
                     float z = length * index / 5f;
@@ -875,9 +879,14 @@ namespace KimodoUnityBridge.Command
             int poseKernel = composite.FindKernel("CompositePose");
             int blendKernel = composite.FindKernel("BlendLayer");
             int seedKernel = composite.FindKernel("SeedBase");
+            bool composeEnvironmentAfterPoses = includeTrajectories;
             try
             {
-                SetEvidenceVisualsEnabled(environment, true);
+                // Test overview tiles restore the complete environment after
+                // pose layers, so their initial base is only the requested
+                // background. This prevents floor pixels from being rendered
+                // twice and becoming overexposed on URP/Built-in.
+                SetEvidenceVisualsEnabled(environment, !composeEnvironmentAfterPoses);
                 baseLayer = RenderCameraToTexture(camera, width, height, background, RenderTextureFormat.ARGB32, false);
                 composite.SetInt("_Width", width); composite.SetInt("_Height", height);
                 composite.SetInt("_ReversedZ", SystemInfo.usesReversedZBuffer ? 1 : 0);
@@ -924,20 +933,24 @@ namespace KimodoUnityBridge.Command
 
                 if (includeTrajectories)
                 {
-                    SetEvidenceVisualsEnabled(environment, false);
-                    foreach (GameObject item in environment)
-                    {
-                        if (item == null) continue;
-                        foreach (LineRenderer line in item.GetComponentsInChildren<LineRenderer>(true)) line.enabled = true;
-                    }
+                    // Re-render the complete evidence environment after pose
+                    // layers.  Some SRPs discard the opaque floor while a
+                    // transient pose layer is composited; restoring the
+                    // environment through the same depth-aware path keeps
+                    // HDRP, URP and Built-in behavior identical.  The layer
+                    // depth is compared with pose depth, so the floor cannot
+                    // cover a character that is in front of it.
+                    SetEvidenceVisualsEnabled(environment, true);
                     layer = RenderCameraToTexture(camera, width, height, Color.clear, RenderTextureFormat.ARGB32, false);
-                    // The trajectory layer needs its own depth buffer: the colour
-                    // layer's alpha carries no silhouette on pipelines that clear
-                    // to an opaque background.
+                    // The environment layer needs its own depth buffer: the
+                    // colour layer's alpha carries no silhouette on pipelines
+                    // that clear to an opaque background.
                     depth = RenderCameraDepthToTexture(camera, depthShader, width, height, environment);
                     composite.SetTexture(blendKernel, "_LayerColor", layer);
                     composite.SetTexture(blendKernel, "_LayerDepth", depth);
                     composite.SetTexture(blendKernel, "_AccumColor", accumulationColor);
+                    composite.SetTexture(blendKernel, "_AccumDepth", accumulationDepth);
+                    composite.SetInt("_ReversedZ", SystemInfo.usesReversedZBuffer ? 1 : 0);
                     composite.SetInt("_UseLayerDepth", 1);
                     composite.Dispatch(blendKernel, groupsX, groupsY, 1);
                     DestroyAnalysisRenderTexture(layer); layer = null;
@@ -1114,10 +1127,12 @@ namespace KimodoUnityBridge.Command
                 groundBounds.Expand(new Vector3(0f, 0f, groundWidth / aspect - groundDepth));
             }
 
-            WriteFirstTileLightSnapshot("root2d_entry", tile, groundBounds, null);
             var environment = new List<GameObject>();
-            CreatePictureEnvironment(environment, groundBounds);
-            WriteFirstTileLightSnapshot("after_environment", tile, groundBounds, null);
+            // Root2D is still a ground projection, but it belongs to the same
+            // test evidence pipeline as 1-2 through 1-4.  Use the test
+            // environment so floor material, lights and fallback behavior are
+            // identical across all four overview tiles.
+            CreateTestPictureEnvironment(environment, groundBounds);
             CreateWorldLine(environment, groundPoints, new Color(.1f, .85f, .25f, .95f), .06f);
             var keyframes = new HashSet<int>(tile.PrimaryFrames);
             foreach (int frame in tile.TrajectoryFrames.Where(frame => !keyframes.Contains(frame)))
@@ -1139,26 +1154,20 @@ namespace KimodoUnityBridge.Command
                 CreateHeadingArrow(environment, origin, forward, .45f, tint);
             }
 
-            WriteFirstTileLightSnapshot("before_camera", tile, groundBounds, null);
             Camera camera = CreateTestAnalysisPictureCamera(groundBounds, tile.Direction, aspect, 0f);
             try
             {
-                WriteFirstTileLightSnapshot("after_camera", tile, groundBounds, camera);
-                // HDRP can omit transient mesh geometry when the camera uses
-                // the old direct Camera.Render() readback path. Render into an
-                // explicit target, matching the other evidence tiles, so the
-                // cloned scene ground is included in 1-1.
-                RenderTexture target = RenderCameraToTexture(
-                    camera, width, height, new Color(.12f, .12f, .12f, 1f),
-                    RenderTextureFormat.ARGB32, false);
-                try
-                {
-                    return ReadRenderTexture(target, width, height);
-                }
-                finally
-                {
-                    DestroyAnalysisRenderTexture(target);
-                }
+                // Route the projection through the same render-to-texture
+                // path used by the other test overview tiles.  There are no
+                // pose layers for 1-1, so the shared compositor simply keeps
+                // the floor and diagnostic lines from the base environment.
+                return RenderTestPoseLayers(
+                    camera,
+                    environment,
+                    Array.Empty<TestVirtualPose>(),
+                    width,
+                    height,
+                    new Color(.12f, .12f, .12f, 1f));
             }
             finally
             {

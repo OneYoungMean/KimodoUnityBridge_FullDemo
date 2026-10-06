@@ -36,7 +36,8 @@ namespace KimodoUnityBridge.Command
                 [PoseSetRootTransformCommand] = PoseSetRootTransform,
                 [PoseSetMuscleCommand] = PoseSetMuscle,
                 [GetGenerationCommand] = GetGeneration,
-                [CancelGenerationCommand] = CancelGeneration
+                [CancelGenerationCommand] = CancelGeneration,
+                [SessionClearCommand] = ClearSession,
             };
 
             var registrations = new List<CommandRegistration>();
@@ -269,64 +270,101 @@ namespace KimodoUnityBridge.Command
         private static PropertyDefinition OptionalConstraints(string name, string description)
         {
             JObject poseReference = PoseReferenceSchema();
-            var vector2 = new JObject
+            JObject vector2 = new JObject
             {
                 ["type"] = "array",
                 ["items"] = new JObject { ["type"] = "number" },
                 ["minItems"] = 2,
                 ["maxItems"] = 2
             };
-            var fullBody = new JObject
-            {
-                ["type"] = "object",
-                ["additionalProperties"] = false,
-                ["properties"] = new JObject { ["pose"] = poseReference.DeepClone() },
-                ["required"] = new JArray("pose")
-            };
-            var root2D = new JObject
+            JObject effectTarget = new JObject
             {
                 ["type"] = "object",
                 ["additionalProperties"] = false,
                 ["properties"] = new JObject
                 {
-                    ["pose"] = poseReference.DeepClone(),
-                    ["position"] = vector2.DeepClone(),
-                    ["heading"] = vector2.DeepClone()
+                    ["position"] = new JObject
+                    {
+                        ["type"] = "array", ["minItems"] = 3, ["maxItems"] = 3,
+                        ["items"] = new JObject { ["type"] = "number" }
+                    },
+                    ["rotation"] = new JObject
+                    {
+                        ["type"] = "array", ["minItems"] = 4, ["maxItems"] = 4,
+                        ["items"] = new JObject { ["type"] = "number" }
+                    }
                 },
                 ["anyOf"] = new JArray(
-                    new JObject { ["required"] = new JArray("pose") },
-                    new JObject { ["required"] = new JArray("position", "heading") })
+                    new JObject { ["required"] = new JArray("position") },
+                    new JObject { ["required"] = new JArray("rotation") })
             };
-            var endEffector = new JObject
-            {
-                ["type"] = "object",
-                ["additionalProperties"] = false,
-                ["properties"] = new JObject { ["pose"] = poseReference.DeepClone() },
-                ["required"] = new JArray("pose")
-            };
-            var sparseItem = new JObject
+            JObject effectors = new JObject
             {
                 ["type"] = "object",
                 ["additionalProperties"] = false,
                 ["properties"] = new JObject
                 {
-                    ["frame"] = new JObject { ["type"] = "integer", ["minimum"] = 0, ["description"] = "Relative frame in the generated clip at 60 FPS." },
-                    ["fullbody"] = fullBody,
-                    ["root2d"] = root2D,
-                    ["left_hand"] = endEffector.DeepClone(),
-                    ["right_hand"] = endEffector.DeepClone(),
-                    ["left_foot"] = endEffector.DeepClone(),
-                    ["right_foot"] = endEffector.DeepClone()
+                    ["left_hand"] = effectTarget.DeepClone(),
+                    ["right_hand"] = effectTarget.DeepClone(),
+                    ["left_foot"] = effectTarget.DeepClone(),
+                    ["right_foot"] = effectTarget.DeepClone()
                 },
-                ["required"] = new JArray("frame"),
                 ["anyOf"] = new JArray(
-                    new JObject { ["required"] = new JArray("fullbody") },
-                    new JObject { ["required"] = new JArray("root2d") },
                     new JObject { ["required"] = new JArray("left_hand") },
                     new JObject { ["required"] = new JArray("right_hand") },
                     new JObject { ["required"] = new JArray("left_foot") },
                     new JObject { ["required"] = new JArray("right_foot") })
             };
+            JObject root = new JObject
+            {
+                ["type"] = "object",
+                ["additionalProperties"] = false,
+                ["properties"] = new JObject
+                {
+                    ["position"] = new JObject { ["type"] = "array", ["minItems"] = 3, ["maxItems"] = 3, ["items"] = new JObject { ["type"] = "number" } },
+                    ["rotation"] = new JObject { ["type"] = "array", ["minItems"] = 4, ["maxItems"] = 4, ["items"] = new JObject { ["type"] = "number" } }
+                },
+                ["minProperties"] = 1
+            };
+            JObject muscles = new JObject
+            {
+                ["type"] = "object",
+                ["additionalProperties"] = new JObject { ["type"] = "number" },
+                ["minProperties"] = 1
+            };
+            JObject PointProperties(string type, bool includeRoot2D, bool includeEffectors)
+            {
+                var properties = new JObject
+                {
+                    ["frame"] = new JObject { ["type"] = "integer", ["minimum"] = 0 },
+                    ["type"] = new JObject { ["const"] = type },
+                    ["pose"] = poseReference.DeepClone()
+                };
+                if (includeRoot2D) properties["root2d"] = new JObject
+                {
+                    ["type"] = "object",
+                    ["additionalProperties"] = false,
+                    ["properties"] = new JObject { ["position"] = vector2.DeepClone(), ["heading"] = vector2.DeepClone() },
+                    ["required"] = new JArray("position", "heading")
+                };
+                if (includeEffectors) properties["effect"] = effectors.DeepClone();
+                return properties;
+            }
+
+            JObject PointItem(string type, bool includeRoot2D, bool includeEffectors, params string[] required)
+            {
+                return new JObject
+                {
+                    ["type"] = "object",
+                    ["additionalProperties"] = false,
+                    ["properties"] = PointProperties(type, includeRoot2D, includeEffectors),
+                    ["required"] = new JArray(required)
+                };
+            }
+
+            JObject fullBodyItem = PointItem("fullbody", false, false, "frame", "type", "pose");
+            JObject rootItem = PointItem("root2d", true, false, "frame", "type", "root2d");
+            JObject rootEffectItem = PointItem("root_effect", true, true, "frame", "type", "root2d", "effect");
             var rootPathItem = new JObject
             {
                 ["type"] = "object",
@@ -359,7 +397,7 @@ namespace KimodoUnityBridge.Command
             {
                 ["type"] = "array",
                 ["description"] = description,
-                ["items"] = new JObject { ["oneOf"] = new JArray(sparseItem, rootPathItem, InOutConstraintSchema()) }
+                ["items"] = new JObject { ["oneOf"] = new JArray(fullBodyItem, rootItem, rootEffectItem, rootPathItem, InOutConstraintSchema()) }
             }, false);
         }
 
@@ -400,6 +438,12 @@ namespace KimodoUnityBridge.Command
                         ["type"] = "number",
                         ["description"] = "Absolute Timeline-global time in seconds."
                     },
+                    ["scene_time_seconds"] = new JObject
+                    {
+                        ["type"] = "number",
+                        ["minimum"] = 0,
+                        ["description"] = "Absolute scene Timeline time in seconds. Samples the bound Animator directly, even when the character has no animation Clip."
+                    },
                     ["clip_time_seconds"] = new JObject
                     {
                         ["type"] = "number",
@@ -414,12 +458,23 @@ namespace KimodoUnityBridge.Command
                         ["required"] = new JArray("character", "timeline_time_seconds"),
                         ["not"] = new JObject { ["anyOf"] = new JArray(
                             new JObject { ["required"] = new JArray("clip") },
+                            new JObject { ["required"] = new JArray("clip_time_seconds") },
+                            new JObject { ["required"] = new JArray("scene_time_seconds") }) }
+                    },
+                    new JObject
+                    {
+                        ["required"] = new JArray("character", "scene_time_seconds"),
+                        ["not"] = new JObject { ["anyOf"] = new JArray(
+                            new JObject { ["required"] = new JArray("timeline_time_seconds") },
+                            new JObject { ["required"] = new JArray("clip") },
                             new JObject { ["required"] = new JArray("clip_time_seconds") }) }
                     },
                     new JObject
                     {
                         ["required"] = new JArray("character", "clip", "clip_time_seconds"),
-                        ["not"] = new JObject { ["required"] = new JArray("timeline_time_seconds") }
+                        ["not"] = new JObject { ["anyOf"] = new JArray(
+                            new JObject { ["required"] = new JArray("timeline_time_seconds") },
+                            new JObject { ["required"] = new JArray("scene_time_seconds") }) }
                     })
             };
             return new PropertyDefinition(name, schema, true);

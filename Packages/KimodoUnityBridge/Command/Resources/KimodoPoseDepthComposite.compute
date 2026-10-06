@@ -76,6 +76,10 @@ void BlendLayer(uint3 id : SV_DispatchThreadID)
     {
         float depth = _LayerDepth.Load(int3(p, 0)).r;
         if (!HasGeometry(depth)) return;
+        float nearest = _AccumDepth[p];
+        bool nearer = (_ReversedZ != 0) ? depth > nearest : depth < nearest;
+        if (!nearer) return;
+        _AccumDepth[p] = depth;
     }
     float4 source = _LayerColor.Load(int3(p, 0));
     float alpha = saturate(source.a);

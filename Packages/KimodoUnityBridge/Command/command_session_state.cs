@@ -20,7 +20,6 @@ namespace KimodoUnityBridge.Command
     internal static partial class command_context
     {
         private const string AnalysisContractVersion = "3-command-60-phase-track-v2";
-        private const string TimelineDirectorNamePrefix = "Kimodo_CommandSession_";
         internal const int SessionCaptureLayer = 17;
         internal const int ClipSafeZoneFrames = 4;
         internal const double ClipSafeZoneSeconds = ClipSafeZoneFrames / 60.0;
@@ -29,28 +28,72 @@ namespace KimodoUnityBridge.Command
             new Dictionary<string, TimelineSessionRecord>(StringComparer.OrdinalIgnoreCase);
         private static readonly object TimelineSessionsLock = new object();
         private static TimelineSessionRecord currentTimelineSession;
+        private static TimelineSessionRecord firstTimelineSession;
+        private const string ArchivedSessionRootName = KimodoRuntimeUtility.ArchiveRootName;
+
+        private static GameObject[] GetSceneSessionRoots(Scene scene)
+        {
+            if (!scene.IsValid() || !scene.isLoaded) return Array.Empty<GameObject>();
+            return Resources.FindObjectsOfTypeAll<GameObject>()
+                .Where(item => item != null && item.scene == scene &&
+                    item.name.StartsWith(KimodoRuntimeUtility.SessionRootPrefix, StringComparison.Ordinal) &&
+                    !IsArchivedSessionObject(item))
+                .ToArray();
+        }
+
+        private static bool IsArchivedSessionObject(GameObject item)
+        {
+            Transform current = item != null ? item.transform.parent : null;
+            while (current != null)
+            {
+                if (KimodoRuntimeUtility.IsArchivedObject(current.gameObject)) return true;
+                current = current.parent;
+            }
+            return false;
+        }
+
+        private static void RequireSingleSceneSession(Scene scene)
+        {
+            GameObject[] roots = GetSceneSessionRoots(scene);
+            if (roots.Length > 1)
+            {
+                throw new CommandException(
+                    "multiple_contexts",
+                    $"Scene '{scene.name}' contains {roots.Length} Kimodo contexts. This plugin supports exactly one context per scene. Run session.clear to archive the duplicates, then retry.");
+            }
+        }
+
+        private static int ArchiveSceneSessionRoots(Scene scene)
+        {
+            GameObject[] roots = GetSceneSessionRoots(scene);
+            if (roots.Length == 0) return 0;
+
+            GameObject archive = scene.GetRootGameObjects()
+                .FirstOrDefault(item => item != null && string.Equals(item.name, ArchivedSessionRootName, StringComparison.Ordinal));
+            if (archive == null)
+            {
+                archive = new GameObject(ArchivedSessionRootName)
+                {
+                    hideFlags = HideFlags.DontSaveInBuild | HideFlags.DontSaveInEditor,
+                    layer = SessionCaptureLayer
+                };
+                SceneManager.MoveGameObjectToScene(archive, scene);
+            }
+
+            foreach (GameObject root in roots)
+            {
+                if (root == null) continue;
+                root.SetActive(false);
+                root.name = $"Archived_{root.name}_{KimodoUnityObjectIdUtility.IdHash(root)}";
+                root.transform.SetParent(archive.transform, true);
+            }
+            return roots.Length;
+        }
 
         private static void ActivateTimelineSession(TimelineSessionRecord session)
         {
-            foreach (GameObject root in Resources.FindObjectsOfTypeAll<GameObject>()
-                .Where(item => item != null && item.transform.parent == null &&
-                    item.name.StartsWith("KimodoSession_", StringComparison.Ordinal)))
-            {
-                root.SetActive(root == session?.SessionRoot);
-            }
-            foreach (PlayableDirector director in Resources.FindObjectsOfTypeAll<PlayableDirector>())
-            {
-                if (director == null || director == session.Director || director.gameObject == null ||
-                    !director.gameObject.scene.IsValid() ||
-                    !director.name.StartsWith(TimelineDirectorNamePrefix, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-                director.Stop();
-                director.enabled = false;
-            }
-            session.Director.enabled = true;
             if (session?.SessionRoot != null) session.SessionRoot.SetActive(true);
+            if (session?.Director != null) session.Director.enabled = true;
         }
 
         private static TimelineSessionRecord CreateTimelineSession(string requestedName, bool isAutomatic)
@@ -66,6 +109,11 @@ namespace KimodoUnityBridge.Command
                 {
                     throw new InvalidOperationException($"A Timeline Session named '{name}' already exists.");
                 }
+            }
+            RequireSingleSceneSession(SceneManager.GetActiveScene());
+            if (GetSceneSessionRoots(SceneManager.GetActiveScene()).Length != 0)
+            {
+                throw new CommandException("context_already_exists", "A context GameObject already exists in the active scene but is not registered. Re-resolve it or run session.clear before creating another.");
             }
 
             KimodoEditorClipWritebackService.EnsureFolderExists(GeneratedTimelineFolder);
@@ -83,16 +131,17 @@ namespace KimodoUnityBridge.Command
             AssetDatabase.AddObjectToAsset(metadata, timelineAsset);
 
             GameObject sessionRoot = new GameObject($"KimodoSession_{safeName}");
-            sessionRoot.hideFlags = HideFlags.DontSaveInBuild | HideFlags.DontSaveInEditor;
             sessionRoot.layer = SessionCaptureLayer;
-            GameObject directorObject = new GameObject($"Kimodo_CommandSession_{safeName}");
-            directorObject.hideFlags = HideFlags.DontSaveInBuild | HideFlags.DontSaveInEditor;
+            sessionRoot.hideFlags = HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild;
+            GameObject directorObject = new GameObject($"{KimodoRuntimeUtility.SessionDirectorPrefix}{safeName}");
             directorObject.transform.SetParent(sessionRoot.transform, false);
+            directorObject.hideFlags = HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild;
             PlayableDirector director = directorObject.AddComponent<PlayableDirector>();
             director.playableAsset = timelineAsset;
             director.time = 0.0;
 
             var record = new TimelineSessionRecord(Guid.Parse(metadata.sessionId), name, director, timelineAsset, assetPath, isAutomatic, metadata, sessionRoot);
+            firstTimelineSession ??= record;
 
             PersistTimelineSessionMetadata(record);
             EditorUtility.SetDirty(timelineAsset);
@@ -109,6 +158,7 @@ namespace KimodoUnityBridge.Command
             }
             Vector3 sourceWorldPosition = source.transform.position;
             Quaternion sourceWorldRotation = source.transform.rotation;
+            Dictionary<string, TransformSnapshot> sourcePose = CaptureTransformSnapshots(source.transform);
             GameObject clone = UnityEngine.Object.Instantiate(source);
             clone.name = source.name;
             clone.hideFlags = HideFlags.DontSaveInBuild | HideFlags.DontSaveInEditor;
@@ -124,9 +174,124 @@ namespace KimodoUnityBridge.Command
                 candidate.Rebind();
                 candidate.Update(0f);
             }
-            // Rebinding must not move the duplicate away from the source's scene pose.
+            // Rebinding resets the Animator skeleton to the Avatar rest pose. Restore
+            // every authored local bone transform, then restore the scene root pose.
+            RestoreTransformSnapshots(clone.transform, sourcePose);
             clone.transform.SetPositionAndRotation(sourceWorldPosition, sourceWorldRotation);
+            // The Ghost is detached from the source parent and attached below
+            // the session root. Preserve the source root's world scale at that
+            // boundary; writing source.localScale would omit any scale owned by
+            // the original parent and make the Ghost's skeleton proportionally
+            // different from the scene character.
+            clone.transform.localScale = source.transform.localScale;
             return clone;
+        }
+
+        private readonly struct TransformSnapshot
+        {
+            public TransformSnapshot(Vector3 position, Quaternion rotation, Vector3 scale)
+            {
+                LocalPosition = position;
+                LocalRotation = rotation;
+                LocalScale = scale;
+            }
+
+            public Vector3 LocalPosition { get; }
+            public Quaternion LocalRotation { get; }
+            public Vector3 LocalScale { get; }
+        }
+
+        private static Dictionary<string, TransformSnapshot> CaptureTransformSnapshots(Transform root)
+        {
+            var result = new Dictionary<string, TransformSnapshot>(StringComparer.Ordinal);
+            if (root == null) return result;
+            foreach (Transform item in root.GetComponentsInChildren<Transform>(true))
+            {
+                result[GetRelativeTransformPath(root, item)] = new TransformSnapshot(
+                    item.localPosition, item.localRotation, item.localScale);
+            }
+            return result;
+        }
+
+        private static void RestoreTransformSnapshots(Transform root, Dictionary<string, TransformSnapshot> snapshots)
+        {
+            if (root == null || snapshots == null) return;
+            foreach (Transform item in root.GetComponentsInChildren<Transform>(true))
+            {
+                if (!snapshots.TryGetValue(GetRelativeTransformPath(root, item), out TransformSnapshot snapshot)) continue;
+                item.localPosition = snapshot.LocalPosition;
+                item.localRotation = snapshot.LocalRotation;
+                item.localScale = snapshot.LocalScale;
+            }
+        }
+
+        private static void RestoreCloneHierarchyFromSource(GameObject clone, GameObject source)
+        {
+            if (clone == null || source == null || clone == source) return;
+            Dictionary<string, TransformSnapshot> snapshots = CaptureTransformSnapshots(source.transform);
+            Transform[] cloneTransforms = clone.GetComponentsInChildren<Transform>(true);
+            var clonePaths = new HashSet<string>(cloneTransforms.Select(item => GetRelativeTransformPath(clone.transform, item)), StringComparer.Ordinal);
+            string[] missingPaths = snapshots.Keys.Where(path => !clonePaths.Contains(path)).ToArray();
+            if (missingPaths.Length > 0 || clonePaths.Count != snapshots.Count)
+            {
+                throw new InvalidOperationException(
+                    $"Ghost hierarchy does not match source '{source.name}' (source transforms: {snapshots.Count}, ghost transforms: {clonePaths.Count}, missing paths: {string.Join(", ", missingPaths.Take(5))}).");
+            }
+            RestoreTransformSnapshots(clone.transform, snapshots);
+            clone.transform.SetPositionAndRotation(source.transform.position, source.transform.rotation);
+            // Restore the detached Ghost in the source character's world TRS.
+            // Its parent is the neutral session root, so lossyScale is the
+            // scale that reproduces the source root in the new hierarchy.
+            clone.transform.localScale = source.transform.localScale;
+
+            float maxPositionError = 0f;
+            float maxRotationError = 0f;
+            float maxScaleError = 0f;
+            foreach (Transform sourceTransform in source.GetComponentsInChildren<Transform>(true))
+            {
+                string path = GetRelativeTransformPath(source.transform, sourceTransform);
+                Transform cloneTransform = cloneTransforms.FirstOrDefault(item =>
+                    string.Equals(GetRelativeTransformPath(clone.transform, item), path, StringComparison.Ordinal));
+                if (cloneTransform == null) continue;
+                maxPositionError = Mathf.Max(maxPositionError, Vector3.Distance(sourceTransform.position, cloneTransform.position));
+                maxRotationError = Mathf.Max(maxRotationError, Quaternion.Angle(sourceTransform.rotation, cloneTransform.rotation));
+                maxScaleError = Mathf.Max(maxScaleError, Vector3.Distance(sourceTransform.lossyScale, cloneTransform.lossyScale));
+            }
+            if (maxPositionError > 0.0001f || maxRotationError > 0.01f || maxScaleError > 0.0001f)
+            {
+                throw new InvalidOperationException(
+                    $"Ghost transform synchronization failed for '{source.name}' (max position error {maxPositionError:F6} m, rotation error {maxRotationError:F4} degrees, scale error {maxScaleError:F6}).");
+            }
+        }
+
+        private static void BindGhostCharacter(
+            TimelineSessionRecord session,
+            GameObject ghost,
+            GameObject source,
+            Animator animator,
+            AnimationTrack track)
+        {
+            if (ghost == null || source == null) throw new InvalidOperationException("Ghost and source character are required.");
+            RestoreCloneHierarchyFromSource(ghost, source);
+            if (animator == null || track == null || session?.Director == null) return;
+            session.Director.SetGenericBinding(track, animator);
+            KimodoTimelinePreviewRefreshUtility.InitializeSceneOffset(track, animator);
+            // Binding/offset initialization can rebind the Animator. Restore and
+            // validate the complete authored hierarchy once at the end.
+            RestoreCloneHierarchyFromSource(ghost, source);
+        }
+
+        private static string GetRelativeTransformPath(Transform root, Transform item)
+        {
+            if (item == root) return string.Empty;
+            var names = new Stack<string>();
+            Transform current = item;
+            while (current != null && current != root)
+            {
+                names.Push(current.name);
+                current = current.parent;
+            }
+            return string.Join("/", names);
         }
 
         private static IEnumerable<GameObject> FindSceneMeshObjects()
@@ -163,7 +328,14 @@ namespace KimodoUnityBridge.Command
             }
 
             bool isPath = requestedName.Contains("/");
-            return FindSceneMeshObjects()
+            IEnumerable<GameObject> candidates = FindSceneMeshObjects()
+                .Concat(Resources.FindObjectsOfTypeAll<Animator>()
+                    .Where(animator => animator != null && animator.gameObject.scene.IsValid() &&
+                        !EditorUtility.IsPersistent(animator) && !IsSessionObject(animator.gameObject))
+                    .Select(animator => animator.transform.root.gameObject));
+            return candidates
+                .GroupBy(item => KimodoUnityObjectIdUtility.IdHash(item))
+                .Select(group => group.First())
                 .Where(item => isPath
                     ? string.Equals(GetSceneHierarchyPath(item), requestedName, StringComparison.OrdinalIgnoreCase)
                     : string.Equals(item.name, requestedName, StringComparison.OrdinalIgnoreCase))
@@ -211,7 +383,14 @@ namespace KimodoUnityBridge.Command
             }
 
             string characterRef = GetObjectReference(root);
-            root = CloneCharacterToSession(session, root);
+            if (session.Characters.Any(character =>
+                string.Equals(character.CharacterRef, characterRef, StringComparison.Ordinal)))
+            {
+                error = "Character is already in the current scene context.";
+                return false;
+            }
+            GameObject sourceRoot = root;
+            root = CloneCharacterToSession(session, sourceRoot);
             animator = root != null ? root.GetComponentInChildren<Animator>(true) : null;
             Avatar avatar = null;
             string avatarError = string.Empty;
@@ -222,6 +401,10 @@ namespace KimodoUnityBridge.Command
                 avatar = result.Avatar;
                 avatarError = result.Error;
             }
+            // Avatar generation/import can rebind the clone to the rig rest pose.
+            // Reapply the authored scene hierarchy after that operation so the
+            // Ghost starts from the same complete transform state as the source.
+            RestoreCloneHierarchyFromSource(root, sourceRoot);
             if (requireAvatar && !KimodoRetargetCoreUtility.IsValidHumanoid(avatar))
             {
                 error = string.IsNullOrWhiteSpace(avatarError)
@@ -237,11 +420,7 @@ namespace KimodoUnityBridge.Command
             AnimationTrack poseCacheTrack = session.TimelineAsset.CreateTrack<AnimationTrack>(
                 track,
                 MakeUniqueSessionObjectName(session, $"{characterName}.Poses"));
-            if (animator != null)
-            {
-                session.Director.SetGenericBinding(track, animator);
-                KimodoTimelinePreviewRefreshUtility.InitializeSceneOffset(track, animator);
-            }
+            BindGhostCharacter(session, root, sourceRoot, animator, track);
             var character = new TimelineCharacterRecord(
                 characterRef, root, animator, avatar, track, poseCacheTrack, avatarError);
             session.Characters.Add(character);
@@ -617,32 +796,59 @@ namespace KimodoUnityBridge.Command
 
         private static TimelineSessionRecord RequireCurrentTimelineSession()
         {
+            return RequireCurrentTimelineSession(recreating: false);
+        }
+
+        private static void RefreshSceneContextBinding()
+        {
+            Scene activeScene = SceneManager.GetActiveScene();
+            RequireSingleSceneSession(activeScene);
+            GameObject sceneRoot = GetSceneSessionRoots(activeScene).SingleOrDefault();
+            if (currentTimelineSession != null &&
+                (currentTimelineSession.SessionRoot == null ||
+                 currentTimelineSession.SessionRoot.scene != activeScene ||
+                 currentTimelineSession.SessionRoot != sceneRoot))
+            {
+                currentTimelineSession = null;
+                firstTimelineSession = null;
+                lock (TimelineSessionsLock) TimelineSessions.Clear();
+                timelineSessionsRestored = false;
+            }
+        }
+
+        private static TimelineSessionRecord RequireCurrentTimelineSession(bool recreating)
+        {
+            RefreshSceneContextBinding();
             EnsureTimelineSessionsRestored();
             if (currentTimelineSession == null)
             {
                 EnsureCanManageServer();
-                TimelineSessionRecord automatic;
-                lock (TimelineSessionsLock)
+                TimelineSessionRecord session = firstTimelineSession;
+                if (!IsTimelineSessionValid(session))
                 {
-                    TimelineSessions.TryGetValue("__AutoContext", out automatic);
+                    lock (TimelineSessionsLock)
+                    {
+                        TimelineSessions.TryGetValue("__AutoContext", out session);
+                    }
+                    if (!IsTimelineSessionValid(session))
+                    {
+                        session = CreateTimelineSession("__AutoContext", isAutomatic: true);
+                        lock (TimelineSessionsLock) TimelineSessions[session.Name] = session;
+                    }
+                    firstTimelineSession = session;
                 }
-                if (automatic == null)
-                {
-                    automatic = CreateTimelineSession("__AutoContext", isAutomatic: true);
-                    lock (TimelineSessionsLock) TimelineSessions[automatic.Name] = automatic;
-                }
-                currentTimelineSession = automatic;
-                ActivateTimelineSession(automatic);
+                currentTimelineSession = session;
+                ActivateTimelineSession(currentTimelineSession);
                 GameObject active = Selection.activeGameObject;
                 if (active == null || active.GetComponentInChildren<Animator>(true) == null)
                     active = SceneManager.GetActiveScene().GetRootGameObjects()
                         .SelectMany(root => root.GetComponentsInChildren<Animator>(true).Select(animator => animator.gameObject))
                         .FirstOrDefault();
-                if (automatic.Characters.Count == 0 && active != null)
+                if (currentTimelineSession.Characters.Count == 0 && active != null)
                 {
                     Animator animator = active.GetComponentInParent<Animator>() ?? active.GetComponentInChildren<Animator>(true);
                     if (animator != null && !AddCharacterTrack(
-                            automatic,
+                            currentTimelineSession,
                             animator.gameObject,
                             animator,
                             true,
@@ -652,13 +858,81 @@ namespace KimodoUnityBridge.Command
                         throw new InvalidOperationException(error);
                     }
                 }
-                PersistTimelineSessionMetadata(automatic);
+                PersistTimelineSessionMetadata(currentTimelineSession);
             }
-            if (currentTimelineSession.Director == null || currentTimelineSession.TimelineAsset == null)
+            if (!IsTimelineSessionValid(currentTimelineSession))
             {
-                throw new InvalidOperationException("Current scene context is no longer valid.");
+                TimelineSessionRecord invalidSession = currentTimelineSession;
+                string invalidName = invalidSession?.Name ?? "__AutoContext";
+                CancelTimelineSessionGenerations(invalidSession, "Scene context was invalidated; recreating the automatic context.");
+                ClearRuntimeSession(invalidSession);
+                currentTimelineSession = null;
+                Debug.LogWarning($"[Kimodo] Scene context '{invalidName}' was invalid; recreated automatic context.");
+                if (recreating)
+                {
+                    throw new InvalidOperationException($"Automatic Timeline session '{invalidName}' could not be created as a valid scene object.");
+                }
+                return RequireCurrentTimelineSession(recreating: true);
             }
             return currentTimelineSession;
+        }
+
+        private static bool IsTimelineSessionValid(TimelineSessionRecord session)
+        {
+            if (session == null || session.Director == null || session.TimelineAsset == null ||
+                session.Director.gameObject == null || !session.Director.gameObject.scene.IsValid() ||
+                session.SessionRoot == null || !session.SessionRoot.scene.IsValid())
+            {
+                return false;
+            }
+
+            return session.Characters.All(character => character != null && character.Root != null &&
+                character.Root.scene.IsValid() && character.Track != null && character.PoseCacheTrack != null);
+        }
+
+        private static void ClearRuntimeSession(TimelineSessionRecord session)
+        {
+            if (session == null) return;
+            if (session.Director != null) session.Director.Stop();
+            if (session.SessionRoot != null)
+            {
+                Scene scene = session.SessionRoot.scene;
+                ArchiveSceneSessionRoots(scene);
+            }
+            lock (TimelineSessionsLock)
+            {
+                TimelineSessions.Remove(session.Name);
+            }
+            if (ReferenceEquals(firstTimelineSession, session)) firstTimelineSession = null;
+        }
+
+        internal static string ClearSession(string argumentsJson)
+        {
+            return Execute(argumentsJson, arguments =>
+            {
+                Scene scene = SceneManager.GetActiveScene();
+                EnsureTimelineSessionsRestored();
+                TimelineSessionRecord session = currentTimelineSession;
+                if (session != null) CancelTimelineSessionGenerations(session, "Session cleared by session.clear.");
+                int archivedCount = ArchiveSceneSessionRoots(scene);
+                if (session != null)
+                {
+                    if (session.Director != null) session.Director.Stop();
+                    lock (TimelineSessionsLock) TimelineSessions.Remove(session.Name);
+                }
+                currentTimelineSession = null;
+                firstTimelineSession = null;
+                lock (TimelineSessionsLock) TimelineSessions.Clear();
+                timelineSessionsRestored = false;
+                Debug.LogWarning($"[Kimodo] Cleared runtime context in scene '{scene.name}'; archived {archivedCount} context object(s). Persisted Timeline and animation assets were retained.");
+                return Ok(new JObject
+                {
+                    ["cleared"] = archivedCount > 0 || session != null,
+                    ["name"] = session != null ? session.Name : "__AutoContext",
+                    ["archived_context_count"] = archivedCount,
+                    ["recreated_on_next_command"] = true
+                });
+            });
         }
 
         private static TimelineSessionRecord RequireTimelineSession(JObject arguments)
@@ -735,6 +1009,10 @@ namespace KimodoUnityBridge.Command
                     }
 
                     string characterName = RequiredStringValue(requested, "character");
+                    if (IsGhostCharacterReference(characterName))
+                    {
+                        throw new InvalidOperationException($"Character reference '{characterName}' identifies a Ghost character. Use the source scene character name instead.");
+                    }
                     TimelineCharacterRecord character = session.Characters.FirstOrDefault(item =>
                         string.Equals(item.Name, characterName, StringComparison.OrdinalIgnoreCase));
                     if (character == null)
@@ -978,7 +1256,7 @@ namespace KimodoUnityBridge.Command
             Transform current = gameObject != null ? gameObject.transform : null;
             while (current != null)
             {
-                if (current.name.StartsWith("KimodoSession_", StringComparison.Ordinal)) return true;
+                if (KimodoRuntimeUtility.IsContextObject(current.gameObject)) return true;
                 current = current.parent;
             }
             return false;
@@ -1337,12 +1615,12 @@ namespace KimodoUnityBridge.Command
             {
                 TimelineSessionRecord session = RequireTimelineSession(arguments);
                 TimelineCharacterRecord source = ResolveSessionCharacterByReference(
-                    session, RequiredStringValue(arguments, "source_character"), addIfMissing: false);
+                    session, RequiredStringValue(arguments, "source_character"), addIfMissing: true);
                 TimelineAnimationRecord sourceAnimation = ResolveAnimation(arguments, source);
                 TimelineCharacterRecord target = ResolveSessionCharacterByReference(
                     session,
                     RequiredStringValue(arguments, "target_character"),
-                    addIfMissing: false);
+                    addIfMissing: true);
                 if (!KimodoRetargetCoreUtility.IsValidHumanoid(source.Avatar) ||
                     !KimodoRetargetCoreUtility.IsValidHumanoid(target.Avatar))
                 {
@@ -1454,11 +1732,20 @@ namespace KimodoUnityBridge.Command
             string reference,
             bool addIfMissing = false)
         {
+            if (IsGhostCharacterReference(reference))
+            {
+                throw new InvalidOperationException($"Character reference '{reference}' identifies a Ghost character. Use the source scene character name or object_ref instead.");
+            }
             TimelineCharacterRecord match = session.Characters.FirstOrDefault(character =>
                 character.CharacterRef == reference || string.Equals(character.Name, reference, StringComparison.OrdinalIgnoreCase));
             if (match == null && addIfMissing)
             {
                 UnityEngine.Object resolved = ResolveObject(reference);
+                if (resolved == null)
+                {
+                    GameObject[] named = ResolveRequestedSceneCharacters(reference);
+                    if (named.Length == 1) resolved = named[0];
+                }
                 GameObject root = resolved as GameObject ?? (resolved as Animator)?.gameObject;
                 Animator animator = root != null ? root.GetComponentInChildren<Animator>(true) : null;
                 string error = string.Empty;
@@ -1475,11 +1762,23 @@ namespace KimodoUnityBridge.Command
                     throw new InvalidOperationException($"Could not create a target AnimationTrack: {error}");
                 }
             }
-            if (match == null)
-            {
-                throw new InvalidOperationException($"Character '{reference}' is not in the resolved scene context.");
-            }
+            if (match == null) throw new InvalidOperationException($"Character '{reference}' is not available in the active scene.");
             return match;
+        }
+
+        private static bool IsGhostCharacterReference(string reference)
+        {
+            return !string.IsNullOrWhiteSpace(reference) &&
+                (reference.IndexOf(KimodoRuntimeUtility.SessionRootPrefix, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 reference.IndexOf(KimodoRuntimeUtility.SessionDirectorPrefix, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 reference.StartsWith("ghost:", StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static GameObject ResolveSourceCharacterRoot(TimelineCharacterRecord character)
+        {
+            if (character == null || string.IsNullOrWhiteSpace(character.CharacterRef)) return null;
+            UnityEngine.Object source = ResolveObject(character.CharacterRef);
+            return source as GameObject ?? (source as Animator)?.gameObject;
         }
 
         private static JObject DescribeSession(TimelineSessionRecord session)
@@ -1495,6 +1794,78 @@ namespace KimodoUnityBridge.Command
                 ["current"] = ReferenceEquals(currentTimelineSession, session)
             };
         }
+
+        private static string SceneContextGet(string argumentsJson) => Execute(argumentsJson, _ =>
+        {
+            TimelineSessionRecord session = RequireCurrentTimelineSession();
+            PlayableDirector commandDirector = session.Director;
+            TimelineAsset timeline = session.TimelineAsset;
+            var characters = new JArray();
+            foreach (TimelineCharacterRecord character in session.Characters)
+            {
+                Animator animator = character.Animator;
+                GameObject sourceRoot = ResolveSourceCharacterRoot(character);
+                Animator sourceAnimator = sourceRoot != null ? sourceRoot.GetComponentInChildren<Animator>(true) : null;
+                characters.Add(new JObject
+                {
+                    ["name"] = character.Name,
+                    ["role"] = "scene",
+                    ["scene_object"] = sourceRoot != null ? GetSceneHierarchyPath(sourceRoot) : string.Empty,
+                    ["object_ref"] = character.CharacterRef ?? string.Empty,
+                    ["animator"] = sourceAnimator != null ? GetSceneHierarchyPath(sourceAnimator.gameObject) : string.Empty,
+                    ["ghost"] = new JObject
+                    {
+                        ["role"] = "ghost",
+                        ["scene_object"] = character.Root != null ? GetSceneHierarchyPath(character.Root) : string.Empty,
+                        ["animator"] = animator != null ? GetSceneHierarchyPath(animator.gameObject) : string.Empty,
+                        ["source_character"] = character.Name
+                    },
+                    ["avatar"] = character.Avatar != null ? character.Avatar.name : string.Empty,
+                    ["avatar_valid_humanoid"] = KimodoRetargetCoreUtility.IsValidHumanoid(character.Avatar),
+                    ["animations"] = new JArray(character.Animations.Select(DescribeAnimation))
+                });
+            }
+            Scene scene = SceneManager.GetActiveScene();
+            PlayableDirector[] authoredDirectors = Resources.FindObjectsOfTypeAll<PlayableDirector>()
+                .Where(item => item != null && item.gameObject != null && item.gameObject.scene == scene &&
+                    !IsSessionObject(item.gameObject))
+                .GroupBy(item => GetObjectReference(item))
+                .Select(group => group.First())
+                .ToArray();
+            var directorDescriptions = new JArray(authoredDirectors.Select(item => new JObject
+            {
+                ["object_ref"] = GetObjectReference(item),
+                ["hierarchy_path"] = GetSceneHierarchyPath(item.gameObject),
+                ["name"] = item.name,
+                ["enabled"] = item.enabled,
+                ["playable_asset"] = item.playableAsset != null ? item.playableAsset.name : string.Empty,
+                ["time_seconds"] = item.time,
+                ["duration_seconds"] = item.playableAsset != null ? item.playableAsset.duration : 0.0,
+                ["frame_rate"] = item.playableAsset is TimelineAsset authoredTimeline
+                    ? authoredTimeline.editorSettings.frameRate
+                    : 0.0
+            }));
+            PlayableDirector activeAuthoredDirector = authoredDirectors.FirstOrDefault(item => item.enabled)
+                ?? authoredDirectors.FirstOrDefault();
+            var result = new JObject
+            {
+                ["scene"] = scene.IsValid() ? scene.path : string.Empty,
+                ["scene_name"] = scene.IsValid() ? scene.name : string.Empty,
+                ["director"] = activeAuthoredDirector != null ? GetSceneHierarchyPath(activeAuthoredDirector.gameObject) : string.Empty,
+                ["directors"] = directorDescriptions,
+                ["command_context_director"] = commandDirector != null ? GetSceneHierarchyPath(commandDirector.gameObject) : string.Empty,
+                ["playable_asset"] = timeline != null ? timeline.name : string.Empty,
+                ["playable_asset_path"] = session.TimelineAssetPath ?? string.Empty,
+                ["time_seconds"] = activeAuthoredDirector != null ? activeAuthoredDirector.time : 0.0,
+                ["duration_seconds"] = timeline != null ? timeline.duration : 0.0,
+                ["frame_rate"] = timeline != null ? timeline.editorSettings.frameRate : SessionFrameRate,
+                ["current_frame_60"] = activeAuthoredDirector != null
+                    ? Mathf.RoundToInt((float)(activeAuthoredDirector.time * SessionFrameRate))
+                    : 0,
+                ["characters"] = characters
+            };
+            return Ok(result);
+        });
 
         private static JObject DescribeCharacter(TimelineCharacterRecord character)
         {

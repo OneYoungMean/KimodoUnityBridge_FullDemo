@@ -159,6 +159,36 @@ namespace KimodoBridge.Editor.Tests
         }
 
         [Test]
+        public void AutoSample_PreservesCarryEffectorsWithRootIntent()
+        {
+            KimodoConstraintMarker marker = ScriptableObject.CreateInstance<KimodoConstraintMarker>();
+            try
+            {
+                marker.autoSample = true;
+                marker.ConstraintMode = KimodoConstraintMode.FullBody;
+                marker.SampleData.carryEffectorsWithRoot = true;
+
+                var sampled = new KimodoMarkerSampleResult
+                {
+                    constraintMode = "fullbody",
+                    carryEffectorsWithRoot = false,
+                    sampleData = new MuscleSample(),
+                    enableMask = new KimodoConstraintMask(),
+                    validMask = new KimodoConstraintMask { muscle = true }
+                };
+
+                KimodoMarkerSampleResult normalized =
+                    KimodoMarkerSamplingUtility.NormalizeConstraintMarkerSample(marker, sampled);
+
+                Assert.That(normalized.carryEffectorsWithRoot, Is.True);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(marker);
+            }
+        }
+
+        [Test]
         public void NewConstraintMarker_DefaultsOnlyItsFullBodyIntent()
         {
             KimodoConstraintMarker marker = ScriptableObject.CreateInstance<KimodoConstraintMarker>();
@@ -212,7 +242,7 @@ namespace KimodoBridge.Editor.Tests
         }
 
         [Test]
-        public void Internal_MixFullBodyWinsAndDoesNotMutateEffectorMask()
+        public void Internal_MixPreservesAllExplicitChannelFamilies()
         {
             KimodoMarkerSampleResult sample = CreateFullBody(1, 0.5f, true);
             sample.constraintMode = "mix";
@@ -225,7 +255,9 @@ namespace KimodoBridge.Editor.Tests
             sample = KimodoConstraintSampleComposer.ComposeCanonicalSamples(
                 new[] { sample }, 30.0)[0];
 
-            CollectionAssert.AreEqual(new[] { "fullbody" }, ResolveTypes(sample));
+            CollectionAssert.AreEqual(
+                new[] { "fullbody", "root2d", "left-hand", "right-hand", "left-foot", "right-foot" },
+                ResolveTypes(sample));
             Assert.That(sample.enableMask.leftHand, Is.True);
             Assert.That(sample.enableMask.rightHand, Is.True);
             Assert.That(sample.enableMask.leftFoot, Is.True);
@@ -233,7 +265,7 @@ namespace KimodoBridge.Editor.Tests
         }
 
         [Test]
-        public void Internal_MixEmitsAllEffectorsBeforeRoot2DInFixedOrder()
+        public void Internal_MixEmitsRootAndAllExplicitEffectorsInFixedOrder()
         {
             KimodoMarkerSampleResult sample = CreateFullBody(1, 0.5f, true);
             sample.constraintMode = "mix";
@@ -243,7 +275,7 @@ namespace KimodoBridge.Editor.Tests
             EnableAllEffectors(sample);
 
             CollectionAssert.AreEqual(
-                new[] { "left-hand", "right-hand", "left-foot", "right-foot" },
+                new[] { "root2d", "left-hand", "right-hand", "left-foot", "right-foot" },
                 ResolveTypes(sample));
         }
 
@@ -297,7 +329,7 @@ namespace KimodoBridge.Editor.Tests
             Assert.That(
                 composed.sampleData.data[KimodoSampleDataLayout.BodyMuscleOffset],
                 Is.EqualTo(0.75f));
-            CollectionAssert.AreEqual(new[] { "left-hand" }, ResolveTypes(composed));
+            CollectionAssert.AreEqual(new[] { "root2d", "left-hand" }, ResolveTypes(composed));
         }
 
         [Test]

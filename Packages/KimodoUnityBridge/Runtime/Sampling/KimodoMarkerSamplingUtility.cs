@@ -25,6 +25,10 @@ namespace KimodoBridge
             if (useSampledValues)
             {
                 normalized.enableMask = authored?.enableMask?.Clone() ?? new KimodoConstraintMask();
+                // carryEffectorsWithRoot is editor-authored intent, not a
+                // sampled Timeline value. Preserve the checkbox while
+                // replacing the pose payload with the sampled frame.
+                normalized.carryEffectorsWithRoot = authored?.carryEffectorsWithRoot == true;
             }
             normalized.sampleTime = marker.time;
             normalized.constraintMode = marker.ConstraintMode == KimodoConstraintMode.Root2D
