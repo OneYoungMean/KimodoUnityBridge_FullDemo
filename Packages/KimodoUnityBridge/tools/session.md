@@ -18,6 +18,8 @@ no separate public context command.
   all subsequent commands use the same session context.
 - Scene changes, Editor reloads, and Play Mode transitions can cancel active generation requests and must be reported.
 
-`session.clear` resets the active scene context; saved Timeline and animation assets are retained. It takes no session-name argument. Context GameObjects are moved under the inactive `__KimodoArchive` scene object, and the next command creates exactly one new active context when needed.
+`session.clear` destroys the active temporary context GameObjects while retaining saved Timeline and animation assets. It takes no session-name argument; the next command creates exactly one new active context when needed.
 
-Kimodo rejects every command when more than one non-archived `KimodoSession_*` context exists in a scene. Call `session.clear` to archive the duplicates before retrying.
+Kimodo rejects every command when more than one active `KimodoSession_*` context exists in a scene. Call `session.clear` to destroy the duplicate contexts before retrying.
+
+When a session is hydrated, Kimodo reuses its matching `Ghost_<track>` object and destroys extra legacy clones. Temporary context objects are not cached in the scene.

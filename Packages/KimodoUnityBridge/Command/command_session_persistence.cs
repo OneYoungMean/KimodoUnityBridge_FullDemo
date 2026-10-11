@@ -22,6 +22,7 @@ namespace KimodoUnityBridge.Command
         public string schemaVersion = "vNext";
         public string sessionId;
         public string sessionName;
+        public string scenePath;
         public int sessionRevision;
         public string sessionJsonPath;
         public bool isAutomatic;
@@ -91,6 +92,16 @@ namespace KimodoUnityBridge.Command
         // Rebuilt lazily after every editor domain reload.
         private static bool timelineSessionsRestored;
 
+        private static bool ShouldRestoreAutomaticSession(
+            KimodoCommandSessionMetadata metadata,
+            bool hasExistingSceneContext)
+        {
+            // Persistent Timeline assets are historical outputs. Rehydrate one
+            // only when its non-persistent workspace object still exists in the
+            // currently open scene (for example, across an editor domain reload).
+            return metadata != null && metadata.isAutomatic && hasExistingSceneContext;
+        }
+
         private static void PersistTimelineSessionMetadata(TimelineSessionRecord session)
         {
             if (session?.Metadata == null || session.TimelineAsset == null)
@@ -108,6 +119,9 @@ namespace KimodoUnityBridge.Command
             metadata.schemaVersion = SessionJsonSchemaVersion;
             metadata.sessionId = session.Id.ToString("D");
             metadata.sessionName = session.Name;
+            metadata.scenePath = session.SessionRoot != null && session.SessionRoot.scene.IsValid()
+                ? session.SessionRoot.scene.path
+                : string.Empty;
             metadata.sessionRevision = Math.Max(0, metadata.sessionRevision) + 1;
             metadata.sessionJsonPath = ToProjectRelativePath(GetSessionJsonAbsolutePath(session));
             metadata.isAutomatic = session.IsAutomatic;
@@ -194,6 +208,7 @@ namespace KimodoUnityBridge.Command
                 ["schema_version"] = SessionJsonSchemaVersion,
                 ["session_id"] = metadata.sessionId,
                 ["name"] = metadata.sessionName,
+                ["scene_path"] = metadata.scenePath ?? string.Empty,
                 ["session_revision"] = metadata.sessionRevision,
                 ["session_json_path"] = metadata.sessionJsonPath,
                 ["timeline_asset_path"] = session.TimelineAssetPath ?? string.Empty,
@@ -281,8 +296,8 @@ namespace KimodoUnityBridge.Command
             return new JObject
             {
                 ["sample_data"] = new JArray(sample.sampleData?.data ?? Array.Empty<float>()),
+                ["sample_valid"] = sample.sampleValid,
                 ["enable_mask"] = ConstraintMaskJson(sample.enableMask),
-                ["valid_mask"] = ConstraintMaskJson(sample.validMask),
                 ["effectors"] = new JObject
                 {
                     ["left_hand"] = RigidTransformJson(sample.effectors?.leftHand),
@@ -300,11 +315,6 @@ namespace KimodoUnityBridge.Command
 
         private static JObject ConstraintMaskJson(KimodoConstraintMask mask) => new JObject
         {
-            ["muscle"] = mask?.muscle == true,
-            ["root_tq"] = mask?.rootTQ == true,
-            ["left_foot_tq"] = mask?.leftFootTQ == true,
-            ["right_foot_tq"] = mask?.rightFootTQ == true,
-            ["root_position"] = mask?.rootPosition == true,
             ["root_heading"] = mask?.rootHeading == true,
             ["left_foot"] = mask?.leftFoot == true,
             ["right_foot"] = mask?.rightFoot == true,
@@ -420,6 +430,7 @@ namespace KimodoUnityBridge.Command
                 return;
             }
             string[] guids = AssetDatabase.FindAssets("t:TimelineAsset", new[] { GeneratedTimelineFolder });
+            Scene activeScene = SceneManager.GetActiveScene();
             TimelineAsset latestAutomaticTimeline = null;
             KimodoCommandSessionMetadata latestAutomaticMetadata = null;
             string latestAutomaticPath = null;
@@ -438,7 +449,15 @@ namespace KimodoUnityBridge.Command
                     Debug.LogWarning($"[Kimodo] Ignoring Session '{metadata.sessionName}' with unsupported schema '{metadata.schemaVersion}'. Expected '{SessionJsonSchemaVersion}'.");
                     continue;
                 }
-                if (!metadata.isAutomatic)
+                // A saved Timeline asset alone must never recreate a workspace
+                // after its scene was reopened. Keep only a live workspace that
+                // survived an editor domain reload in this scene.
+                bool hasExistingSceneContext = Resources.FindObjectsOfTypeAll<PlayableDirector>()
+                    .Any(item => item != null && item.playableAsset == timeline &&
+                        item.gameObject.scene == activeScene &&
+                        (item.name.StartsWith(KimodoRuntimeUtility.SessionDirectorPrefix, StringComparison.Ordinal) ||
+                         item.transform.parent != null && item.transform.parent.name.StartsWith(KimodoRuntimeUtility.SessionRootPrefix, StringComparison.Ordinal)));
+                if (!ShouldRestoreAutomaticSession(metadata, hasExistingSceneContext))
                 {
                     continue;
                 }
@@ -474,8 +493,7 @@ namespace KimodoUnityBridge.Command
                 string path = latestAutomaticPath;
                 PlayableDirector director = Resources.FindObjectsOfTypeAll<PlayableDirector>()
                     .FirstOrDefault(item => item != null && item.playableAsset == timeline &&
-                        item.gameObject.scene.IsValid() &&
-                        !IsArchivedSessionObject(item.gameObject) &&
+                        item.gameObject.scene == activeScene &&
                         (item.name.StartsWith(KimodoRuntimeUtility.SessionDirectorPrefix, StringComparison.Ordinal) ||
                          item.transform.parent != null && item.transform.parent.name.StartsWith(KimodoRuntimeUtility.SessionRootPrefix, StringComparison.Ordinal)));
                 string safeName = KimodoRuntimeUtility.SanitizeName(metadata.sessionName, "Session");
@@ -512,7 +530,9 @@ namespace KimodoUnityBridge.Command
                 foreach (KimodoCommandCharacterMetadata savedCharacter in metadata.characters ?? new List<KimodoCommandCharacterMetadata>())
                 {
                     GameObject sourceRoot = ResolveObject(savedCharacter.characterRef) as GameObject;
-                    GameObject root = sourceRoot != null ? CloneCharacterToSession(session, sourceRoot) : null;
+                    GameObject root = sourceRoot != null
+                        ? CloneCharacterToSession(session, sourceRoot, savedCharacter.trackName)
+                        : null;
                     Animator animator = root != null ? root.GetComponentInChildren<Animator>(true) : null;
                     AnimationTrack track = timeline.GetRootTracks().OfType<AnimationTrack>()
                         .FirstOrDefault(item => string.Equals(item.name, savedCharacter.trackName, StringComparison.Ordinal));
@@ -588,7 +608,12 @@ namespace KimodoUnityBridge.Command
             {
                 foreach (TimelineSessionRecord session in restored)
                 {
-                    session.SessionRoot?.SetActive(false);
+                    if (session.SessionRoot != null)
+                    {
+                        UnityEngine.Object.DestroyImmediate(session.SessionRoot);
+                    }
+                    lock (TimelineSessionsLock) TimelineSessions.Remove(session.Name);
+                    if (ReferenceEquals(firstTimelineSession, session)) firstTimelineSession = null;
                 }
             }
             timelineSessionsRestored = true;

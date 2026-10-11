@@ -130,69 +130,41 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            TimelineClip sourceClip = request.TimelineContext.SourceClip;
-            bool hasTimelineSamplingContext = sourceClip != null &&
-                request.TimelineContext.Director != null &&
-                request.TimelineContext.Animator != null;
-            double timelineStart = sourceClip != null
-                ? Math.Max(0.0, sourceClip.start)
-                : 0.0;
-            if (hasTimelineSamplingContext)
+            // Auto Begin anchors the effective Timeline track origin. Do not
+            // sample the animated character at the Timeline's first frame:
+            // that pose may contain a clip root offset and is not the scene/
+            // track offset that Timeline will apply during playback.
+            KimodoTimelineTrackOffsetUtility.ResolveWorldOffset(
+                request.TimelineContext.Track,
+                request.TimelineContext.Animator,
+                out Vector3 worldPosition,
+                out Quaternion worldRotation);
+            sample = new KimodoMarkerSampleResult
             {
-                if (!KimodoTimelineConstraintSampler.TrySampleMarker(
-                        request.TimelineContext,
-                        timelineStart,
-                        0.0,
-                        Root2DConstraintType,
-                        request.ModelName,
-                        out sample,
-                        out error))
+                rootOverride = new KimodoUnityBridge.KimodoRigidTransform
                 {
-                    return false;
-                }
-            }
-            else
-            {
-                // Keep the lightweight construction usable for editor/test
-                // callers that only provide an AnimationTrack. Real Timeline
-                // generation always has a complete sampling context above.
-                KimodoTimelineTrackOffsetUtility.ResolveWorldOffset(
-                    request.TimelineContext.Track,
-                    request.TimelineContext.Animator,
-                    out Vector3 worldPosition,
-                    out Quaternion worldRotation);
-                sample = new KimodoMarkerSampleResult
-                {
-                    rootOverride = new KimodoUnityBridge.KimodoRigidTransform
-                    {
-                        t = worldPosition,
-                        q = worldRotation
-                    },
-                    enableMask = new KimodoConstraintMask { rootPosition = true, rootHeading = true },
-                    validMask = new KimodoConstraintMask { rootPosition = true, rootHeading = true }
-                };
-            }
+                    t = worldPosition,
+                    q = worldRotation
+                },
+                sampleValid = true,
+                enableMask = new KimodoConstraintMask { rootHeading = true }
+            };
 
             if (sample?.rootOverride == null)
             {
-                error = "Auto Begin Root2D sampling returned no world root.";
+                error = "Auto Begin Root2D offset resolution returned no world root.";
                 return false;
             }
 
             // Root2D is an application mode, not a reduced payload format.
-            // AutoBegin therefore retains the sampled complete root transform.
+            // AutoBegin therefore retains the complete effective offset pose.
             sample.constraintMode = Root2DConstraintType;
             sample.sampleTime = 0.0;
             sample.enableMask = new KimodoConstraintMask
             {
-                rootPosition = true,
                 rootHeading = true
             };
-            sample.validMask = new KimodoConstraintMask
-            {
-                rootPosition = true,
-                rootHeading = true
-            };
+            sample.sampleValid = true;
             sample.effectors = new KimodoConstraintEffectors();
             return true;
         }

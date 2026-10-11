@@ -675,7 +675,7 @@ namespace KimodoUnityBridge.Command
         {
             position = Vector3.zero;
             rotation = Quaternion.identity;
-            if (sample?.validMask?.rootPosition != true || sample.rootOverride == null)
+            if (sample == null || !sample.sampleValid || sample.rootOverride == null)
             {
                 return false;
             }

@@ -134,11 +134,11 @@ namespace KimodoUnityBridge.Command
                     for (int i = 0; i < times.Length; i++)
                     {
                         if (!KimodoRetargetMarkerSamplingUtility.TryBuildMarkerSampleResultFromBoneSample(
-                            bones[i], sampler.TargetCache, model, "mix", plan.Window.OutputFrames[i] / (double)fps,
+                            bones[i], sampler.TargetCache, model, "fullbody", plan.Window.OutputFrames[i] / (double)fps,
                             out var sample, out error))
                             throw new InvalidOperationException($"In/Out pose capture failed: {error}");
                         sample.enableMask = new KimodoConstraintMask { muscle = true };
-                        sample.constraintMode = "mix";
+                        sample.constraintMode = "fullbody";
                         request.ConstraintSamples.Add(sample);
                     }
                 }

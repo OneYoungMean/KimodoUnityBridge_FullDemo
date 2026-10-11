@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using KimodoBridge;
 using KimodoBridge.Editor;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -68,6 +69,7 @@ namespace KimodoUnityBridge.Generation.Tests
                 "Seed",
                 "MotionJsonCompact",
                 "AnalysisJson",
+                "ConstraintLoss",
                 "MotionBytes",
                 "StartFrame",
                 "EndFrameExclusive",
@@ -150,6 +152,17 @@ namespace KimodoUnityBridge.Generation.Tests
             Assert.That(output.MotionData.FrameCount, Is.EqualTo(2));
             Assert.That(output.MotionData.rootPositions[0].x, Is.EqualTo(prefix));
             Assert.That(output.MotionData.rootPositions[1].x, Is.EqualTo(prefix + 1));
+        }
+
+        [Test]
+        public void ConstraintLossComparisonWithoutConstraints_IsNotApplicable()
+        {
+            JObject result = KimodoGenerationConstraintLossComparer.Compare(
+                null, string.Empty, null, 0, 0f);
+
+            Assert.That(result.Value<string>("status"), Is.EqualTo("not_applicable"));
+            Assert.That(result.Value<int>("compared_count"), Is.Zero);
+            Assert.That(result["frames"], Is.Empty);
         }
 
         [Test]

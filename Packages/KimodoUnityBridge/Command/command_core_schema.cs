@@ -222,7 +222,7 @@ namespace KimodoUnityBridge.Command
             return new PropertyDefinition("clips", new JObject
             {
                 ["type"] = "array",
-                ["description"] = "Exactly one immutable animation clip reference. Comparison callers analyze each candidate separately.",
+                ["description"] = "Exactly one animation clip reference. Use a loaded Clip name or an Assets/Packages path; an external asset is appended to the character's Kimodo Timeline before analysis and is never modified.",
                 ["minItems"] = 1,
                 ["maxItems"] = 1,
                 ["items"] = new JObject
@@ -332,39 +332,29 @@ namespace KimodoUnityBridge.Command
                 ["additionalProperties"] = new JObject { ["type"] = "number" },
                 ["minProperties"] = 1
             };
-            JObject PointProperties(string type, bool includeRoot2D, bool includeEffectors)
+            var pointItem = new JObject
             {
-                var properties = new JObject
+                ["type"] = "object",
+                ["additionalProperties"] = false,
+                ["properties"] = new JObject
                 {
                     ["frame"] = new JObject { ["type"] = "integer", ["minimum"] = 0 },
-                    ["type"] = new JObject { ["const"] = type },
-                    ["pose"] = poseReference.DeepClone()
-                };
-                if (includeRoot2D) properties["root2d"] = new JObject
-                {
-                    ["type"] = "object",
-                    ["additionalProperties"] = false,
-                    ["properties"] = new JObject { ["position"] = vector2.DeepClone(), ["heading"] = vector2.DeepClone() },
-                    ["required"] = new JArray("position", "heading")
-                };
-                if (includeEffectors) properties["effect"] = effectors.DeepClone();
-                return properties;
-            }
-
-            JObject PointItem(string type, bool includeRoot2D, bool includeEffectors, params string[] required)
-            {
-                return new JObject
-                {
-                    ["type"] = "object",
-                    ["additionalProperties"] = false,
-                    ["properties"] = PointProperties(type, includeRoot2D, includeEffectors),
-                    ["required"] = new JArray(required)
-                };
-            }
-
-            JObject fullBodyItem = PointItem("fullbody", false, false, "frame", "type", "pose");
-            JObject rootItem = PointItem("root2d", true, false, "frame", "type", "root2d");
-            JObject rootEffectItem = PointItem("root_effect", true, true, "frame", "type", "root2d", "effect");
+                    ["pose"] = poseReference.DeepClone(),
+                    ["root2d"] = new JObject
+                    {
+                        ["type"] = "object",
+                        ["additionalProperties"] = false,
+                        ["properties"] = new JObject { ["position"] = vector2.DeepClone(), ["heading"] = vector2.DeepClone() },
+                        ["required"] = new JArray("position", "heading")
+                    },
+                    ["effect"] = effectors.DeepClone()
+                },
+                ["required"] = new JArray("frame"),
+                ["anyOf"] = new JArray(
+                    new JObject { ["required"] = new JArray("pose") },
+                    new JObject { ["required"] = new JArray("root2d") },
+                    new JObject { ["required"] = new JArray("effect") })
+            };
             var rootPathItem = new JObject
             {
                 ["type"] = "object",
@@ -397,7 +387,7 @@ namespace KimodoUnityBridge.Command
             {
                 ["type"] = "array",
                 ["description"] = description,
-                ["items"] = new JObject { ["oneOf"] = new JArray(fullBodyItem, rootItem, rootEffectItem, rootPathItem, InOutConstraintSchema()) }
+                ["items"] = new JObject { ["oneOf"] = new JArray(pointItem, rootPathItem, InOutConstraintSchema()) }
             }, false);
         }
 
@@ -433,6 +423,7 @@ namespace KimodoUnityBridge.Command
                 {
                     ["character"] = new JObject { ["type"] = "string" },
                     ["clip"] = new JObject { ["type"] = "string" },
+                    ["mode"] = new JObject { ["type"] = "string", ["enum"] = new JArray("scene_pose", "skeleton_rest_pose"), ["description"] = "Sample the original scene Animator's currently evaluated pose, or the Avatar's stored skeleton rest pose." },
                     ["timeline_time_seconds"] = new JObject
                     {
                         ["type"] = "number",
@@ -459,7 +450,8 @@ namespace KimodoUnityBridge.Command
                         ["not"] = new JObject { ["anyOf"] = new JArray(
                             new JObject { ["required"] = new JArray("clip") },
                             new JObject { ["required"] = new JArray("clip_time_seconds") },
-                            new JObject { ["required"] = new JArray("scene_time_seconds") }) }
+                            new JObject { ["required"] = new JArray("scene_time_seconds") },
+                            new JObject { ["required"] = new JArray("mode") }) }
                     },
                     new JObject
                     {
@@ -467,14 +459,36 @@ namespace KimodoUnityBridge.Command
                         ["not"] = new JObject { ["anyOf"] = new JArray(
                             new JObject { ["required"] = new JArray("timeline_time_seconds") },
                             new JObject { ["required"] = new JArray("clip") },
-                            new JObject { ["required"] = new JArray("clip_time_seconds") }) }
+                            new JObject { ["required"] = new JArray("clip_time_seconds") },
+                            new JObject { ["required"] = new JArray("mode") }) }
                     },
                     new JObject
                     {
                         ["required"] = new JArray("character", "clip", "clip_time_seconds"),
                         ["not"] = new JObject { ["anyOf"] = new JArray(
                             new JObject { ["required"] = new JArray("timeline_time_seconds") },
-                            new JObject { ["required"] = new JArray("scene_time_seconds") }) }
+                            new JObject { ["required"] = new JArray("scene_time_seconds") },
+                            new JObject { ["required"] = new JArray("mode") }) }
+                    },
+                    new JObject
+                    {
+                        ["required"] = new JArray("character", "mode"),
+                        ["properties"] = new JObject { ["mode"] = new JObject { ["enum"] = new JArray("scene_pose") } },
+                        ["not"] = new JObject { ["anyOf"] = new JArray(
+                            new JObject { ["required"] = new JArray("timeline_time_seconds") },
+                            new JObject { ["required"] = new JArray("scene_time_seconds") },
+                            new JObject { ["required"] = new JArray("clip") },
+                            new JObject { ["required"] = new JArray("clip_time_seconds") }) }
+                    },
+                    new JObject
+                    {
+                        ["required"] = new JArray("character", "mode"),
+                        ["properties"] = new JObject { ["mode"] = new JObject { ["enum"] = new JArray("skeleton_rest_pose") } },
+                        ["not"] = new JObject { ["anyOf"] = new JArray(
+                            new JObject { ["required"] = new JArray("timeline_time_seconds") },
+                            new JObject { ["required"] = new JArray("scene_time_seconds") },
+                            new JObject { ["required"] = new JArray("clip") },
+                            new JObject { ["required"] = new JArray("clip_time_seconds") }) }
                     })
             };
             return new PropertyDefinition(name, schema, true);

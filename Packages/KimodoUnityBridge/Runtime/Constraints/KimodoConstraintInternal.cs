@@ -51,10 +51,8 @@ namespace KimodoBridge
         }
 
         /// <summary>
-        /// Selects the protocol constraints for one canonical sample.
-        /// Mix preserves the authored root and all enabled effectors in the
-        /// same canonical sample; exporters may project each active channel
-        /// family into the model protocol without changing command semantics.
+        /// Selects one concrete protocol family for one canonical sample.
+        /// Selects the concrete execution family for a canonical sample.
         /// </summary>
         internal static KimodoConstraintInternal[] GetConstraintInternal(
             KimodoMarkerSampleResult sample,
@@ -65,38 +63,49 @@ namespace KimodoBridge
             {
                 return Array.Empty<KimodoConstraintInternal>();
             }
-
-            string mode = NormalizeMode(sample.constraintMode);
-            var result = new List<KimodoConstraintInternal>(4);
-            if (string.Equals(mode, "mix", StringComparison.OrdinalIgnoreCase))
+            if (!sample.sampleValid)
             {
-                if (KimodoConstraintMask.IsActive(sample, "muscle"))
-                {
-                    result.Add(new KimodoFullBodyConstraintInternal(sample, modelType, exportContext));
-                }
-                if (KimodoConstraintMask.IsActive(sample, "rootposition") ||
-                    KimodoConstraintMask.IsActive(sample, "rootheading"))
-                {
-                    result.Add(new KimodoRoot2DConstraintInternal(sample, modelType, exportContext));
-                }
-                AddEffectors(result, sample, modelType, exportContext);
-                return result.ToArray();
+                throw new InvalidOperationException("Constraint sample is invalid.");
             }
 
+            string mode = ResolveExecutionMode(sample);
+            var result = new List<KimodoConstraintInternal>(4);
             if (string.Equals(mode, "root2d", StringComparison.OrdinalIgnoreCase))
             {
-                if (KimodoConstraintMask.IsActive(sample, "rootposition") ||
-                    KimodoConstraintMask.IsActive(sample, "rootheading"))
+                if (sample.rootOverride != null)
                 {
                     result.Add(new KimodoRoot2DConstraintInternal(sample, modelType, exportContext));
                 }
             }
             else if (string.Equals(mode, "fullbody", StringComparison.OrdinalIgnoreCase))
             {
-                if (KimodoConstraintMask.IsActive(sample, "muscle"))
+                if (sample.sampleData?.IsValid == true)
                 {
                     result.Add(new KimodoFullBodyConstraintInternal(sample, modelType, exportContext));
                 }
+            }
+            else if (string.Equals(mode, "mix", StringComparison.OrdinalIgnoreCase))
+            {
+                // "mix" is a transient canonical-sample mode produced by
+                // Editor pass composition. It is never a public command
+                // family: emit typed rows here, then let the raw protocol
+                // normalizer fold same-frame Root2D into the root-context row.
+                bool hasFamilies = sample.composedFullBody || sample.composedRoot2D || sample.composedEffector;
+                bool hasFullBody = sample.composedFullBody ||
+                    (!hasFamilies && sample.sampleData?.IsValid == true &&
+                     (sample.enableMask?.muscle == true || sample.enableMask?.rootTQ == true ||
+                      sample.enableMask?.leftFootTQ == true || sample.enableMask?.rightFootTQ == true));
+                bool hasRoot2D = sample.composedRoot2D ||
+                    (!hasFamilies && sample.rootOverride != null &&
+                     (sample.enableMask?.rootPosition == true || sample.enableMask?.rootHeading == true));
+                bool hasEffector = sample.composedEffector || !hasFamilies;
+
+                if (hasFullBody && sample.sampleData?.IsValid == true)
+                    result.Add(new KimodoFullBodyConstraintInternal(sample, modelType, exportContext));
+                if (hasRoot2D && sample.rootOverride != null)
+                    result.Add(new KimodoRoot2DConstraintInternal(sample, modelType, exportContext));
+                if (hasEffector)
+                    AddEffectors(result, sample, modelType, exportContext);
             }
             else
             {
@@ -113,6 +122,12 @@ namespace KimodoBridge
                 }
             }
             return result.ToArray();
+        }
+
+        internal static string ResolveExecutionMode(KimodoMarkerSampleResult sample)
+        {
+            string mode = NormalizeMode(sample?.constraintMode);
+            return mode;
         }
 
         internal static KimodoConstraintInternal[] Build(
@@ -159,9 +174,9 @@ namespace KimodoBridge
             string mode = (value ?? string.Empty)
                 .Trim().ToLowerInvariant().Replace('_', '-');
             if (mode == string.Empty || mode == "constraint") return "fullbody";
-            // RootEffect is the public semantic name for the existing mixed
-            // root-plus-effector sample. Keep the solver/export family as mix.
-            if (mode == "root-effect") return "mix";
+            // RootEffect is a public root-plus-effector input. Its execution
+            // family is Effector; root support remains in the sample payload.
+            if (mode == "root-effect") return "effector";
             return mode == "ik" ? "effector" : mode;
         }
     }

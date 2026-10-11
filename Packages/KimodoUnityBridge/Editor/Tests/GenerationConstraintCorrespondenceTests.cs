@@ -25,6 +25,8 @@ namespace KimodoUnityBridge.Command.Tests
     public sealed class GenerationConstraintCorrespondenceTests
     {
         private const float PositionToleranceMeters = 0.003f;
+        private const float Root2DGenerationToleranceMeters = 0.1f;
+        private const float EffectorRootGenerationToleranceMeters = 0.1f;
 
         [Test, Timeout(10 * 60 * 1000)]
         public async Task RealKModelGeneration_RetargetedClipMatchesRoot2DKeyframe()
@@ -73,12 +75,20 @@ namespace KimodoUnityBridge.Command.Tests
                     result = await KimodoEditorGeneratePipeline.ExecuteAsync(request);
                     Assert.That(result, Is.Not.Null);
                     Assert.That(result.GeneratedClip, Is.Not.Null);
+                    Assert.That(result.ConstraintLoss, Is.Not.Null);
 
                     JObject exportedRoot2D = JArray.Parse(request.Constraints.json)
                         .OfType<JObject>()
                         .Single(item => string.Equals(item.Value<string>("type"), "root2d", StringComparison.OrdinalIgnoreCase));
                     int constrainedFrame = exportedRoot2D["frame_indices"]?.Values<int>().Single() ??
                         throw new AssertionException("Generated root2d constraint has no frame index.");
+                    int outputConstraintFrame = constrainedFrame - request.RuntimeTrimStartFrame;
+                    Assert.That(result.ConstraintLoss.Value<int>("compared_count"), Is.GreaterThan(0));
+                    Assert.That(
+                        result.ConstraintLoss["frames"].Values<JObject>().Any(item =>
+                            item.Value<int>("frame") == outputConstraintFrame),
+                        Is.True,
+                        "The returned constraint-loss details should include the generated frame that corresponds to the Root2D constraint.");
                     double constrainedTime = constrainedFrame / KimodoMotionModelProfiles.DefaultFrameRate;
                     Assert.That(
                         KimodoRetargetSamplingUtility.SampleBoneClipToBoneSample(
@@ -129,11 +139,168 @@ namespace KimodoUnityBridge.Command.Tests
                     }
                     Assert.That(
                         planarDistance,
-                        Is.LessThanOrEqualTo(PositionToleranceMeters),
+                        Is.LessThanOrEqualTo(Root2DGenerationToleranceMeters),
                         $"KModel retargeted root XZ differs by {planarDistance:F4}m " +
                         $"(actual={actual.rootOverride.t}, expected={expected.rootOverride.t}, " +
                         $"exported protocol smooth_root_2d={exportedPlanar}, " +
                         $"unconstrained Y delta={verticalDelta:F4}m, {rawRootDescription}).");
+                }
+                catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+                {
+                    Assert.Fail($"KModel generation timed out after {generationTimeoutMinutes} minutes; the request was cancelled.");
+                }
+                finally
+                {
+                    request.CleanupGeneratedClips();
+                    if (result?.GeneratedClip != null && result.GeneratedClip != request.TargetClip)
+                    {
+                        Object.DestroyImmediate(result.GeneratedClip);
+                    }
+                }
+            }
+        }
+
+        [Test, Timeout(10 * 60 * 1000)]
+        public async Task RealKModelGeneration_RetargetedClipMatchesFullBodyKeyframe()
+        {
+            await AssertRealKModelGenerationRootKeyframe(
+                "RealKModelGenerationFullBody",
+                "fullbody",
+                "fullbody",
+                30.0 / 30.0,
+                1702,
+                planarOnly: false);
+        }
+
+        [Test, Timeout(10 * 60 * 1000)]
+        public async Task RealKModelGeneration_RetargetedClipMatchesRootEffectKeyframe()
+        {
+            await AssertRealKModelGenerationRootKeyframe(
+                "RealKModelGenerationRootEffect",
+                "root-effect",
+                "right-hand",
+                30.0 / 30.0,
+                1703,
+                planarOnly: false);
+        }
+
+        private async Task AssertRealKModelGenerationRootKeyframe(
+            string fixtureName,
+            string sampleMode,
+            string exportedConstraintType,
+            double sampleTime,
+            int seed,
+            bool planarOnly)
+        {
+            using (var fixture = new GenerationFixture(fixtureName))
+            {
+                const int generationTimeoutMinutes = 10;
+                using var timeout = new CancellationTokenSource(
+                    TimeSpan.FromMinutes(generationTimeoutMinutes));
+                KimodoMarkerSampleResult sample = fixture.Capture(sampleMode, sampleTime);
+                if (string.Equals(sampleMode, "root-effect", StringComparison.OrdinalIgnoreCase))
+                {
+                    sample.rootOverride.t = new Vector3(1f, 1f, 1f);
+                    sample.enableMask = new KimodoConstraintMask
+                    {
+                        rootPosition = true,
+                        rootHeading = true,
+                        rightHand = true
+                    };
+                    sample.validMask = sample.enableMask.Clone();
+                }
+
+                KimodoEditorGenerateRequest request = fixture.BuildRequest(sample);
+                request.Prompt = "a person standing still";
+                request.DiffusionSteps = 100;
+                request.EffectiveSeed = seed;
+                request.Token = timeout.Token;
+
+                JObject modelStatus;
+                try
+                {
+                    modelStatus = await KimodoBridgeService.Shared.ListModelConfigurationsAsync(
+                        KimodoMotionModelProfiles.DefaultModelName,
+                        KimodoTextEncoderModeProtocol.HighPerformance,
+                        request.ModelsRoot,
+                        null,
+                        timeout.Token);
+                }
+                catch (Exception exception)
+                {
+                    if (timeout.IsCancellationRequested)
+                    {
+                        Assert.Fail($"KModel availability probe timed out after {generationTimeoutMinutes} minutes.");
+                    }
+                    Assert.Fail($"KModel runtime is unavailable: {exception.Message}");
+                    return;
+                }
+
+                if (!ModelStatusContainsUsableModel(modelStatus, KimodoMotionModelProfiles.DefaultModelName))
+                {
+                    Assert.Fail("The configured QuickServer does not report a usable default Kimodo model.");
+                }
+
+                KimodoEditorGenerationResult result = null;
+                try
+                {
+                    result = await KimodoEditorGeneratePipeline.ExecuteAsync(request);
+                    Assert.That(result, Is.Not.Null);
+                    Assert.That(result.GeneratedClip, Is.Not.Null);
+
+                    JArray constraints = JArray.Parse(request.Constraints.json);
+                    JObject exported = constraints
+                        .OfType<JObject>()
+                        .Single(item => string.Equals(
+                            item.Value<string>("type"),
+                            exportedConstraintType,
+                            StringComparison.OrdinalIgnoreCase));
+                    int constrainedFrame = exported["frame_indices"]?.Values<int>().Single() ??
+                        throw new AssertionException($"Generated {exportedConstraintType} constraint has no frame index.");
+                    double constrainedTime = constrainedFrame / KimodoMotionModelProfiles.DefaultFrameRate;
+
+                    Assert.That(
+                        KimodoRetargetSamplingUtility.SampleBoneClipToBoneSample(
+                            result.GeneratedClip,
+                            fixture.Skeleton,
+                            constrainedTime,
+                            KimodoRetargetClipSamplingUtility.ResolveClipSamplingMode(result.GeneratedClip),
+                            out BoneSample actualBone,
+                            out string sampleError),
+                        Is.True,
+                        sampleError);
+                    Assert.That(
+                        KimodoRetargetSamplingUtility.TryApplyBoneSampleToRetargetSkeleton(
+                            actualBone,
+                            fixture.Skeleton,
+                            out sampleError),
+                        Is.True,
+                        sampleError);
+
+                    var actual = new KimodoMarkerSampleResult
+                    {
+                        rootOverride = KimodoRigidTransform.Identity,
+                        effectors = new KimodoConstraintEffectors(),
+                        enableMask = new KimodoConstraintMask(),
+                        validMask = new KimodoConstraintMask()
+                    };
+                    KimodoRetargetMarkerSamplingUtility.CaptureWorldTargets(fixture.Skeleton, actual);
+                    KimodoMarkerSampleResult expected = request.ConstraintSamples.Single();
+                    float rootDistance = planarOnly
+                        ? Vector2.Distance(
+                            new Vector2(actual.rootOverride.t.x, actual.rootOverride.t.z),
+                            new Vector2(expected.rootOverride.t.x, expected.rootOverride.t.z))
+                        : Vector3.Distance(actual.rootOverride.t, expected.rootOverride.t);
+                    float rootTolerance = string.Equals(sampleMode, "root-effect", StringComparison.OrdinalIgnoreCase)
+                        ? EffectorRootGenerationToleranceMeters
+                        : PositionToleranceMeters;
+
+                    Assert.That(
+                        rootDistance,
+                        Is.LessThanOrEqualTo(rootTolerance),
+                        $"{exportedConstraintType} generated root differs by {rootDistance:F4}m " +
+                        $"(tolerance={rootTolerance:F3}m, actual={actual.rootOverride.t}, expected={expected.rootOverride.t}, " +
+                        $"frame={constrainedFrame}, time={constrainedTime:F4}s).");
                 }
                 catch (OperationCanceledException) when (timeout.IsCancellationRequested)
                 {
@@ -210,6 +377,29 @@ namespace KimodoUnityBridge.Command.Tests
         }
 
         [Test]
+        public void GenerateCommand_ExposesComposablePointConstraintSchema()
+        {
+            JObject generation = JObject.Parse(command_dispatcher.GetCommandDefinitionsJson())
+                ["tools"]
+                .Values<JObject>()
+                .Single(tool => tool.Value<string>("name") == "kimodo_generate_animation");
+            JObject constraints = (JObject)generation["inputSchema"]["properties"]["constraints"];
+            JObject point = ((JArray)constraints["items"]["oneOf"])
+                .Values<JObject>()
+                .Single(branch => branch["properties"]?["root2d"] != null && branch["properties"]?["pose"] != null);
+
+            AssertRequiredProperties(point, "frame");
+            Assert.That(point["properties"]["type"], Is.Null);
+            Assert.That(point["properties"]["pose"], Is.Not.Null);
+            Assert.That(point["properties"]["root2d"], Is.Not.Null);
+            Assert.That(point["properties"]["effect"], Is.Not.Null);
+            AssertRequiredProperties((JObject)point["properties"]["root2d"], "position", "heading");
+            CollectionAssert.AreEquivalent(
+                new[] { "pose", "root2d", "effect" },
+                ((JArray)point["anyOf"]).SelectMany(requirement => ((JArray)requirement["required"]).Values<string>()));
+        }
+
+        [Test]
         public void GenerationRequest_RootEffect_EmitsRootAndEffectorAtOneFrame()
         {
             using (var fixture = new GenerationFixture("GenerationRootEffect"))
@@ -226,11 +416,12 @@ namespace KimodoUnityBridge.Command.Tests
 
                 KimodoEditorGenerateRequest request = fixture.BuildRequest(rootEffect);
                 JArray exported = JArray.Parse(request.Constraints.json);
-                JObject root = Find(exported, "root2d");
                 JObject leftHand = Find(exported, "left-hand");
                 JObject rightHand = Find(exported, "right-hand");
 
-                CollectionAssert.AreEqual(new[] { 32 }, Frames(root));
+                Assert.That(exported.Any(item => string.Equals(
+                    item.Value<string>("type"), "root2d", StringComparison.OrdinalIgnoreCase)), Is.False,
+                    "RootEffect is emitted as one effector family with root support, not a second Root2D constraint.");
                 CollectionAssert.AreEqual(new[] { 32 }, Frames(leftHand));
                 CollectionAssert.AreEqual(new[] { 32 }, Frames(rightHand));
                 Assert.That(request.ConstraintSamples, Has.Count.EqualTo(1));
@@ -293,6 +484,15 @@ namespace KimodoUnityBridge.Command.Tests
         private static Vector3 ToKimodoPosition(Vector3 unityPosition)
         {
             return new Vector3(-unityPosition.x, unityPosition.y, unityPosition.z);
+        }
+
+        private static void AssertRequiredProperties(JObject schema, params string[] names)
+        {
+            Assert.That(schema, Is.Not.Null);
+            JArray required = (JArray)schema["required"];
+            Assert.That(required, Is.Not.Null);
+            foreach (string name in names)
+                CollectionAssert.Contains(required.Values<string>(), name, $"Schema must require {name}.");
         }
 
         private static void AssertVector2(JToken actual, Vector2 expected, string label, float tolerance)

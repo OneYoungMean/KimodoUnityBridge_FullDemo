@@ -25,6 +25,7 @@ namespace KimodoBridge.Editor
         public KimodoBridgeCommandStage Stage;
         public string Message = string.Empty;
         public string Error = string.Empty;
+        public string BackendRequestJson = string.Empty;
         public KimodoEditorGenerationJobStatus Status;
         public KimodoEditorGenerationResult Payload;
         public DateTime StartedAtUtc;

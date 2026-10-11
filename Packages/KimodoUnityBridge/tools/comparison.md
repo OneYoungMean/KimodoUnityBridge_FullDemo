@@ -68,7 +68,7 @@ function compare(candidate_1, candidate_2):
             }
         ],
        picture: {"output": "composite"},
-        resolution: 512
+        resolution: 1920
     })
     ASSERT analysis.analysis_schema_version == "3-command-60-phase-track-v2"
     ASSERT analysis.pictures.render_version == "51-unified-picture-space"

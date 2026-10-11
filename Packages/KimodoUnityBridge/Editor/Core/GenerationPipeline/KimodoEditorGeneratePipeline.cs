@@ -303,6 +303,12 @@ namespace KimodoBridge.Editor
                 rawBoneClip = null;
                 request.RawBoneClip = null;
             }
+            JObject constraintLoss = KimodoGenerationConstraintLossComparer.Compare(
+                runtimeResult.MotionData,
+                modelName,
+                request.ConstraintSamples,
+                request.RuntimeTrimStartFrame,
+                request.TargetFrameRate);
             return Complete(
                 request,
                 prompt,
@@ -312,7 +318,8 @@ namespace KimodoBridge.Editor
                 runtimeResult.EndFrameExclusive,
                 request.TargetClip,
                 rawBoneClip,
-                runtimeResult.AnalysisJson);
+                runtimeResult.AnalysisJson,
+                constraintLoss);
         }
 
         private static void FinalizeArdyLeadingGuardOutput(
@@ -704,7 +711,8 @@ namespace KimodoBridge.Editor
             int endFrameExclusive,
             AnimationClip generatedClip,
             AnimationClip rawBoneClip,
-            string analysisJson)
+            string analysisJson,
+            JObject constraintLoss)
         {
             ThrowIfCanceled(request);
             request.Progress?.Invoke(KimodoBridgeCommandStage.Finalize, "Finalizing generated assets...");
@@ -717,6 +725,7 @@ namespace KimodoBridge.Editor
                 Seed = request.EffectiveSeed,
                 MotionJsonCompact = motionJson,
                 AnalysisJson = analysisJson,
+                ConstraintLoss = constraintLoss,
                 MotionBytes = motionBytes,
                 StartFrame = startFrame,
                 EndFrameExclusive = endFrameExclusive,

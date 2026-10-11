@@ -34,9 +34,19 @@ namespace KimodoUnityBridge.Command
                     throw;
                 GameObject source = matches[0];
                 Animator sourceAnimator = source.GetComponentInChildren<Animator>(true);
-                if (!AddCharacterTrack(session, source, sourceAnimator, true, out string error, requireAvatar: true))
-                    throw new InvalidOperationException(error);
-                sessionCharacter = ResolveSessionCharacterByReference(session, name, addIfMissing: false);
+                source = ResolveCharacterIdentityRoot(source, sourceAnimator);
+                string sourceId = GetObjectReference(source);
+                sessionCharacter = session.Characters.FirstOrDefault(character =>
+                    string.Equals(character.CharacterRef, sourceId, StringComparison.Ordinal));
+                if (sessionCharacter == null)
+                {
+                    if (!AddCharacterTrack(session, source, sourceAnimator, true, out string error, requireAvatar: true))
+                        throw new InvalidOperationException(error);
+                    sessionCharacter = session.Characters.FirstOrDefault(character =>
+                        string.Equals(character.CharacterRef, sourceId, StringComparison.Ordinal));
+                }
+                if (sessionCharacter == null)
+                    throw new InvalidOperationException($"Character '{name}' could not be resolved to a cached scene identity.");
             }
             GameObject root = sessionCharacter.Root;
             Animator animator = sessionCharacter.Animator;
@@ -150,7 +160,7 @@ namespace KimodoUnityBridge.Command
             }
         }
 
-        private static JObject BuildStatus(JobRecord record)
+        private static JObject BuildStatus(JobRecord record, bool includeBackendRequestJson = false)
         {
             KimodoEditorGenerationJobSession session = record.Session;
             var result = new JObject
@@ -171,10 +181,23 @@ namespace KimodoUnityBridge.Command
                     ? (JToken)session.ProgressRate.Value
                     : JValue.CreateNull()
             };
+            if (includeBackendRequestJson && !string.IsNullOrWhiteSpace(session.BackendRequestJson))
+            {
+                try
+                {
+                    result["backend_request_json"] = JToken.Parse(session.BackendRequestJson);
+                }
+                catch
+                {
+                    result["backend_request_json"] = session.BackendRequestJson;
+                }
+            }
             if (session.Payload is KimodoEditorGenerationResult generated)
             {
                 result["seed"] = generated.Seed;
                 result["prompt"] = generated.Prompt ?? string.Empty;
+                if (generated.ConstraintLoss != null)
+                    result["constraint_loss"] = generated.ConstraintLoss.DeepClone();
                 if (!string.IsNullOrWhiteSpace(generated.AnalysisJson))
                 {
                     try
@@ -358,7 +381,7 @@ namespace KimodoUnityBridge.Command
             }
             if (record?.TimelineGenerationTrace == null) return;
             TimelineSessionRecord timelineSession = record.TimelineGenerationTrace.Session;
-            JObject status = BuildStatus(record);
+            JObject status = BuildStatus(record, includeBackendRequestJson: true);
             WriteJsonAtomically(GenerationJobPath(timelineSession, jobSession.RequestId), status);
             UpdateGenerationHistory(timelineSession, status);
             PersistTimelineSessionMetadata(timelineSession);

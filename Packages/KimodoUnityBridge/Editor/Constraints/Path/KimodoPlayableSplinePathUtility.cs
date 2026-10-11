@@ -183,18 +183,8 @@ namespace KimodoBridge.Editor
                 }
                 sample.enableMask = new KimodoConstraintMask
                 {
-                    rootPosition = true,
                     rootHeading = clip.SplineIncludeHeading
                 };
-                sample.validMask = new KimodoConstraintMask
-                {
-                    rootPosition = true,
-                    rootHeading = clip.SplineIncludeHeading
-                };
-                sample.enableMask.muscle = false;
-                sample.enableMask.rootTQ = false;
-                sample.enableMask.leftFootTQ = false;
-                sample.enableMask.rightFootTQ = false;
                 samples.Add(sample);
             }
 

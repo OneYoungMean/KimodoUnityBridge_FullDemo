@@ -172,7 +172,7 @@ namespace KimodoBridge.Editor
 
                     bool rootOnly = entry.ConstraintMode == KimodoConstraintMode.Root2D ||
                         string.Equals(
-                            KimodoConstraintInternal.NormalizeMode(entry.SampleData.constraintMode),
+                            KimodoConstraintInternal.ResolveExecutionMode(entry.SampleData),
                             "root2d",
                             System.StringComparison.OrdinalIgnoreCase);
                     if (rootOnly ||
@@ -201,7 +201,25 @@ namespace KimodoBridge.Editor
             bool enabled)
         {
             if (!enabled || value == null) return;
-            DrawSampleHandle(entry, bone, value, TargetColor(bone), bone.ToString(), isRoot: false);
+            KimodoRigidTransform display = KimodoConstraintSpaceUtility.ToWorld(value, entry.SampleData?.rootOverride);
+            DrawSampleHandle(entry, bone, display, TargetColor(bone), bone.ToString(), isRoot: false,
+                onChanged: edited =>
+                {
+                    Vector3 worldPosition = edited.position;
+                    Quaternion worldRotation = edited.rotation;
+                    KimodoConstraintSpace targetSpace = value.space;
+                    KimodoRigidTransform world = new KimodoRigidTransform
+                    {
+                        position = worldPosition,
+                        rotation = worldRotation,
+                        enableRotation = value.enableRotation,
+                        space = KimodoConstraintSpace.World
+                    };
+                    KimodoConstraintSpaceUtility.ConvertSpace(world, entry.SampleData?.rootOverride, targetSpace);
+                    value.position = world.position;
+                    value.rotation = world.rotation;
+                    value.space = targetSpace;
+                });
         }
 
         private static void DrawSampleHandle(
@@ -210,7 +228,8 @@ namespace KimodoBridge.Editor
             KimodoRigidTransform value,
             Color color,
             string label,
-            bool isRoot)
+            bool isRoot,
+            Action<KimodoRigidTransform> onChanged = null)
         {
             Vector3 position = value.position;
             // Effector rotation is stored in the bind-pose-normalized rig
@@ -263,11 +282,8 @@ namespace KimodoBridge.Editor
                 }
                 if (EditorGUI.EndChangeCheck())
                 {
-                    if (isRoot)
-                    {
-                        CarryEffectorsWithRoot(entry, position, rotation, moved, rotation);
-                    }
                     value.position = moved;
+                    onChanged?.Invoke(value);
                     PromoteHandleChannel(entry.SampleData, bone, rotationChanged: false);
                     entry.OnSampleChanged?.Invoke(entry.SampleData.Clone());
                 }
@@ -289,17 +305,9 @@ namespace KimodoBridge.Editor
                 if (EditorGUI.EndChangeCheck())
                 {
                     bool rotationChanged = Quaternion.Angle(previousRotation, rotation) > 1e-4f;
-                    if (isRoot)
-                    {
-                        CarryEffectorsWithRoot(
-                            entry,
-                            value.position,
-                            previousRotation,
-                            position,
-                            rotation);
-                    }
                     value.position = position;
                     value.rotation = rotation.normalized;
+                    onChanged?.Invoke(value);
                     PromoteHandleChannel(entry.SampleData, bone, rotationChanged);
                     entry.OnSampleChanged?.Invoke(entry.SampleData.Clone());
                 }
@@ -315,92 +323,19 @@ namespace KimodoBridge.Editor
             Vector3 currentRootPosition,
             Quaternion currentRootRotation)
         {
-            if (entry?.SampleData?.rootOverride == null ||
-                !entry.SampleData.carryEffectorsWithRoot ||
-                entry.SampleData.effectors == null ||
-                entry.ConstraintMode == KimodoConstraintMode.Root2D ||
-                string.Equals(
-                    KimodoConstraintInternal.NormalizeMode(entry.SampleData.constraintMode),
-                    "root2d",
-                    System.StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            Quaternion deltaRotation =
-                (currentRootRotation * Quaternion.Inverse(previousRootRotation)).normalized;
-            KimodoConstraintEffectors effectors = entry.SampleData.effectors;
-            CarryEffector(entry, HumanBodyBones.LeftHand, effectors.leftHand,
-                deltaRotation, previousRootPosition, currentRootPosition);
-            CarryEffector(entry, HumanBodyBones.RightHand, effectors.rightHand,
-                deltaRotation, previousRootPosition, currentRootPosition);
-            CarryEffector(entry, HumanBodyBones.LeftFoot, effectors.leftFoot,
-                deltaRotation, previousRootPosition, currentRootPosition);
-            CarryEffector(entry, HumanBodyBones.RightFoot, effectors.rightFoot,
-                deltaRotation, previousRootPosition, currentRootPosition);
-
-            // FullBody displays all four target handles even though its
-            // default mask only advertises the muscle/root channels. Once the
-            // root is used to carry targets, promote those targets so the
-            // canonical SolveJob feeds all four goals into SolveIK.
-            PromoteCarriedChannel(entry, HumanBodyBones.LeftHand);
-            PromoteCarriedChannel(entry, HumanBodyBones.RightHand);
-            PromoteCarriedChannel(entry, HumanBodyBones.LeftFoot);
-            PromoteCarriedChannel(entry, HumanBodyBones.RightFoot);
+            if (entry == null) return;
+            // Kept as a source-compatible no-op for archived editor callers.
         }
 
-        private static void PromoteCarriedChannel(
-            ConstraintPreviewInstance entry,
-            HumanBodyBones bone)
-        {
-            if (ShouldCarryEffector(entry, bone))
-            {
-                PromoteHandleChannel(entry.SampleData, bone, false);
-            }
-        }
-
-        private static bool ShouldCarryEffector(ConstraintPreviewInstance entry, HumanBodyBones bone)
-        {
-            if (entry?.SampleData == null)
-            {
-                return false;
-            }
-            if (entry.ConstraintMode == KimodoConstraintMode.FullBody)
-            {
-                return true;
-            }
-
-            string channel = bone switch
-            {
-                HumanBodyBones.LeftHand => "lefthand",
-                HumanBodyBones.RightHand => "righthand",
-                HumanBodyBones.LeftFoot => "leftfoot",
-                HumanBodyBones.RightFoot => "rightfoot",
-                _ => string.Empty
-            };
-            return KimodoConstraintMask.IsActive(entry.SampleData, channel);
-        }
-
-        private static void CarryEffector(
-            ConstraintPreviewInstance entry,
-            HumanBodyBones bone,
-            KimodoRigidTransform value,
-            Quaternion deltaRotation,
+        internal static void CarryEffectorsWithRoot(
+            KimodoMarkerSampleResult sample,
+            KimodoConstraintMode constraintMode,
             Vector3 previousRootPosition,
-            Vector3 currentRootPosition)
+            Quaternion previousRootRotation,
+            Vector3 currentRootPosition,
+            Quaternion currentRootRotation)
         {
-            if (!ShouldCarryEffector(entry, bone) || value == null)
-            {
-                return;
-            }
-
-            value.position = currentRootPosition +
-                deltaRotation * (value.position - previousRootPosition);
-            // Effector rotations are bind-pose-normalized orientation values
-            // (worldRotation * inverse(bindRotation)). A world-space root
-            // delta therefore propagates directly on the left; expanding to
-            // an absolute rotation and packing it again only adds noise.
-            value.rotation = (deltaRotation * value.rotation).normalized;
+            // Carry-with-root was removed. Root edits only update rootOverride.
         }
 
         private static void PromoteHandleChannel(
@@ -410,19 +345,16 @@ namespace KimodoBridge.Editor
         {
             if (sample == null) return;
             sample.enableMask ??= new KimodoConstraintMask();
-            sample.validMask ??= new KimodoConstraintMask();
+            sample.sampleValid = true;
             switch (bone)
             {
                 case HumanBodyBones.Hips:
-                    sample.enableMask.rootPosition = true;
                     sample.enableMask.rootHeading |= rotationChanged;
-                    sample.validMask.rootPosition = true;
-                    sample.validMask.rootHeading |= rotationChanged;
                     break;
-                case HumanBodyBones.LeftHand: sample.enableMask.leftHand = sample.validMask.leftHand = true; break;
-                case HumanBodyBones.RightHand: sample.enableMask.rightHand = sample.validMask.rightHand = true; break;
-                case HumanBodyBones.LeftFoot: sample.enableMask.leftFoot = sample.validMask.leftFoot = true; break;
-                case HumanBodyBones.RightFoot: sample.enableMask.rightFoot = sample.validMask.rightFoot = true; break;
+                case HumanBodyBones.LeftHand: sample.enableMask.leftHand = true; break;
+                case HumanBodyBones.RightHand: sample.enableMask.rightHand = true; break;
+                case HumanBodyBones.LeftFoot: sample.enableMask.leftFoot = true; break;
+                case HumanBodyBones.RightFoot: sample.enableMask.rightFoot = true; break;
             }
         }
 
@@ -541,7 +473,7 @@ namespace KimodoBridge.Editor
                 CollectHighlightedJointsFromItem(item, context.ModelName, highlightedJoints);
 
                 bool applied = ApplySampleToRig(
-                    KimodoConstraintSampleComposer.ResolveUnifiedSample(item.SampleData),
+                    item.SampleData,
                     context.ModelName,
                     entry,
                     out error);

@@ -19,9 +19,9 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            if (sample == null)
+            if (sample == null || !sample.sampleValid)
             {
-                error = "sample is null";
+                error = sample == null ? "sample is null" : "sample is invalid";
                 return false;
             }
 
@@ -39,14 +39,13 @@ namespace KimodoBridge.Editor
             if (!marker.autoSample)
             {
                 normalized.enableMask = sample.enableMask?.Clone() ?? new KimodoConstraintMask();
-                normalized.validMask = KimodoConstraintMask.FromSample(sample);
             }
 
             // Scene edits author effector targets separately from the canonical pose.
             // Normalization starts from the marker payload, so copy the edited
             // world-space targets explicitly or a drag is lost on the next
             // render.
-            if (sample.effectors != null)
+            if (!marker.autoSample && sample.effectors != null)
             {
                 normalized.effectors = sample.effectors.Clone();
             }
@@ -56,7 +55,7 @@ namespace KimodoBridge.Editor
             // starts from the marker's authored sample for non-AutoSample
             // markers.
             if (sample.rootOverride != null &&
-                (!marker.autoSample || KimodoConstraintMask.IsActive(sample, "rootposition")))
+                (!marker.autoSample || sample.sampleValid))
             {
                 normalized.rootOverride = sample.rootOverride.Clone();
             }
@@ -108,11 +107,11 @@ namespace KimodoBridge.Editor
             }
 
             return string.Equals(left.constraintMode ?? string.Empty, right.constraintMode ?? string.Empty, System.StringComparison.Ordinal) &&
+                left.sampleValid == right.sampleValid &&
                 string.Equals(SampleDataSignature(left), SampleDataSignature(right), System.StringComparison.Ordinal) &&
                 string.Equals(EffectorsSignature(left), EffectorsSignature(right), System.StringComparison.Ordinal) &&
                 string.Equals(RootOverrideSignature(left), RootOverrideSignature(right), System.StringComparison.Ordinal) &&
-                string.Equals(MaskSignature(left.enableMask), MaskSignature(right.enableMask), System.StringComparison.Ordinal) &&
-                string.Equals(MaskSignature(left.validMask), MaskSignature(right.validMask), System.StringComparison.Ordinal);
+                string.Equals(MaskSignature(left.enableMask), MaskSignature(right.enableMask), System.StringComparison.Ordinal);
         }
 
         private static string SampleDataSignature(KimodoMarkerSampleResult sample)

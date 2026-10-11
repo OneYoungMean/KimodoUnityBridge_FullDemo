@@ -1,4 +1,5 @@
 using TimelineInject;
+using KimodoUnityBridge;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Timeline;
@@ -45,15 +46,19 @@ namespace KimodoBridge.Editor
             {
                 case KimodoConstraintMode.Root2D:
                     DrawRootOverride(so);
+                    using (new EditorGUI.DisabledScope(true))
+                    {
+                        DrawEffectorPanels(so, "sampleData", "Effectors", true, showEnable: true);
+                    }
                     break;
                 case KimodoConstraintMode.Effector:
                     DrawRootOverride(so);
-                    DrawEffectors(so, "sampleData");
+                    DrawEffectorPanels(so, "sampleData", "Effectors", IsAutoSample(so), showEnable: true);
                     break;
                 default:
                     DrawFullBody(so);
                     DrawRootOverride(so);
-                    DrawEffectorPanels(so, "sampleData", "Effectors", IsAutoSample(so), showEnable: false);
+                    DrawEffectorPanels(so, "sampleData", "Effectors", IsAutoSample(so), showEnable: true);
                     break;
             }
         }
@@ -71,13 +76,7 @@ namespace KimodoBridge.Editor
         {
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             SerializedProperty allowHeading = so.FindProperty("sampleData.enableMask.rootHeading");
-            SerializedProperty positionEnabled = so.FindProperty("sampleData.enableMask.rootPosition");
-            SerializedProperty positionValid = so.FindProperty("sampleData.validMask.rootPosition");
-            SerializedProperty headingValid = so.FindProperty("sampleData.validMask.rootHeading");
-            SerializedProperty carryEffectorsWithRoot = so.FindProperty("sampleData.carryEffectorsWithRoot");
-            SerializedProperty mode = so.FindProperty("constraintMode");
-            bool isRoot2D = mode != null &&
-                (KimodoConstraintMode)mode.enumValueIndex == KimodoConstraintMode.Root2D;
+            SerializedProperty sampleValid = so.FindProperty("sampleData.sampleValid");
             using (new EditorGUI.DisabledScope(IsAutoSample(so)))
             {
                 if (DrawFullTransform(
@@ -86,10 +85,7 @@ namespace KimodoBridge.Editor
                         showRotationToggle: false,
                         rotationEnabled: allowHeading?.boolValue == true))
                 {
-                    if (positionEnabled != null) positionEnabled.boolValue = true;
-                    if (positionValid != null) positionValid.boolValue = true;
-                    if (allowHeading?.boolValue == true && headingValid != null)
-                        headingValid.boolValue = true;
+                    if (sampleValid != null) sampleValid.boolValue = true;
                 }
                 if (allowHeading != null)
                 {
@@ -99,18 +95,8 @@ namespace KimodoBridge.Editor
                         new GUIContent("Allow Heading", "Export Root2D heading and use it as FullBody yaw overlay."));
                     if (EditorGUI.EndChangeCheck())
                     {
-                        if (positionEnabled != null) positionEnabled.boolValue = true;
-                        if (positionValid != null) positionValid.boolValue = true;
-                        if (headingValid != null) headingValid.boolValue = allowHeading.boolValue;
+                        if (sampleValid != null) sampleValid.boolValue = true;
                     }
-                }
-                if (!isRoot2D && carryEffectorsWithRoot != null)
-                {
-                    EditorGUILayout.PropertyField(
-                        carryEffectorsWithRoot,
-                        new GUIContent(
-                            "Carry Effectors With Root",
-                            "When dragging the root handle, move enabled hand and foot effectors by the same root transform delta."));
                 }
             }
             EditorGUILayout.EndVertical();
@@ -127,11 +113,6 @@ namespace KimodoBridge.Editor
             EditorGUILayout.EndVertical();
         }
 
-        private static void DrawEffectors(SerializedObject so, string root)
-        {
-            DrawEffectorPanels(so, root, "Effectors", IsAutoSample(so), showEnable: true);
-        }
-
         private static void DrawEffectorPanels(
             SerializedObject so,
             string root,
@@ -144,25 +125,21 @@ namespace KimodoBridge.Editor
                 so,
                 root + ".effectors.leftHand",
                 so.FindProperty(root + ".enableMask.leftHand"),
-                so.FindProperty(root + ".validMask.leftHand"),
                 "Left Hand Effector", autoSample, showEnable);
             DrawEndEffectorPanel(
                 so,
                 root + ".effectors.rightHand",
                 so.FindProperty(root + ".enableMask.rightHand"),
-                so.FindProperty(root + ".validMask.rightHand"),
                 "Right Hand Effector", autoSample, showEnable);
             DrawEndEffectorPanel(
                 so,
                 root + ".effectors.leftFoot",
                 so.FindProperty(root + ".enableMask.leftFoot"),
-                so.FindProperty(root + ".validMask.leftFoot"),
                 "Left Foot Effector", autoSample, showEnable);
             DrawEndEffectorPanel(
                 so,
                 root + ".effectors.rightFoot",
                 so.FindProperty(root + ".enableMask.rightFoot"),
-                so.FindProperty(root + ".validMask.rightFoot"),
                 "Right Foot Effector", autoSample, showEnable);
         }
 
@@ -170,30 +147,73 @@ namespace KimodoBridge.Editor
             SerializedObject so,
             string transformPath,
             SerializedProperty enabled,
-            SerializedProperty valid,
             string label,
             bool autoSample,
             bool showEnable)
         {
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            if (showEnable && enabled != null)
-            {
-                EditorGUI.BeginChangeCheck();
-                EditorGUILayout.PropertyField(enabled, new GUIContent(label + " Enable"));
-                if (EditorGUI.EndChangeCheck() && enabled.boolValue && valid != null)
-                    valid.boolValue = true;
-            }
-            // Channel enable controls export in Effector mode; it must not
-            // hide authored values while a non-AutoSample marker is edited.
             using (new EditorGUI.DisabledScope(autoSample))
             {
-                if (DrawFullTransform(so.FindProperty(transformPath), label))
+                if (showEnable && enabled != null)
                 {
-                    if (valid != null) valid.boolValue = true;
-                    if (!showEnable && enabled != null) enabled.boolValue = true;
+                    EditorGUILayout.PropertyField(enabled, new GUIContent(label + " Enable"));
+                }
+                SerializedProperty autoSampleTransform = so.FindProperty(transformPath);
+                DrawSpacePopup(autoSampleTransform, so.FindProperty("sampleData.rootOverride"));
+            }
+            SerializedProperty transform = so.FindProperty(transformPath);
+            using (new EditorGUI.DisabledScope(autoSample))
+            {
+                if (DrawFullTransform(transform, label))
+                {
+                    if (enabled != null && !showEnable) enabled.boolValue = true;
                 }
             }
             EditorGUILayout.EndVertical();
+        }
+
+        private static void DrawSpacePopup(SerializedProperty transform, SerializedProperty root)
+        {
+            if (transform == null) return;
+            SerializedProperty space = transform.FindPropertyRelative("space");
+            if (space == null) return;
+            int oldIndex = space.enumValueIndex;
+            Rect spaceRect = EditorGUILayout.GetControlRect();
+            int newIndex = EditorGUI.Popup(
+                spaceRect,
+                "Space",
+                oldIndex,
+                new[] { "Local Space", "World Space" });
+            space.enumValueIndex = newIndex;
+            if (newIndex == oldIndex) return;
+
+            SerializedProperty position = transform.FindPropertyRelative("position");
+            SerializedProperty rotation = transform.FindPropertyRelative("rotation");
+            Vector3 valuePosition = position != null ? position.vector3Value : Vector3.zero;
+            Quaternion valueRotation = rotation != null ? rotation.quaternionValue : Quaternion.identity;
+            Vector3 rootPosition = root?.FindPropertyRelative("position")?.vector3Value ?? Vector3.zero;
+            Quaternion rootRotation = root?.FindPropertyRelative("rotation")?.quaternionValue ?? Quaternion.identity;
+            KimodoConstraintSpace from = (KimodoConstraintSpace)oldIndex;
+            KimodoConstraintSpace to = (KimodoConstraintSpace)newIndex;
+            Vector3 worldPosition = KimodoConstraintSpaceUtility.ToWorldPosition(valuePosition, from,
+                new KimodoRigidTransform { position = rootPosition, rotation = rootRotation });
+            Quaternion worldRotation = KimodoConstraintSpaceUtility.ToWorldRotation(valueRotation, from,
+                new KimodoRigidTransform { position = rootPosition, rotation = rootRotation });
+            if (to == KimodoConstraintSpace.Local)
+            {
+                valuePosition = Quaternion.Inverse(rootRotation) * (worldPosition - rootPosition);
+                valueRotation = (Quaternion.Inverse(rootRotation) * worldRotation).normalized;
+            }
+            else
+            {
+                valuePosition = worldPosition;
+                valueRotation = worldRotation;
+            }
+            if (position != null) position.vector3Value = valuePosition;
+            if (rotation != null) rotation.quaternionValue = valueRotation;
+            space.enumValueIndex = newIndex;
+            SerializedProperty sampleValid = transform.serializedObject?.FindProperty("sampleData.sampleValid");
+            if (sampleValid != null) sampleValid.boolValue = true;
         }
 
         private static void DrawMuscleValues(SerializedProperty muscles)

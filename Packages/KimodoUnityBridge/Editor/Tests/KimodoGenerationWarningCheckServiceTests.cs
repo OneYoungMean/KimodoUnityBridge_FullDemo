@@ -16,8 +16,8 @@ namespace KimodoBridge.Editor.Tests
             {
                 ["constraints"] = new JArray
                 {
-                    new JObject { ["frame"] = 0, ["type"] = "root2d", ["root2d"] = Root(0f, 0f) },
-                    new JObject { ["frame"] = 1, ["type"] = "root2d", ["root2d"] = Root(1f, 0f) }
+                    new JObject { ["frame"] = 0, ["root2d"] = Root(0f, 0f) },
+                    new JObject { ["frame"] = 1, ["root2d"] = Root(1f, 0f) }
                 }
             };
 
@@ -30,21 +30,25 @@ namespace KimodoBridge.Editor.Tests
         }
 
         [Test]
-        public void Overlap_ReportsRootConflictOnSameFrame()
+        public void ComposedRootAndEffect_AreNotReportedAsConflictingConstraints()
         {
             JObject args = new JObject
             {
                 ["constraints"] = new JArray
                 {
-                    new JObject { ["frame"] = 10, ["type"] = "root2d", ["root2d"] = Root(0f, 0f) },
-                    new JObject { ["frame"] = 10, ["type"] = "root_effect", ["root2d"] = Root(1f, 0f), ["effect"] = new JObject { ["right_hand"] = new JObject { ["position"] = new JArray(0, 1, 0) } } }
+                    new JObject
+                    {
+                        ["frame"] = 10,
+                        ["root2d"] = Root(1f, 0f),
+                        ["effect"] = new JObject { ["right_hand"] = new JObject { ["position"] = new JArray(0, 1, 0) } }
+                    }
                 }
             };
 
             JObject result = KimodoGenerationWarningCheckService.Build(args, 60, 60f);
 
-            Assert.That(result["constraint_overlap"].Value<string>("status"), Is.EqualTo("warning"));
-            Assert.That(result["constraint_overlap"]["issues"].ToObject<JArray>().Count, Is.EqualTo(1));
+            Assert.That(result["constraint_overlap"].Value<string>("status"), Is.EqualTo("ok"));
+            Assert.That(result["constraint_overlap"]["issues"].ToObject<JArray>().Count, Is.EqualTo(0));
         }
 
         [Test]
@@ -54,7 +58,7 @@ namespace KimodoBridge.Editor.Tests
             {
                 ["constraints"] = new JArray
                 {
-                    new JObject { ["frame"] = 0, ["type"] = "fullbody", ["pose"] = new JObject { ["track"] = "Pose", ["index"] = 0 } }
+                    new JObject { ["frame"] = 0, ["pose"] = new JObject { ["track"] = "Pose", ["index"] = 0 } }
                 }
             };
             var sample = new KimodoMarkerSampleResult

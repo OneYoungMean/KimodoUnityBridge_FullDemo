@@ -20,11 +20,11 @@ Kimodo commands resolve the active Unity scene directly. This page records only 
 - Returned character and animation names, `{track,index}` pose references, and project-relative paths are the only handles passed between commands.
 - Scene changes, Editor reloads, and Play Mode transitions can cancel active generation requests and must be reported.
 
-`session.clear` resets the active scene context and moves its context GameObjects under the scene archive. Persisted Timeline and animation assets
-remain available; a new session is created lazily by the next command.
+`session.clear` resets the active scene context by destroying its temporary context GameObjects. Persisted Timeline and animation assets
+remain available, and a new session is created lazily by the next command.
 
 
 
 The runtime session is temporary and is not saved with the scene. Historical analysis and
 generation assets remain on disk, while transient session objects use `DontSaveInEditor |
-DontSaveInBuild`; clearing a session only stops it and deactivates its root.
+DontSaveInBuild`; clearing a session destroys its temporary objects.

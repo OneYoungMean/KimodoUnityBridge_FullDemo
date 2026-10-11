@@ -57,7 +57,6 @@ namespace KimodoBridge
             if (!KimodoRetargetSamplingUtility.TryCaptureSampleData(
                     targetCache,
                     out MuscleSample sampleData,
-                    out KimodoConstraintMask validMask,
                     out error))
             {
                 result = null;
@@ -65,7 +64,7 @@ namespace KimodoBridge
             }
 
             result.sampleData = sampleData;
-            result.validMask = validMask;
+            result.sampleValid = true;
             CaptureWorldTargets(targetCache, result);
             result.enabled = true;
             return true;
@@ -91,7 +90,6 @@ namespace KimodoBridge
             result.effectors.rightFoot ??= KimodoRigidTransform.Identity;
             result.rootOverride ??= KimodoRigidTransform.Identity;
             result.enableMask ??= new KimodoConstraintMask();
-            result.validMask ??= new KimodoConstraintMask();
 
             Vector3 position = Vector3.zero;
             Quaternion rotation = Quaternion.identity;
@@ -104,25 +102,16 @@ namespace KimodoBridge
             }
             result.rootOverride.t = position;
             result.rootOverride.q = rotation;
-            result.validMask.rootPosition = rootValid;
-            result.validMask.rootHeading = rootValid;
-
-            CaptureEffector(cache, HumanBodyBones.LeftHand, result.effectors.leftHand,
-                result.validMask, 0);
-            CaptureEffector(cache, HumanBodyBones.RightHand, result.effectors.rightHand,
-                result.validMask, 1);
-            CaptureEffector(cache, HumanBodyBones.LeftFoot, result.effectors.leftFoot,
-                result.validMask, 2);
-            CaptureEffector(cache, HumanBodyBones.RightFoot, result.effectors.rightFoot,
-                result.validMask, 3);
+            CaptureEffector(cache, HumanBodyBones.LeftHand, result.effectors.leftHand);
+            CaptureEffector(cache, HumanBodyBones.RightHand, result.effectors.rightHand);
+            CaptureEffector(cache, HumanBodyBones.LeftFoot, result.effectors.leftFoot);
+            CaptureEffector(cache, HumanBodyBones.RightFoot, result.effectors.rightFoot);
         }
 
         private static void CaptureEffector(
             RetargetSkeleton cache,
             HumanBodyBones bone,
-            KimodoRigidTransform target,
-            KimodoConstraintMask validMask,
-            int index)
+            KimodoRigidTransform target)
         {
             Vector3 position = Vector3.zero;
             Quaternion rotation = Quaternion.identity;
@@ -131,6 +120,7 @@ namespace KimodoBridge
             if (valid)
             {
                 target.t = position;
+                target.space = KimodoConstraintSpace.World;
                 target.enableRotation = false;
                 // Hand goals use Unity's axis-corrected goal frame. Feet keep
                 // the legacy bind-relative transport below.
@@ -139,15 +129,9 @@ namespace KimodoBridge
             else
             {
                 target.t = Vector3.zero;
+                target.space = KimodoConstraintSpace.World;
                 target.q = Quaternion.identity;
                 target.enableRotation = false;
-            }
-            switch (index)
-            {
-                case 0: validMask.leftHand = valid; break;
-                case 1: validMask.rightHand = valid; break;
-                case 2: validMask.leftFoot = valid; break;
-                case 3: validMask.rightFoot = valid; break;
             }
         }
 

@@ -3,6 +3,8 @@ using NUnit.Framework;
 using TimelineInject;
 using UnityEngine;
 
+// Archived: this test treats same-frame Root2D folding into another family as
+// valid behavior. The active protocol rejects multiple constraints per frame.
 namespace KimodoBridge.Editor.Tests
 {
     public sealed class KimodoConstraintProtocolNormalizerTests

@@ -129,7 +129,10 @@ namespace KimodoUnityBridge.Command
                     (subject.Record.Analysis?["keyframes"] as JArray)?.Count ?? 1);
                 KeyFrameSet = new HashSet<int>((subject.Record.Analysis?["keyframes"] as JArray ?? new JArray())
                     .OfType<JObject>()
-                    .Select(item => Mathf.Clamp(item.Value<int?>("frame") ?? 0, 0, Math.Max(0, pelvis.Length - 1))));
+                    .Select(item => Mathf.Clamp(
+                        (item.Value<int?>("timeline_frame_60") ?? subject.StartFrame) - subject.StartFrame,
+                        0,
+                        Math.Max(0, pelvis.Length - 1))));
             }
             public AnalysisSubject Subject { get; }
             public KimodoMarkerSampleResult[] Samples { get; }
@@ -159,7 +162,9 @@ namespace KimodoUnityBridge.Command
                 KeyFrameSet.Clear();
                 foreach (JObject item in keyframes.OfType<JObject>())
                 {
-                    KeyFrameSet.Add(Mathf.Clamp(item.Value<int?>("frame") ?? 0, 0,
+                    KeyFrameSet.Add(Mathf.Clamp(
+                        (item.Value<int?>("timeline_frame_60") ?? Subject.StartFrame) - Subject.StartFrame,
+                        0,
                         Math.Max(0, Pelvis.Length - 1)));
                 }
             }

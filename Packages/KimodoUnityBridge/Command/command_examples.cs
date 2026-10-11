@@ -29,15 +29,21 @@ namespace KimodoUnityBridge.Command
                         @"{'character':'<character>','prompt':'Reach for the apple and pick it up','duration_frames':120,'loop':false,'constraints':[{'inout':{'in':{'source':{'clip':'<previous clip>'},'window_frames':30,'sample_count':5},'out':{'source':{'clip':'<next clip>'},'window_frames':12,'sample_count':3}}}]}"),
                     Example("Keep sampled opening and closing windows inside the returned Clip.",
                         @"{'character':'<character>','prompt':'Bend down then stand up','duration_frames':120,'loop':false,'constraints':[{'inout':{'mode':'inside','in':{'source':{'clip':'<reference clip>','frame':0},'window_frames':12,'sample_count':3},'out':{'source':{'clip':'<reference clip>'},'window_frames':12,'sample_count':3}}}]}"),
-                    Example("Use one root_effect sample; the command normalizes it to the internal mix representation and returns non-blocking diagnostics.",
-                        @"{'character':'<character>','prompt':'Reach to the apple','duration_frames':180,'loop':false,'constraints':[{'frame':90,'type':'root_effect','pose':{'track':'<pose track>','index':0},'root2d':{'position':[2.4,5.0],'heading':[0,1]},'effect':{'right_hand':{'position':[2.55,0.95,5.35]}}}]}"));
+                    Example("Set one Root2D point. The selected data fields determine the constraint family; no type tag is needed.",
+                        @"{'character':'<character>','prompt':'Walk to the target','duration_frames':120,'constraints':[{'frame':60,'root2d':{'position':[2.4,5.0],'heading':[0,1]}}]}"),
+                    Example("Mix a FullBody pose, Root2D root override, and hand target at one frame. Root2D overlays the pose root channels and effect overlays the named hand target.",
+                        @"{'character':'<character>','prompt':'Reach to the apple','duration_frames':180,'loop':false,'constraints':[{'frame':90,'pose':{'track':'<pose track>','index':0},'root2d':{'position':[2.4,5.0],'heading':[0,1]},'effect':{'right_hand':{'position':[2.55,0.95,5.35]}}}]}"));
                 case PoseGetCommand: return new JArray(
                     Example("Capture a pose at an absolute Timeline-global time in seconds.",
                         @"{'source':{'character':'<character>','timeline_time_seconds':1.5},'full_data':true}"),
                     Example("Capture the current scene Timeline pose when no source Clip exists.",
                         @"{'source':{'character':'<character>','scene_time_seconds':1.5},'full_data':true}"),
                     Example("Capture a pose at a time relative to a target Clip's Timeline range.",
-                        @"{'source':{'character':'<character>','clip':'<clip>','clip_time_seconds':0.5},'full_data':true}"));
+                        @"{'source':{'character':'<character>','clip':'<clip>','clip_time_seconds':0.5},'full_data':true}"),
+                    Example("Capture the original scene Animator's currently evaluated pose, independent of the Timeline Ghost.",
+                        @"{'source':{'character':'<character>','mode':'scene_pose'},'full_data':true}"),
+                    Example("Capture the Humanoid Avatar's stored skeleton rest pose.",
+                        @"{'source':{'character':'<character>','mode':'skeleton_rest_pose'},'full_data':true}"));
                 case PoseSetCommand: return Examples("Edit the root of the Pose slot returned by pose_get; position is in Character world space.",
                     @"{'pose':{'track':'<returned pose track>','index':0},'root':{'position':[0,1,0],'rotation':[0,0,0,1]}}");
                 case PoseSetRootTransformCommand: return Examples("Set a returned Pose slot's root position.",

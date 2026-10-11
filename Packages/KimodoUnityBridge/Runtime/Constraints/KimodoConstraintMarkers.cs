@@ -40,6 +40,7 @@ namespace KimodoBridge
         Root2D = 0,
         FullBody = 1,
         Effector = 2,
+        [Obsolete("Mix is no longer an execution mode; migrate to Root2D, Effector, or FullBody.")]
         Mix = 3
     }
 
@@ -113,15 +114,15 @@ namespace KimodoBridge
 
     }
 
-    /// <summary>Channel bits used independently by enableMask and validMask.</summary>
+    /// <summary>Effector enable intent and the persisted allowHeading option.</summary>
     [Serializable]
     public sealed class KimodoConstraintMask
     {
-        public bool muscle;
-        public bool rootTQ;
-        public bool leftFootTQ;
-        public bool rightFootTQ;
-        public bool rootPosition;
+        [Obsolete("Validity is represented by sampleValid.")] public bool muscle;
+        [Obsolete("Validity is represented by sampleValid.")] public bool rootTQ;
+        [Obsolete("Validity is represented by sampleValid.")] public bool leftFootTQ;
+        [Obsolete("Validity is represented by sampleValid.")] public bool rightFootTQ;
+        [Obsolete("Root enablement is represented by rootOverride.")] public bool rootPosition;
         public bool rootHeading;
         public bool leftFoot;
         public bool rightFoot;
@@ -136,26 +137,12 @@ namespace KimodoBridge
             string normalized = (type ?? string.Empty).Trim().ToLowerInvariant().Replace('_', '-');
             switch (normalized)
             {
-                case "fullbody":
-                    result.muscle = true;
-                    result.rootTQ = true;
-                    result.leftFootTQ = true;
-                    result.rightFootTQ = true;
-                    result.rootPosition = true;
-                    result.rootHeading = true;
-                    break;
-                case "root2d": result.rootPosition = true; result.rootHeading = true; break;
-                case "mix":
-                    // Mixed channels are explicitly authored, never enabled by mode alone.
-                    break;
+                case "fullbody": result.rootHeading = true; break;
+                case "root2d": result.rootHeading = true; break;
                 case "root-effect":
-                    // Public RootEffect aliases the existing mixed channel set.
+                    // Public RootEffect is executed as Effector with root support.
                     break;
                 case "effector":
-                    result.rootTQ = true;
-                    result.leftFootTQ = true;
-                    result.rightFootTQ = true;
-                    result.rootPosition = true;
                     result.rootHeading = true;
                     result.leftHand = true;
                     result.rightHand = true;
@@ -172,10 +159,6 @@ namespace KimodoBridge
 
         private static void EnableEffectorSupport(KimodoConstraintMask result)
         {
-            result.rootTQ = true;
-            result.leftFootTQ = true;
-            result.rightFootTQ = true;
-            result.rootPosition = true;
             result.rootHeading = true;
         }
 
@@ -188,53 +171,45 @@ namespace KimodoBridge
             return value ?? new KimodoConstraintMask();
         }
 
-        /// <summary>
-        /// Resolves validity channels from the canonical sample. A missing
-        /// validMask means every channel is invalid.
-        /// </summary>
+        [Obsolete("validMask is ignored; sampleValid gates the complete sample.")]
         public static KimodoConstraintMask FromSample(KimodoMarkerSampleResult sample)
         {
-            if (sample == null)
+            // Old assets are treated as fully valid. Keep this adapter only for
+            // diagnostics compiled against the former mask API.
+            return new KimodoConstraintMask
             {
-                return new KimodoConstraintMask();
-            }
-
-            return sample.validMask?.Clone() ?? new KimodoConstraintMask();
+                muscle = true, rootTQ = true, leftFootTQ = true, rightFootTQ = true,
+                rootPosition = true, rootHeading = true,
+                leftHand = true, rightHand = true, leftFoot = true, rightFoot = true
+            };
         }
 
+        [Obsolete("Use sampleValid and explicit enable intent.")]
         public static bool IsEnabledAndValid(
             KimodoMarkerSampleResult sample,
             Func<KimodoConstraintMask, bool> enabledSelector,
             Func<KimodoConstraintMask, bool> validSelector)
         {
-            if (sample == null || enabledSelector == null || validSelector == null)
-            {
-                return false;
-            }
-
-            KimodoConstraintMask enabled = sample.enableMask;
-            KimodoConstraintMask valid = FromSample(sample);
-            return enabled != null && enabledSelector(enabled) && validSelector(valid);
+            if (sample == null || enabledSelector == null || validSelector == null) return false;
+            return sample.sampleValid && enabledSelector(sample.enableMask ?? new KimodoConstraintMask());
         }
 
         public static bool IsActive(KimodoMarkerSampleResult sample, string channel)
         {
-            if (sample == null) return false;
+            if (sample == null || !sample.sampleValid) return false;
             KimodoConstraintMask enabled = sample.enableMask;
-            KimodoConstraintMask valid = FromSample(sample);
             switch ((channel ?? string.Empty).Trim().ToLowerInvariant())
             {
-                case "muscle": return enabled?.muscle == true && valid.muscle;
-                case "roottq": return enabled?.rootTQ == true && valid.rootTQ;
-                case "leftfoottq": return enabled?.leftFootTQ == true && valid.leftFootTQ;
-                case "rightfoottq": return enabled?.rightFootTQ == true && valid.rightFootTQ;
-                case "rootposition": return enabled?.rootPosition == true && valid.rootPosition;
-                case "rootheading": return enabled?.rootPosition == true && valid.rootPosition &&
-                    enabled.rootHeading && valid.rootHeading;
-                case "lefthand": return enabled?.leftHand == true && valid.leftHand;
-                case "righthand": return enabled?.rightHand == true && valid.rightHand;
-                case "leftfoot": return enabled?.leftFoot == true && valid.leftFoot;
-                case "rightfoot": return enabled?.rightFoot == true && valid.rightFoot;
+                case "muscle": return sample.sampleData?.IsValid == true;
+                case "roottq": return sample.sampleData?.IsValid == true;
+                case "leftfoottq": return sample.sampleData?.IsValid == true;
+                case "rightfoottq": return sample.sampleData?.IsValid == true;
+                case "rootposition": return sample.rootOverride != null;
+                case "rootheading": return sample.rootOverride != null && enabled?.rootHeading == true;
+                case "lefthand": return enabled?.leftHand == true;
+                case "righthand": return enabled?.rightHand == true;
+                case "leftfoot": return enabled?.leftFoot == true;
+                case "rightfoot": return enabled?.rightFoot == true;
                 default: return false;
             }
         }
@@ -265,30 +240,31 @@ namespace KimodoBridge
     [Serializable]
     public sealed class KimodoMarkerSampleResult
     {
-        // Canonical payload. Legacy fields below are being removed in later
-        // migration phases; new code must use sampleData and enableMask.
+        // Canonical payload.
         public KimodoBridge.MuscleSample sampleData = new KimodoBridge.MuscleSample();
         public KimodoConstraintMask enableMask = new KimodoConstraintMask();
+        // Older Unity assets missing this field retain true as the default.
+        public bool sampleValid = true;
+        [Obsolete("Ignored by execution; retained only so old Unity assets deserialize.")]
         public KimodoConstraintMask validMask = new KimodoConstraintMask();
         public bool enabled = true;
         // Composer uses this as the explicit creation-order tie breaker.
         // When unset, input order remains the deterministic fallback.
         public long creationOrder;
 
-        // Explicit targets must use the Transform space of the skeleton passed
-        // to the pose pipeline. Timeline samples store Character world space;
-        // runtime APIs convert world goals once to neutral model space.
+        // Each effector declares local or world space. The pose pipeline
+        // normalizes local values against rootOverride exactly once; command
+        // inputs are authored as world-space values.
         [UnityEngine.Serialization.FormerlySerializedAs("worldIkTargets")]
         public KimodoConstraintEffectors effectors = new KimodoConstraintEffectors();
         // Complete hips override in the same explicit-target space. For a
-        // root2d/mix constraint, consumers project only X/Z and heading;
+        // root2d constraint, consumers project only X/Z and heading;
         // sampled root Y, pitch and roll remain motion channels.
         public KimodoRigidTransform rootOverride = KimodoRigidTransform.Identity;
 
-        // Preview/editor option. It is intentionally not a bridge protocol
-        // field: dragging the root handle carries enabled effector targets
-        // by the same rigid transform delta.
-        [UnityEngine.Serialization.FormerlySerializedAs("rootOverrideAfterEffectors")]
+        // Retained as a non-serialized source-compatibility shim for code that
+        // still constructs old samples. It has no runtime or editor behavior.
+        [System.NonSerialized, Obsolete("Carry with root was removed; root edits never modify effectors.")]
         public bool carryEffectorsWithRoot;
 
         // One mode is the only persisted constraint semantic. Wire-family
@@ -296,18 +272,29 @@ namespace KimodoBridge
         public string constraintMode = "constraint";
         public double sampleTime;
 
+        // Runtime-only provenance for same-frame Editor pass composition. A
+        // support MuscleSample may be retained for projection by a Root2D or
+        // Effector pass; these flags prevent it from being mistaken for a
+        // FullBody execution family when the composed sample is exported.
+        [NonSerialized] internal bool composedFullBody;
+        [NonSerialized] internal bool composedRoot2D;
+        [NonSerialized] internal bool composedEffector;
+
         public KimodoMarkerSampleResult Clone() => new KimodoMarkerSampleResult
         {
             sampleData = sampleData?.Clone() ?? new KimodoBridge.MuscleSample(),
             enableMask = enableMask?.Clone() ?? new KimodoConstraintMask(),
+            sampleValid = sampleValid,
             validMask = validMask?.Clone() ?? new KimodoConstraintMask(),
             enabled = enabled,
             creationOrder = creationOrder,
             effectors = effectors?.Clone() ?? new KimodoConstraintEffectors(),
             rootOverride = rootOverride?.Clone() ?? KimodoRigidTransform.Identity,
-            carryEffectorsWithRoot = carryEffectorsWithRoot,
             constraintMode = this.constraintMode,
-            sampleTime = sampleTime
+            sampleTime = sampleTime,
+            composedFullBody = composedFullBody,
+            composedRoot2D = composedRoot2D,
+            composedEffector = composedEffector
         };
     }
 

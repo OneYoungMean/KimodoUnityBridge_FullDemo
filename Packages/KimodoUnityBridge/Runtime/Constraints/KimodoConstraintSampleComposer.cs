@@ -5,7 +5,9 @@ using KimodoUnityBridge;
 namespace KimodoBridge
 {
     /// <summary>
-    /// Runtime composition for canonical SampleResult channels.
+    /// Runtime composition for canonical SampleResult channels. Samples that
+    /// land on one frame are combined by channel. Command validation remains
+    /// a separate concern and may reject duplicate user point rows earlier.
     /// </summary>
     public static class KimodoConstraintSampleComposer
     {
@@ -27,6 +29,7 @@ namespace KimodoBridge
             {
                 KimodoMarkerSampleResult sample = samples[i]?.Clone();
                 if (sample == null || !sample.enabled) continue;
+                if (!sample.sampleValid) throw new InvalidOperationException("Constraint sample is invalid.");
                 if (sample.creationOrder == 0) sample.creationOrder = i + 1L;
                 sample.enableMask ??= new KimodoConstraintMask();
                 sample.validMask ??= new KimodoConstraintMask();
@@ -54,6 +57,10 @@ namespace KimodoBridge
                     effectors = new KimodoConstraintEffectors()
                 };
 
+                result.composedFullBody = DeclaresFamily(ordered, "fullbody");
+                result.composedRoot2D = DeclaresFamily(ordered, "root2d");
+                result.composedEffector = DeclaresFamily(ordered, "effector");
+
                 CopyDataChannel(ordered, result, SampleChannel.Muscle49,
                     KimodoSampleDataLayout.BodyMuscleOffset, KimodoSampleDataLayout.BodyMuscleCount);
                 CopyDataChannel(ordered, result, SampleChannel.RootTQ,
@@ -62,7 +69,11 @@ namespace KimodoBridge
                     KimodoSampleDataLayout.LeftFootTqOffset, KimodoSampleDataLayout.FootTqCount);
                 CopyDataChannel(ordered, result, SampleChannel.RightFootTQ,
                     KimodoSampleDataLayout.RightFootTqOffset, KimodoSampleDataLayout.FootTqCount);
-                if (!KimodoConstraintMask.IsActive(result, "muscle"))
+                // A composed result starts with a fixed-size buffer even when
+                // no FullBody pass contributed channels. Use source-family
+                // presence here; payload validity alone cannot distinguish a
+                // support pose from an authored FullBody constraint.
+                if (FindLatest(ordered, SampleChannel.Muscle49) == null)
                 {
                     MuscleSample supportPose = CloneLatestSupportSampleData(
                         ordered,
@@ -85,8 +96,11 @@ namespace KimodoBridge
                         throw new InvalidOperationException("Root2D position is valid but its payload is missing.");
                     result.rootOverride = rootPosition.rootOverride.Clone();
                     result.carryEffectorsWithRoot = rootPosition.carryEffectorsWithRoot;
-                    result.enableMask.rootPosition = rootPosition.enableMask?.rootPosition == true;
-                    result.validMask.rootPosition = KimodoConstraintMask.FromSample(rootPosition).rootPosition;
+                    // Root position is enabled by the presence of a complete
+                    // rootOverride; the legacy rootPosition mask bit is not
+                    // part of the current enable contract.
+                    result.enableMask.rootPosition = true;
+                    result.validMask.rootPosition = IsValid(KimodoConstraintMask.FromSample(rootPosition), SampleChannel.Root2DPosition);
                 }
                 KimodoMarkerSampleResult rootHeading = FindLatest(ordered, SampleChannel.Root2DHeading);
                 if (rootHeading != null)
@@ -94,10 +108,8 @@ namespace KimodoBridge
                     if (rootHeading.rootOverride == null)
                         throw new InvalidOperationException("Root2D heading is valid but its payload is missing.");
                     result.rootOverride.q = rootHeading.rootOverride.q;
-                    result.enableMask.rootHeading = result.enableMask.rootPosition &&
-                        rootHeading.enableMask?.rootHeading == true;
-                    result.validMask.rootHeading = result.validMask.rootPosition &&
-                        KimodoConstraintMask.FromSample(rootHeading).rootHeading;
+                    result.enableMask.rootHeading = IsEnabled(rootHeading.enableMask, SampleChannel.Root2DHeading);
+                    result.validMask.rootHeading = IsValid(KimodoConstraintMask.FromSample(rootHeading), SampleChannel.Root2DHeading);
                 }
 
                 CopyEffectorChannel(ordered, result, SampleChannel.LeftHandEffector);
@@ -264,6 +276,23 @@ namespace KimodoBridge
             if (root2D) return "root2d";
             if (effector) return "effector";
             return "fullbody";
+        }
+
+        private static bool DeclaresFamily(
+            List<KimodoMarkerSampleResult> ordered,
+            string family)
+        {
+            for (int i = 0; i < ordered.Count; i++)
+            {
+                string mode = NormalizeMode(ordered[i]?.constraintMode);
+                if (mode == "mix") return true;
+                if (family == "fullbody" && mode == "fullbody") return true;
+                if (family == "root2d" && mode == "root2d") return true;
+                if (family == "effector" &&
+                    (mode == "effector" || mode == "left-hand" || mode == "right-hand" ||
+                     mode == "left-foot" || mode == "right-foot")) return true;
+            }
+            return false;
         }
 
         private static string NormalizeMode(string mode) =>

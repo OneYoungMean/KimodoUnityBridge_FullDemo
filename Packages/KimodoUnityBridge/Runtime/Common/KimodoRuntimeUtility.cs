@@ -12,25 +12,6 @@ namespace KimodoBridge
         // these tokens in Runtime so every caller applies the same protocol.
         public const string SessionRootPrefix = "KimodoSession_";
         public const string SessionDirectorPrefix = "Kimodo_CommandSession_";
-        public const string ArchiveRootName = "__KimodoArchive";
-        public const string ArchivedObjectPrefix = "Archived_";
-
-        public static bool IsArchivedObject(GameObject gameObject)
-        {
-            Transform current = gameObject != null ? gameObject.transform : null;
-            while (current != null)
-            {
-                if (string.Equals(current.name, ArchiveRootName, StringComparison.Ordinal) ||
-                    current.name.StartsWith(ArchivedObjectPrefix, StringComparison.Ordinal))
-                {
-                    return true;
-                }
-
-                current = current.parent;
-            }
-
-            return false;
-        }
 
         public static bool IsContextObject(GameObject gameObject)
         {
@@ -49,13 +30,6 @@ namespace KimodoBridge
             return false;
         }
 
-        public static bool IsArchivedSessionName(string name)
-        {
-            return !string.IsNullOrEmpty(name) &&
-                (string.Equals(name, ArchiveRootName, StringComparison.Ordinal) ||
-                 name.StartsWith(ArchivedObjectPrefix, StringComparison.Ordinal));
-        }
-
         public static bool IsContextSessionName(string name)
         {
             return !string.IsNullOrEmpty(name) &&
@@ -66,8 +40,7 @@ namespace KimodoBridge
         public static bool IsUsableSceneDirector(PlayableDirector director, Scene scene)
         {
             return director != null && director.gameObject != null &&
-                scene.IsValid() && director.gameObject.scene == scene &&
-                !IsArchivedObject(director.gameObject);
+                scene.IsValid() && director.gameObject.scene == scene;
         }
 
         public static string SanitizeName(string input, string defaultName = "joint")

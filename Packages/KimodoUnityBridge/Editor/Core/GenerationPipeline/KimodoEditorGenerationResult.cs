@@ -1,4 +1,5 @@
 using UnityEngine;
+using Newtonsoft.Json.Linq;
 
 namespace KimodoBridge.Editor
 {
@@ -9,6 +10,7 @@ namespace KimodoBridge.Editor
         public int Seed;
         public string MotionJsonCompact;
         public string AnalysisJson;
+        public JObject ConstraintLoss;
         public byte[] MotionBytes;
         public int StartFrame;
         public int EndFrameExclusive;

@@ -22,6 +22,28 @@ namespace KimodoUnityBridge.Command.Tests
         private const string ArcWalkPath = PackageRoot + "/Editor/Tests/Fixtures/arc_walk_left_loop.anim";
         private const int TestAnalysisResolution = 1920;
 
+        [Test]
+        public void AnalysisKeyframes_UseOnlyAbsoluteTimelineFrameAndNormalizeIdempotently()
+        {
+            Type contextType = typeof(command_dispatcher).Assembly
+                .GetType("KimodoUnityBridge.Command.command_context");
+            MethodInfo normalize = contextType.GetMethod(
+                "NormalizeAnalysisContract",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(normalize, Is.Not.Null);
+
+            var analysis = JObject.Parse("{ 'keyframes': [{ 'frame': 6, 'time_seconds': 2.1, 'local_time_seconds': 0.1 }] }");
+            normalize.Invoke(null, new object[] { analysis, 120, 240 });
+            normalize.Invoke(null, new object[] { analysis, 120, 240 });
+
+            JObject keyframe = analysis["keyframes"]?.Children<JObject>().Single();
+            Assert.That(keyframe?.Value<int>("timeline_frame_60"), Is.EqualTo(126));
+            Assert.That(keyframe?["time_seconds"], Is.Null);
+            Assert.That(keyframe?["local_time_seconds"], Is.Null);
+            Assert.That(keyframe?["local_frame_60"], Is.Null);
+            Assert.That(keyframe?["frame"], Is.Null);
+        }
+
         [UnityTest]
         public IEnumerator AnimationAnalyze_ArcWalkFixture_WritesCompositePng()
         {
@@ -45,27 +67,39 @@ namespace KimodoUnityBridge.Command.Tests
                 animator.runtimeAnimatorController = null;
                 animator.Rebind();
 
-                testSession = CreateCurrentTestContext(character, animator, clip);
+                testSession = CreateCurrentTestContext(character, animator);
                 JObject analysis = Require("animation_analyze", new JObject
                 {
                     ["clips"] = new JArray(new JObject
                     {
                         ["character"] = character.name,
-                        ["clip"] = clip.name
+                        ["clip"] = ArcWalkPath
                     }),
                     ["picture"] = new JObject { ["output"] = "composite" },
                     ["resolution"] = TestAnalysisResolution
                 });
 
-                Assert.That(analysis.Value<string>("analysis_schema_version"), Is.EqualTo("3-command-60-phase-track-v2"));
+                Assert.That(analysis.Value<string>("analysis_schema_version"), Is.EqualTo("4-command-60-timeline-keyframes-v1"));
                 Assert.That(analysis["pictures"]?.Value<string>("aspect"), Is.EqualTo("16:9"));
                 Assert.That(analysis["pictures"]?.Value<int>("tile_count"), Is.EqualTo(20));
                 Assert.That(analysis["pictures"]?.Value<string>("render_version"), Is.EqualTo("63-height-time-ratio5-dim-hdrp-lights"));
 
                 JObject clipAnalysis = analysis["clips"]?.Children<JObject>().Single();
+                Assert.That(clipAnalysis?.Value<int>("start_frame"), Is.EqualTo(0));
+                Assert.That(clipAnalysis?.Value<int>("end_frame_exclusive"), Is.GreaterThan(1));
                 Assert.That(clipAnalysis?.Value<string>("phase_track_version"), Is.EqualTo("1-temporal-cluster-v2-command-60"));
                 JArray phases = clipAnalysis?["phase_track"] as JArray;
                 Assert.That(phases, Is.Not.Null.And.Not.Empty);
+                JArray keyframes = clipAnalysis["keyframes"] as JArray;
+                Assert.That(keyframes, Is.Not.Null.And.Not.Empty);
+                foreach (JObject keyframe in keyframes.OfType<JObject>())
+                {
+                    Assert.That(keyframe["timeline_frame_60"], Is.Not.Null);
+                    Assert.That(keyframe["time_seconds"], Is.Null);
+                    Assert.That(keyframe["local_time_seconds"], Is.Null);
+                    Assert.That(keyframe["local_frame_60"], Is.Null);
+                    Assert.That(keyframe["frame"], Is.Null);
+                }
                 Assert.That(phases.First().Value<int>("start_frame"), Is.EqualTo(0));
                 int analyzedFrameCount = clipAnalysis["root_trajectory"]?.Value<int>("frame_count") ?? 0;
                 Assert.That(analyzedFrameCount, Is.GreaterThan(1));
@@ -93,7 +127,7 @@ namespace KimodoUnityBridge.Command.Tests
             }
         }
 
-        private static object CreateCurrentTestContext(GameObject character, Animator animator, AnimationClip clip)
+        private static object CreateCurrentTestContext(GameObject character, Animator animator)
         {
             Type contextType = typeof(command_dispatcher).Assembly
                 .GetType("KimodoUnityBridge.Command.command_context");
@@ -130,11 +164,6 @@ namespace KimodoUnityBridge.Command.Tests
             object[] addArguments = { session, character, animator, true, null, true };
             Assert.That((bool)addCharacter.Invoke(null, addArguments), Is.True,
                 "AddCharacterTrack failed: " + addArguments[4]);
-            IList characters = (IList)sessionType.GetProperty("Characters").GetValue(session);
-            object characterRecord = characters[0];
-            MethodInfo appendClip = contextType.GetMethod("AppendAnimationClip", BindingFlags.Static | BindingFlags.NonPublic);
-            appendClip.Invoke(null, new object[] { session, characterRecord, clip, "fixture", null, clip.name });
-
             FieldInfo currentSession = contextType.GetField("currentTimelineSession", BindingFlags.Static | BindingFlags.NonPublic);
             currentSession.SetValue(null, session);
             MethodInfo activate = contextType.GetMethod("ActivateTimelineSession", BindingFlags.Static | BindingFlags.NonPublic);

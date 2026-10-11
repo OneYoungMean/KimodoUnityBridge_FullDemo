@@ -209,7 +209,7 @@ function identify_semantics(alternatives, character_ref, clip_ref):
     analysis = animation_analyze({
         clips: [{role: "source", character: character, clip: clip}],
         picture: {"output": "composite"},
-        resolution: 512
+        resolution: 1920
     })
 
     image_path = analysis.pictures.image_path

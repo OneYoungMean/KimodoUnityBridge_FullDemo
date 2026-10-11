@@ -57,7 +57,7 @@ namespace KimodoUnityBridge.Command
                         "Start an asynchronous project-local QuickServer installation task. Returns a request_id (install:<guid>) that can be polled with kimodo_get_generation; models and the Python environment are preserved.",
                         Properties()),
                     CommandDefinition(AnimationAnalyzeCommand,
-                        "Analyze one immutable animation clip at the fixed command time base of 60 FPS and render unified graph-space picture evidence. Select standard tile types explicitly and choose composite, individual tiles, or both outputs. Results include root_trajectory, endpoint_pose_comparison, motion_profile, foot_contacts, phase_track, keyframes with timeline_frame_60, and evidence paths. Completed Clips are never modified. The clip input contains only character and clip.",
+                        "Analyze one animation clip at the fixed command time base of 60 FPS and render unified graph-space picture evidence. Select standard tile types explicitly and choose composite, individual tiles, or both outputs. Results include its Timeline start_frame and keyframes whose only time coordinate is the absolute timeline_frame_60. A loaded Clip is reused; an Assets/Packages Clip path or unique asset name is appended to the character's Kimodo Timeline before analysis. Source Clips are never modified.",
                         Properties(
                             RequiredAnalysisClips(),
                             new PropertyDefinition("picture", new JObject
@@ -102,9 +102,9 @@ namespace KimodoUnityBridge.Command
                             OptionalGeneration(),
                             OptionalOutput(),
                             Optional("analysis_option", "object", "Optional analysis object for the phase-track analyzer. Legacy uniform keyframe-count controls are removed; Humanoid output always uses phase_track_version and continuous phase_track intervals."),
-                            OptionalConstraints("constraints", "Typed fullbody, root2d, root_effect, root_path, and inout constraints. All point types are normalized to the internal mix representation; command frames use 60 FPS."))),
+                            OptionalConstraints("constraints", "Point constraints are selected by optional pose, root2d, and effect data; multiple fields at one frame compose by channel. root_path and inout remain separate constraint forms; duplicate frames are rejected; command frames use 60 FPS."))),
                     CommandDefinition(PoseGetCommand,
-                        "Sample one Timeline time, scene time, or Clip-local time into a new External Pose slot. Use exactly one source mode: timeline_time_seconds, scene_time_seconds, or clip with clip_time_seconds. Returns the reusable pose identity {track,index}.",
+                        "Sample one Timeline time, scene time, or Clip-local time, or select mode scene_pose / skeleton_rest_pose to read the original scene Animator or Avatar rest pose. Every call creates an External Pose slot and returns {track,index}.",
                         Properties(
                             RequiredPoseSource("source"),
                             Optional("full_data", "boolean", "Return all 49 muscles and TQ channels; defaults to false."))),
@@ -124,14 +124,15 @@ namespace KimodoUnityBridge.Command
                     CommandDefinition(GetGenerationCommand,
                         "Get status, progress, remaining seconds, and message for an install or generation request. Generated animation metadata and its project-relative asset path are included only after a generation completes.",
                         Properties(
-                            Required("request_id", "string", "Request id returned by kimodo_install_server or kimodo_generate_animation."))),
+                            Required("request_id", "string", "Request id returned by kimodo_install_server or kimodo_generate_animation."),
+                            Optional("include_request_json", "boolean", "Include the exact JSON payload sent to QuickServer; defaults to false."))),
                     CommandDefinition(CancelGenerationCommand,
                         "Cancel an active animation generation request. Installation requests cannot be canceled.",
                         Properties(
                             Required("request_id", "string", "Generation request id returned by kimodo_generate_animation."),
                             Optional("reason", "string", "Optional cancellation reason."))),
                     CommandDefinition(SessionClearCommand,
-                        "Clear the active scene context. Context GameObjects are moved into the scene archive, persisted Timeline and animation assets are retained, and one fresh context is recreated lazily by the next command.",
+                        "Clear the active scene context by destroying its transient context GameObjects. Persisted Timeline and animation assets are retained, and one fresh context is recreated lazily by the next command.",
                         Properties()),
                 }
             }.ToString(Formatting.None);
@@ -255,14 +256,14 @@ namespace KimodoUnityBridge.Command
                 {
                     new JObject
                     {
-                        ["type"] = "fullbody/root2d/root_effect",
-                        ["description"] = "Public point types fullbody, root2d, and root_effect are normalized to one internal mix sample.",
+                        ["type"] = "point",
+                        ["description"] = "Optional pose, root2d, and effect data select and compose constraint channels at one frame.",
                         ["shape"] = new JObject
                         {
                             ["frame"] = "Relative frame in the generated clip.",
-                            ["pose"] = "Optional External Pose reference: {track,index}.",
-                            ["root2d"] = "Root position [x,z] and heading [x,z].",
-                            ["effect"] = "One or more hand/foot targets with position and optional rotation."
+                            ["pose"] = "Optional FullBody External Pose reference: {track,index}.",
+                            ["root2d"] = "Optional root position [x,z] and heading [x,z]; overlays the pose root channels.",
+                            ["effect"] = "Optional hand/foot targets with position and optional rotation."
                         }
                     },
                     new JObject
@@ -275,7 +276,7 @@ namespace KimodoUnityBridge.Command
                     new JObject
                     {
                         ["type"] = "root_path",
-                        ["description"] = "A reusable analyzed Root Path compiled to mix root samples during generation.",
+                        ["description"] = "A reusable analyzed Root Path compiled to Root2D samples during generation.",
                         ["shape"] = new JObject
                         {
                             ["frame"] = "Optional first path frame; defaults to 0.",
@@ -285,8 +286,8 @@ namespace KimodoUnityBridge.Command
                 },
                 ["rules"] = new JArray
                 {
-                    "Public point constraints may use fullbody, root2d, or root_effect. They are normalized to mix internally; omitted channels remain from the support Pose and rootTQ/footTQ payloads are never rewritten by command input.",
-                    "Point constraints are independent typed samples. Duplicate point frames and root_path/point frame collisions are rejected.",
+                    "Point constraint family is inferred from the presence of pose, root2d, and effect data. Any non-empty combination composes by channel; Root2D overlays planar root channels and effect data overlays the named end effectors.",
+                    "A point constraint must contain at least one of pose, root2d, or effect. Put mixed data in one point object; separate point objects at a duplicate frame are rejected.",
                     "Use animation_analyze, then reference clips[].root_trajectory.path from root_path.",
                     "An explicit point frame cannot overlap a root_path sample frame; the command rejects the collision.",
                     "At most one standalone inout entry; in/out each require an explicit completed source Clip. Source character defaults to the generation character and must be the same character.",
@@ -379,6 +380,7 @@ namespace KimodoUnityBridge.Command
             return Execute(argumentsJson, arguments =>
             {
                 string requestValue = RequiredStringValue(arguments, "request_id");
+                bool includeRequestJson = arguments.Value<bool?>("include_request_json") == true;
                 if (requestValue.StartsWith("install:", StringComparison.OrdinalIgnoreCase))
                 {
                     lock (JobsLock)
@@ -399,10 +401,10 @@ namespace KimodoUnityBridge.Command
                 {
                     JObject persisted = LoadPersistedGenerationJob(session, requestId);
                     persisted["target_alive"] = false;
-                    return Ok(persisted);
+                    return Ok(includeRequestJson ? persisted : WithoutBackendRequestJson(persisted));
                 }
                 EnsureGenerationBelongsToSession(record, session);
-                JObject status = BuildStatus(record);
+                JObject status = BuildStatus(record, includeRequestJson);
                 try
                 {
                     JObject serverStatus = KimodoBridgeService.Shared
@@ -436,6 +438,17 @@ namespace KimodoUnityBridge.Command
                 status["target_alive"] = record.Target != null;
                 return Ok(status);
             });
+        }
+
+        private static JObject WithoutBackendRequestJson(JObject status)
+        {
+            var filtered = new JObject();
+            foreach (JProperty property in status.Properties())
+            {
+                if (!string.Equals(property.Name, "backend_request_json", StringComparison.Ordinal))
+                    filtered[property.Name] = property.Value.DeepClone();
+            }
+            return filtered;
         }
 
         public static string CancelGeneration(string argumentsJson)
@@ -614,7 +627,10 @@ namespace KimodoUnityBridge.Command
                     async (generationSession, token) =>
                     {
                         string previousTaskId = KimodoBridgeService.GenerationTaskIdContext.Value;
+                        Action<string> previousRequestPayload = KimodoBridgeService.GenerationRequestPayloadContext.Value;
                         KimodoBridgeService.GenerationTaskIdContext.Value = generationSession.RequestId.ToString("N");
+                        KimodoBridgeService.GenerationRequestPayloadContext.Value = payload =>
+                            generationSession.BackendRequestJson = payload;
                         try
                         {
                             return await ExecutePlayableClipGenerationAsync(
@@ -628,6 +644,7 @@ namespace KimodoUnityBridge.Command
                         finally
                         {
                             KimodoBridgeService.GenerationTaskIdContext.Value = previousTaskId;
+                            KimodoBridgeService.GenerationRequestPayloadContext.Value = previousRequestPayload;
                             // Temporary sampling context is owned by the command runtime.
                         }
                     },

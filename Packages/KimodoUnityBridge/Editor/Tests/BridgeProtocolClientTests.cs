@@ -44,6 +44,40 @@ namespace KimodoBridge.Editor.Tests
             Assert.That(request["owner_pid"], Is.Null);
         }
 
+        [Test, Timeout(5000)]
+        public void GenerateRequest_CapturesExactSerializedPayload()
+        {
+            string capturedPayload = null;
+            KimodoBridgeService.GenerationRequestPayloadContext.Value = payload => capturedPayload = payload;
+            try
+            {
+                JObject request = SendSingleRequest(
+                    new JObject { ["status"] = "done" },
+                    (client, port) => client.GenerateAsync(
+                        "127.0.0.1",
+                        port,
+                        new KimodoGenerationRequestDto
+                        {
+                            prompt = "idle",
+                            duration = 1f,
+                            steps = 1,
+                            model = KimodoMotionModelProfiles.DefaultModelName
+                        },
+                        null,
+                        CancellationToken.None));
+
+                Assert.That(capturedPayload, Is.Not.Null.And.Not.Empty);
+                JObject payload = JObject.Parse(capturedPayload);
+                Assert.That(payload["cmd"]?.Value<string>(), Is.EqualTo("generate"));
+                Assert.That(payload["task_id"]?.Value<string>(), Is.EqualTo(request["task_id"]?.Value<string>()));
+                Assert.That(payload["prompt"]?.Value<string>(), Is.EqualTo("idle"));
+            }
+            finally
+            {
+                KimodoBridgeService.GenerationRequestPayloadContext.Value = null;
+            }
+        }
+
         private static JObject SendSingleRequest(
             JObject response,
             System.Func<BridgeProtocolClient, int, Task<BridgeProtocolResponse>> send)

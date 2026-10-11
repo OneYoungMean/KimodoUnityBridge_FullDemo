@@ -210,11 +210,9 @@ namespace KimodoBridge.Editor
 
             foreach (JObject item in constraints?.OfType<JObject>() ?? Enumerable.Empty<JObject>())
             {
-                string type = item.Value<string>("type")?.Trim().ToLowerInvariant();
                 int frame = item.Value<int?>("frame") ?? 0;
-                if (type == "root_effect")
+                if (item["effect"] is JObject effect)
                 {
-                    JObject effect = item["effect"] as JObject;
                     foreach (JProperty target in effect?.Properties() ?? Enumerable.Empty<JProperty>())
                     {
                         JObject payload = target.Value as JObject;
@@ -223,19 +221,20 @@ namespace KimodoBridge.Editor
                         {
                             ["frame"] = frame,
                             ["effector"] = target.Name,
-                            ["source"] = "root_effect",
+                            ["source"] = "effect",
                             ["status"] = "not_verified"
                         };
                         checks.Add(check);
                     }
                 }
 
-                if (type == "fullbody" && samplesByFrame.TryGetValue(frame, out KimodoMarkerSampleResult sample))
+                if (item["pose"] != null && item["root2d"] == null &&
+                    samplesByFrame.TryGetValue(frame, out KimodoMarkerSampleResult sample))
                 {
-                    AddSampleEffectorCheck(checks, frame, "left_hand", sample.validMask?.leftHand == true, sample.effectors?.leftHand);
-                    AddSampleEffectorCheck(checks, frame, "right_hand", sample.validMask?.rightHand == true, sample.effectors?.rightHand);
-                    AddSampleEffectorCheck(checks, frame, "left_foot", sample.validMask?.leftFoot == true, sample.effectors?.leftFoot);
-                    AddSampleEffectorCheck(checks, frame, "right_foot", sample.validMask?.rightFoot == true, sample.effectors?.rightFoot);
+                    AddSampleEffectorCheck(checks, frame, "left_hand", sample.sampleValid, sample.effectors?.leftHand);
+                    AddSampleEffectorCheck(checks, frame, "right_hand", sample.sampleValid, sample.effectors?.rightHand);
+                    AddSampleEffectorCheck(checks, frame, "left_foot", sample.sampleValid, sample.effectors?.leftFoot);
+                    AddSampleEffectorCheck(checks, frame, "right_foot", sample.sampleValid, sample.effectors?.rightFoot);
                 }
             }
 
@@ -271,15 +270,14 @@ namespace KimodoBridge.Editor
             JArray constraints = arguments?["constraints"] as JArray;
             foreach (JObject item in constraints?.OfType<JObject>() ?? Enumerable.Empty<JObject>())
             {
-                string type = item.Value<string>("type")?.Trim().ToLowerInvariant();
                 int frame = item.Value<int?>("frame") ?? 0;
-                JObject rootInput = item["root2d"] as JObject ?? item["root"] as JObject;
-                if ((type == "root2d" || type == "root" || type == "root_effect") && TryReadRoot2D(rootInput, out Vector3 position, out Vector2 heading))
+                JObject rootInput = item["root2d"] as JObject;
+                if (rootInput != null && TryReadRoot2D(rootInput, out Vector3 position, out Vector2 heading))
                 {
                     observations.Add(new RootObservation
                     {
                         Frame = frame,
-                        Source = type,
+                        Source = "root2d",
                         Position = position,
                         HasY = false,
                         Heading = heading,
@@ -287,16 +285,16 @@ namespace KimodoBridge.Editor
                         Root2D = rootInput
                     });
                 }
-                if (type == "fullbody" && generatedSamples != null)
+                else if (item["pose"] != null && generatedSamples != null)
                 {
                     KimodoMarkerSampleResult sample = generatedSamples.LastOrDefault(itemSample =>
-                        itemSample != null && itemSample.rootOverride != null && itemSample.validMask?.rootPosition == true &&
+                        itemSample != null && itemSample.sampleValid && itemSample.rootOverride != null &&
                         Mathf.RoundToInt((float)(itemSample.sampleTime * Mathf.Max(1f, frameRate))) == frame);
                     if (sample != null)
                     {
                         Vector3 root = sample.rootOverride.t;
                         Vector3 forward = sample.rootOverride.q * Vector3.forward;
-                        observations.Add(new RootObservation { Frame = frame, Source = type, Position = root, HasY = true, Heading = new Vector2(forward.x, forward.z), HasHeading = true });
+                        observations.Add(new RootObservation { Frame = frame, Source = "pose", Position = root, HasY = true, Heading = new Vector2(forward.x, forward.z), HasHeading = true });
                     }
                 }
             }

@@ -7,9 +7,11 @@ using UnityEngine;
 namespace KimodoBridge
 {
     /// <summary>
-    /// Normalizes protocol constraints that the server cannot represent on the
-    /// same frame. A Root2D row is folded into its matching FullBody or
-    /// EndEffector row.
+    /// Normalizes protocol constraints at the raw constraint boundary. The
+    /// server receives one root-context row per frame, so same-frame Root2D
+    /// data is folded into the matching FullBody/EndEffector row here. This
+    /// is intentionally later than command validation and is not a duplicate
+    /// rejection gate for Editor-authored pass composition.
     /// </summary>
     public static class KimodoConstraintProtocolNormalizer
     {

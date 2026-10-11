@@ -50,13 +50,13 @@
     },
     {
       "name": "animation_analyze",
-      "description": "Analyze one immutable animation clip at the fixed command time base of 60 FPS and render unified graph-space picture evidence. Select standard tile types explicitly and choose composite, individual tiles, or both outputs. Results include root_trajectory, endpoint_pose_comparison, motion_profile, foot_contacts, phase_track, keyframes with timeline_frame_60, and evidence paths. Completed Clips are never modified. The clip input contains only character and clip.",
+      "description": "Analyze one animation clip at 60 FPS and render graph-space evidence. Results include Timeline start_frame and keyframes using absolute timeline_frame_60. Loaded clips are reused; external Assets/ or Packages/ clip references are appended to the character's Kimodo Timeline. Source clips are never modified.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "clips": {
             "type": "array",
-            "description": "Exactly one immutable animation clip reference. Comparison callers analyze each candidate separately.",
+            "description": "Exactly one animation clip reference. Use a loaded Clip name or an Assets/Packages path; an external asset is appended to the character's Kimodo Timeline before analysis and is never modified.",
             "minItems": 1,
             "maxItems": 1,
             "items": {
@@ -105,7 +105,7 @@
             "picture": {
               "output": "composite"
             },
-            "resolution": 512
+            "resolution": 1920
           }
         }
       ]
@@ -371,7 +371,7 @@
           },
           "constraints": {
             "type": "array",
-            "description": "Typed fullbody, root2d, root_effect, root_path, and inout constraints. Point types are normalized to the internal mix representation.",
+            "description": "Point constraints are selected by optional pose, root2d, and effect data; multiple fields at one frame compose by channel. root_path and inout remain separate constraint forms; duplicate frames are rejected; command frames use 60 FPS.",
             "items": {
               "oneOf": [
                 {
@@ -381,107 +381,6 @@
                     "frame": {
                       "type": "integer",
                       "minimum": 0
-                    },
-                    "type": {
-                      "const": "fullbody"
-                    },
-                    "pose": {
-                      "type": "object",
-                      "description": "External Pose slot in current scene context.",
-                      "additionalProperties": false,
-                      "properties": {
-                        "track": {
-                          "type": "string"
-                        },
-                        "index": {
-                          "type": "integer",
-                          "minimum": 0
-                        }
-                      },
-                      "required": [
-                        "track",
-                        "index"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "frame",
-                    "type",
-                    "pose"
-                  ]
-                },
-                {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "frame": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "type": {
-                      "const": "root2d"
-                    },
-                    "pose": {
-                      "type": "object",
-                      "description": "External Pose slot in current scene context.",
-                      "additionalProperties": false,
-                      "properties": {
-                        "track": {
-                          "type": "string"
-                        },
-                        "index": {
-                          "type": "integer",
-                          "minimum": 0
-                        }
-                      },
-                      "required": [
-                        "track",
-                        "index"
-                      ]
-                    },
-                    "root2d": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "properties": {
-                        "position": {
-                          "type": "array",
-                          "items": {
-                            "type": "number"
-                          },
-                          "minItems": 2,
-                          "maxItems": 2
-                        },
-                        "heading": {
-                          "type": "array",
-                          "items": {
-                            "type": "number"
-                          },
-                          "minItems": 2,
-                          "maxItems": 2
-                        }
-                      },
-                      "required": [
-                        "position",
-                        "heading"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "frame",
-                    "type",
-                    "root2d"
-                  ]
-                },
-                {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "frame": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "type": {
-                      "const": "root_effect"
                     },
                     "pose": {
                       "type": "object",
@@ -672,10 +571,24 @@
                     }
                   },
                   "required": [
-                    "frame",
-                    "type",
-                    "root2d",
-                    "effect"
+                    "frame"
+                  ],
+                  "anyOf": [
+                    {
+                      "required": [
+                        "pose"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "root2d"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "effect"
+                      ]
+                    }
                   ]
                 },
                 {
@@ -946,7 +859,30 @@
           }
         },
         {
-          "description": "Use one root_effect sample; the command normalizes it to the internal mix representation and returns non-blocking checks.",
+          "description": "Set one Root2D point. The selected data fields determine the constraint family; no type tag is needed.",
+          "arguments": {
+            "character": "<character>",
+            "prompt": "Walk to the target",
+            "duration_frames": 120,
+            "constraints": [
+              {
+                "frame": 60,
+                "root2d": {
+                  "position": [
+                    2.4,
+                    5.0
+                  ],
+                  "heading": [
+                    0,
+                    1
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "description": "Mix a FullBody pose, Root2D root override, and hand target at one frame. Root2D overlays the pose root channels and effect overlays the named hand target.",
           "arguments": {
             "character": "<character>",
             "prompt": "Reach to the apple",
@@ -955,7 +891,6 @@
             "constraints": [
               {
                 "frame": 90,
-                "type": "root_effect",
                 "pose": {
                   "track": "<pose track>",
                   "index": 0
@@ -987,7 +922,7 @@
     },
     {
       "name": "pose_get",
-      "description": "Sample one Timeline time, scene time, or Clip-local time into a new External Pose slot. Use exactly one source mode: timeline_time_seconds, scene_time_seconds, or clip with clip_time_seconds. Returns the reusable pose identity {track,index}.",
+      "description": "Sample a Timeline time, scene time, Clip-local time, the original scene Animator pose, or the Avatar skeleton rest pose into an External Pose slot. Returns the reusable pose identity {track,index}.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1014,6 +949,14 @@
                 "type": "number",
                 "minimum": 0,
                 "description": "Time in seconds relative to the selected Clip's Timeline range."
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "scene_pose",
+                  "skeleton_rest_pose"
+                ],
+                "description": "Sample the original scene Animator's currently evaluated pose, or the Avatar's stored skeleton rest pose."
               }
             },
             "required": [
@@ -1041,6 +984,11 @@
                       "required": [
                         "scene_time_seconds"
                       ]
+                    },
+                    {
+                      "required": [
+                        "mode"
+                      ]
                     }
                   ]
                 }
@@ -1066,6 +1014,11 @@
                       "required": [
                         "clip_time_seconds"
                       ]
+                    },
+                    {
+                      "required": [
+                        "mode"
+                      ]
                     }
                   ]
                 }
@@ -1086,6 +1039,85 @@
                     {
                       "required": [
                         "scene_time_seconds"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "mode"
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "character",
+                  "mode"
+                ],
+                "properties": {
+                  "mode": {
+                    "enum": [
+                      "scene_pose"
+                    ]
+                  }
+                },
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "timeline_time_seconds"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "scene_time_seconds"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "clip"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "clip_time_seconds"
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "character",
+                  "mode"
+                ],
+                "properties": {
+                  "mode": {
+                    "enum": [
+                      "skeleton_rest_pose"
+                    ]
+                  }
+                },
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "timeline_time_seconds"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "scene_time_seconds"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "clip"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "clip_time_seconds"
                       ]
                     }
                   ]
@@ -1131,6 +1163,26 @@
               "character": "<character>",
               "clip": "<clip>",
               "clip_time_seconds": 0.5
+            },
+            "full_data": true
+          }
+        },
+        {
+          "description": "Capture the original scene Animator's currently evaluated pose, independent of the Timeline Ghost.",
+          "arguments": {
+            "source": {
+              "character": "<character>",
+              "mode": "scene_pose"
+            },
+            "full_data": true
+          }
+        },
+        {
+          "description": "Capture the Humanoid Avatar's stored skeleton rest pose.",
+          "arguments": {
+            "source": {
+              "character": "<character>",
+              "mode": "skeleton_rest_pose"
             },
             "full_data": true
           }
@@ -1477,6 +1529,10 @@
           "request_id": {
             "type": "string",
             "description": "Request id returned by kimodo_install_server or kimodo_generate_animation."
+          },
+          "include_request_json": {
+            "type": "boolean",
+            "description": "Include the exact JSON payload sent to QuickServer; defaults to false."
           }
         },
         "required": [
@@ -1525,7 +1581,7 @@
     },
     {
       "name": "session.clear",
-      "description": "Clear a current runtime Timeline session. Persisted Timeline and animation assets are retained; the automatic session is recreated lazily by the next command.",
+      "description": "Clear the active scene context by destroying transient context GameObjects. Persisted Timeline and animation assets are retained; the automatic session is recreated lazily by the next command.",
       "inputSchema": {
         "type": "object",
         "properties": {},
@@ -1534,7 +1590,7 @@
       },
       "examples": [
         {
-          "description": "Clear the current runtime session while retaining persisted assets.",
+          "description": "Destroy the current temporary workspace while retaining persisted Timeline and animation assets.",
           "arguments": {}
         }
       ]

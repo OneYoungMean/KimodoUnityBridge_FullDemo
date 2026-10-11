@@ -26,7 +26,7 @@ Command `window_frames` and `source.frame` use **60 FPS**, unlike the Timeline U
 The complete point-constraint contract is defined in [`constraints.md`](constraints.md).
 The sections below summarize the generation-specific behavior.
 
-`constraints[].type` accepts `fullbody`, `root2d`, or `root_effect`. The command parser normalizes each public type to the internal `mix` representation. `root_effect` carries optional `pose`, required `root2d.position/heading`, and required `effect` targets. Omitted channels remain from the support pose; generation returns non-blocking diagnostics.
+`constraints[].type` accepts `fullbody`, `root2d`, or `root_effect`. The command parser resolves each point to one concrete family. `root_effect` carries optional `pose`, required `root2d.position/heading`, and required `effect` targets, then resolves to Effector with root support. Duplicate constraint frames and root_path collisions are rejected at the command boundary.
 
 The three point types are a discriminated union and are never nested. See `constraints.md`
 for the complete shape and validation rules.
@@ -35,8 +35,8 @@ This lets a pickup contact frame express "the character is here and the hand is 
 
 ### Root2D point constraints and support Pose
 
-The optional Reference Pose model, per-type schema, no-merge collision rules, and rejection
-conditions are defined in [`constraints.md`](constraints.md).
+The optional Reference Pose model, per-type schema, command-boundary duplicate checks, and
+runtime/raw composition rules are defined in [`constraints.md`](constraints.md).
 需要指定支撑姿态时，在目标时间调用 `pose_get`，检查后把 Pose 引用放入 Root2D 约束。
 ### Generation warning check
 
@@ -180,7 +180,7 @@ if request_names_one_or_more_actions():
     if request_semantics_include_fix_or_variant_of_named_actions() and related_clips is empty:
         record_context_evidence("No matching action clip found; this is a new baseline generation.")
     if related_clips is not empty:
-        related_analysis = animation_analyze(related_clips, picture={"output": "composite"}, resolution=512)
+        related_analysis = animation_analyze(related_clips, picture={"output": "composite"}, resolution=1920)
         source_profile = related_analysis.clips[0].motion_profile
         source_keyframes = related_analysis.clips[0].phase_track[*].anchor_frame_60
         if request_is_repair_or_variant_of_related_clip():
@@ -254,7 +254,7 @@ function execute_generate_skill(request):
                 clip: source_clip
             }],
             picture: {"output": "composite"},
-            resolution: 512
+            resolution: 1920
         })
         source_image_path = source_analysis.pictures.image_path
         source_picture_map = source_analysis.pictures.images
@@ -412,7 +412,7 @@ function verify_final_output(final_ref, runtime_evidence):
             clip: final_ref.clip
         }],
         picture: {"output": "composite"},
-        resolution: 512
+        resolution: 1920
     })
 
     final_image_path = final_analysis.pictures.image_path
@@ -565,13 +565,13 @@ ASSERT failed_canceled_or_fallback_results_are_reported_as_returned()
 ## Root path and path-angle constraints / Root 路径统一采样
 
 `root_path` 与 `path.start_angle/path.end_angle` 使用同一条
-稀疏 mix root 约束管线。两者的区别仅在路径采样对象：
+稀疏 Root2D 约束管线。两者的区别仅在路径采样对象：
 
 ```pseudo
 sample_frames = union(
     clip_start_frame,
     clip_end_frame,
-    frames_already_containing_mix_constraints
+    frames_already_containing_root_constraints
 )
 
 if ROOT_PATH:
@@ -584,7 +584,7 @@ if PATH_ANGLE_OVERRIDE:
         path.end_angle
     )
 
-emit_one_sparse_mix_root_constraint(path_samples, sample_frames)
+emit_one_sparse_root2d_constraint(path_samples, sample_frames)
 ```
 
 路径约束默认只在起点、终点和当前 Clip 已有约束帧采样；固定 heading
@@ -594,7 +594,7 @@ emit_one_sparse_mix_root_constraint(path_samples, sample_frames)
 的 Clip 采样器），然后与 `root_path` 走同一套采样和稀疏约束导出逻辑；不能仅凭
 prompt 推断轨迹数据。
 
-mix root 只覆盖根节点的 XZ 和平面 heading；原动画/支撑 Pose 中的根 Y、高低、
+Root2D 只覆盖根节点的 XZ 和平面 heading；原动画/支撑 Pose 中的根 Y、高低、
 Pitch 与 Roll 均是运动语义，必须保留，不能由路径约束静默归零或替换。
 
 if evidence_is_static_only():

@@ -332,7 +332,9 @@ namespace KimodoBridge
                 payload["attachment_byte_length"] = binaryPayload.Length;
             }
 
-            UnityEngine.Debug.Log($"[KimodoBridge] Generate JSON: {payload.ToString(Formatting.None)}");
+            string requestJson = payload.ToString(Formatting.None);
+            KimodoBridgeService.GenerationRequestPayloadContext.Value?.Invoke(requestJson);
+            UnityEngine.Debug.Log($"[KimodoBridge] Generate JSON: {requestJson}");
             return SendRequestAsync(host, port, payload, binaryPayload, progress, token, reconnect: true);
         }
 

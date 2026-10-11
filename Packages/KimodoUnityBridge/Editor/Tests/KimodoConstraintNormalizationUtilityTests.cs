@@ -169,6 +169,43 @@ namespace KimodoBridge.Editor.Tests
             }
         }
 
+        [Test]
+        public void AutoBegin_UsesEffectiveTrackOrSceneOffset()
+        {
+            AnimationTrack track = CreateAutoBeginTrack(
+                new Vector3(4f, 0f, 5f),
+                Quaternion.Euler(0f, 35f, 0f));
+            var animatorObject = new GameObject("AutoBeginOffsetAnimator");
+            Animator animator = animatorObject.AddComponent<Animator>();
+            animator.transform.position = new Vector3(9f, 0f, -3f);
+            animator.transform.rotation = Quaternion.Euler(0f, -20f, 0f);
+            try
+            {
+                KimodoTimelineTrackOffsetUtility.ResolveWorldOffset(
+                    track, animator, out Vector3 transformPosition, out Quaternion transformRotation);
+                Assert.That(transformPosition, Is.EqualTo(new Vector3(4f, 0f, 5f)));
+                Assert.That(Quaternion.Angle(transformRotation, Quaternion.Euler(0f, 35f, 0f)), Is.LessThan(0.001f));
+
+                track.trackOffset = TrackOffset.ApplySceneOffsets;
+                animator.transform.position = new Vector3(2f, 0f, 7f);
+                animator.transform.rotation = Quaternion.Euler(0f, -20f, 0f);
+                KimodoTimelinePreviewRefreshUtility.InitializeSceneOffset(track, animator);
+                animator.transform.position = new Vector3(9f, 0f, -3f);
+                animator.transform.rotation = Quaternion.Euler(0f, 15f, 0f);
+                KimodoTimelineTrackOffsetUtility.ResolveWorldOffset(
+                    track, animator, out Vector3 scenePosition, out Quaternion sceneRotation);
+                Assert.That(scenePosition, Is.EqualTo(new Vector3(2f, 0f, 7f)));
+                Assert.That(
+                    Quaternion.Angle(sceneRotation, Quaternion.Euler(0f, -20f, 0f)),
+                    Is.LessThan(0.001f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(animatorObject);
+                Object.DestroyImmediate(track);
+            }
+        }
+
         private static AnimationTrack CreateAutoBeginTrack(Vector3 position, Quaternion rotation)
         {
             AnimationTrack track = ScriptableObject.CreateInstance<AnimationTrack>();
