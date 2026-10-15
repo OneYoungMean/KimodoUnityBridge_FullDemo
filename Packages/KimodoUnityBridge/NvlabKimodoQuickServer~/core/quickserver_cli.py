@@ -23,6 +23,7 @@ from typing import Any
 from . import kimodo_runtime as runtime_helpers
 from . import ardy_backend
 from . import animation_analysis
+from . import mocap_analysis
 from . import quickserver_assets as assets
 from core.protocol.kmb_motion import (
     MAX_KMB_BYTES,
@@ -64,12 +65,23 @@ def _build_protocol_help(kimodo_root: str = "") -> dict[str, Any]:
             },
             {
                 "cmd": "generate",
-                "description": "Queue motion generation, or analyze KMB ClipConstraints when analysis_option.analysis_only is true. Choose model and text_encoder_mode from runtime.list_models for motion generation.",
+                "description": "Queue motion generation, or analyze KMB ClipConstraints when analysis_option.analysis_only is true. Set output_mp4 to true to save an MP4 in the QuickServer directory and return mp4_path. Choose model and text_encoder_mode from runtime.list_models for motion generation.",
                 "fields": [
                     "prompt", "model", "text_encoder_mode", "duration", "constraints_json",
                     "kmb_attachments", "attachment_byte_length", "analysis_option",
                     "timeline_segments", "ardy_history_weight", "ardy_playback_reserve_seconds",
+                    "output_format (json_compact, bvh, or kmb_v1)", "output_mp4 (boolean)",
                 ],
+            },
+            {
+                "cmd": "analysis.video",
+                "description": "Estimate SMPL-X pose arrays from a local video using the configured Mixamo LLM Mocap checkout.",
+                "fields": ["media_path", "person"],
+            },
+            {
+                "cmd": "analysis.picture",
+                "description": "Estimate one SMPL-X pose from a local picture using the configured Mixamo LLM Mocap checkout.",
+                "fields": ["media_path"],
             },
             {
                 "cmd": "cancel",
@@ -2054,6 +2066,14 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                                     close_session_locked(session, "Session closed.")
                                 reply({"status": "done", "session_id": bound_session_id})
                             return
+                        elif cmd in ("analysis.video", "analysis.picture"):
+                            kind = "video" if cmd == "analysis.video" else "picture"
+                            result = mocap_analysis.analyze_media(
+                                kind,
+                                request.get("media_path"),
+                                request.get("person"),
+                            )
+                            reply(result)
                         elif cmd == "generate":
                             attachments = _read_kmb_attachments(file, request)
                             task_id = resolve_request_task_id(request)
@@ -2155,7 +2175,10 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                         reply({"status": "error", "error_code": exc.code, "message": str(exc)})
                     except Exception as exc:
                         logger.log(f"[ERROR] Command '{cmd}' failed: {exc}")
-                        reply({"status": "error", "message": str(exc)})
+                        error = {"status": "error", "message": str(exc)}
+                        if cmd in ("analysis.video", "analysis.picture"):
+                            error["error_code"] = mocap_analysis.error_code_for_exception(exc)
+                        reply(error)
             finally:
                 with queue_changed:
                     session = state["sessions"].get(bound_session_id)

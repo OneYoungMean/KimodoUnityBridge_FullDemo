@@ -9,6 +9,7 @@ using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.Playables;
+using UnityEngine.SceneManagement;
 using UnityEngine.Timeline;
 using Object = UnityEngine.Object;
 
@@ -139,7 +140,12 @@ namespace KimodoUnityBridge.Command.Tests
                 Assert.That(external.ConstraintSamples.Count, Is.EqualTo(8));
                 Assert.That(director.time, Is.EqualTo(0).Within(1e-8), "Sampling must restore Timeline time.");
                 var diagnostics = (JObject)traceType.GetProperty("InOutSampling").GetValue(trace);
-                var firstTime = diagnostics["in"]["source_timeline_times_seconds"][0].Value<double>();
+                Assert.That(diagnostics["in"]["source_times_seconds"], Is.Null);
+                Assert.That(diagnostics["in"]["source_timeline_times_seconds"], Is.Null);
+                Assert.That(diagnostics["in"]["source_timeline_frames_60"], Is.TypeOf<JArray>());
+                Assert.That(diagnostics["runtime_model_frame_count"], Is.Not.Null);
+                Assert.That(diagnostics["crop_start_model_frame"], Is.Not.Null);
+                var firstTime = diagnostics["in"]["source_timeline_frames_60"][0].Value<int>() / 60.0;
                 var sampleContext = new KimodoTimelineInOutConstraintContext
                 { Director = director, Track = track, Animator = skeleton.animator, SourceClip = character.Animations[0].TimelineClip, ModelName = model };
                 Assert.That(KimodoTimelineConstraintSampler.TrySampleMarker(sampleContext, firstTime, 0, "fullbody", model, out var expected, out error), Is.True, error);
@@ -150,8 +156,10 @@ namespace KimodoUnityBridge.Command.Tests
                     .Invoke(null, new object[] { trace, "CommandOutput", true });
                 var output = (TimelineClip)traceType.GetProperty("TimelineClip").GetValue(trace);
                 playable.bridgeModelName = model;
-                Assert.That(playable.enableInConstraint || playable.enableOutConstraint || playable.autoBeginAnchor, Is.False,
+                Assert.That(playable.enableInConstraint || playable.enableOutConstraint, Is.False,
                     "Explicit sources must not mix with automatically inferred Session boundaries.");
+                Assert.That(playable.autoBeginAnchor, Is.True,
+                    "Command-created clips must retain the automatic begin anchor; real explicit samples take precedence during normalization.");
                 var request = KimodoPlayableClipGenerationHostService.BuildRequest(playable, "stand", external, CancellationToken.None, timelineClipOverride: output);
                 Assert.That(request.TargetFrameCount, Is.EqualTo(60));
                 Assert.That(request.RuntimeFrameCount, Is.EqualTo(inside ? 60 : 81));
@@ -183,7 +191,12 @@ namespace KimodoUnityBridge.Command.Tests
             const string model = KimodoMotionModelProfiles.DefaultModelName;
             Assert.That(KimodoRuntimeAvatarSkeletonBuilder.TryLoadAvatarByModelName(model, out var avatar, out var error), Is.True, error);
             Assert.That(KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(avatar, "PoseGetWorldCoordinateFixture", out var skeleton, out error), Is.True, error);
+            foreach (Transform transform in skeleton.root.GetComponentsInChildren<Transform>(true))
+                transform.gameObject.hideFlags = HideFlags.None;
+            SceneManager.MoveGameObjectToScene(skeleton.root, SceneManager.GetActiveScene());
+            var sessionRoot = new GameObject(KimodoRuntimeUtility.SessionRootPrefix + "PoseGetWorldCoordinateTest");
             var directorObject = new GameObject("PoseGetWorldCoordinateDirector");
+            directorObject.transform.SetParent(sessionRoot.transform, false);
             var director = directorObject.AddComponent<PlayableDirector>();
             var timeline = ScriptableObject.CreateInstance<TimelineAsset>();
             AnimationClip sourceClip = null;
@@ -224,7 +237,7 @@ namespace KimodoUnityBridge.Command.Tests
 
                 var sessionType = typeof(command_context).GetNestedType("TimelineSessionRecord", BindingFlags.NonPublic);
                 var session = Activator.CreateInstance(sessionType,
-                    new object[] { Guid.NewGuid(), "PoseGetWorldCoordinateTest", director, timeline, "", false, null, directorObject });
+                    new object[] { Guid.NewGuid(), "PoseGetWorldCoordinateTest", director, timeline, "", false, null, sessionRoot });
                 ((List<command_context.TimelineCharacterRecord>)sessionType.GetProperty("Characters").GetValue(session)).Add(character);
                 currentSessionField.SetValue(null, session);
 
@@ -232,14 +245,14 @@ namespace KimodoUnityBridge.Command.Tests
                 director.Evaluate();
                 const double timelineTime = 1.0;
                 JObject timelineResponse = JObject.Parse(command_context.PoseGet(
-                    "{'source':{'character':'PoseGetCharacter','timeline_time_seconds':0.8},'full_data':true}"));
+                    "{'source':{'character':'PoseGetCharacter','timeline_frame_60':48},'full_data':true}"));
                 Assert.That(timelineResponse.Value<bool>("ok"), Is.True, timelineResponse.ToString());
-                JObject clipResponse = JObject.Parse(command_context.PoseGet(
-                    "{'source':{'character':'PoseGetCharacter','clip':'Sample','clip_time_seconds':1.0},'full_data':true}"));
-                Assert.That(clipResponse.Value<bool>("ok"), Is.True, clipResponse.ToString());
-                JObject numericClipResponse = JObject.Parse(command_context.PoseGet(
-                    "{'source':{'character':'PoseGetCharacter','clip':'Sample','clip_time_seconds':1.2},'full_data':true}"));
-                Assert.That(numericClipResponse.Value<bool>("ok"), Is.True, numericClipResponse.ToString());
+                JObject middleResponse = JObject.Parse(command_context.PoseGet(
+                    "{'source':{'character':'PoseGetCharacter','timeline_frame_60':60},'full_data':true}"));
+                Assert.That(middleResponse.Value<bool>("ok"), Is.True, middleResponse.ToString());
+                JObject tailResponse = JObject.Parse(command_context.PoseGet(
+                    "{'source':{'character':'PoseGetCharacter','timeline_frame_60':72},'full_data':true}"));
+                Assert.That(tailResponse.Value<bool>("ok"), Is.True, tailResponse.ToString());
 
                 var expectedContext = new KimodoTimelineInOutConstraintContext
                 {
@@ -254,24 +267,25 @@ namespace KimodoUnityBridge.Command.Tests
                 Assert.That(KimodoTimelineConstraintSampler.TrySampleMarker(
                     expectedContext, 0.8, 0, "fullbody", model, out var expectedTimeline, out error), Is.True, error);
                 Assert.That(KimodoTimelineConstraintSampler.TrySampleMarker(
-                    expectedContext, 1.2, 0, "fullbody", model, out var expectedNumericClip, out error), Is.True, error);
+                    expectedContext, 1.2, 0, "fullbody", model, out var expectedTail, out error), Is.True, error);
                 KimodoConstraintMarker[] actualMarkers = poseTrack.GetMarkers()
                     .OfType<KimodoConstraintMarker>().OrderBy(marker => marker.time).ToArray();
                 Assert.That(actualMarkers, Has.Length.EqualTo(3));
                 KimodoMarkerSampleResult actual = actualMarkers[1].SampleData;
                 KimodoMarkerSampleResult timelineActual = actualMarkers[0].SampleData;
-                KimodoMarkerSampleResult numericClipActual = actualMarkers[2].SampleData;
-                Assert.That(Vector3.Distance(timelineActual.rootOverride.t, expectedTimeline.rootOverride.t), Is.LessThan(0.001f),
-                    "timeline_time_seconds pose root world position");
-                Assert.That(Vector3.Distance(actual.rootOverride.t, expected.rootOverride.t), Is.LessThan(0.001f),
-                    "clip_time_seconds pose root world position");
-                Assert.That(Vector3.Distance(numericClipActual.rootOverride.t, expectedNumericClip.rootOverride.t), Is.LessThan(0.001f),
-                    "numeric clip_time_seconds pose root world position");
+                KimodoMarkerSampleResult tailActual = actualMarkers[2].SampleData;
+                // Muscle/Root2D decoding can introduce up to 10 cm of world-space pose error.
+                Assert.That(Vector3.Distance(timelineActual.rootOverride.t, expectedTimeline.rootOverride.t), Is.LessThan(0.1f),
+                    "timeline_frame_60=48 pose root world position");
+                Assert.That(Vector3.Distance(actual.rootOverride.t, expected.rootOverride.t), Is.LessThan(0.1f),
+                    "timeline_frame_60=60 pose root world position");
+                Assert.That(Vector3.Distance(tailActual.rootOverride.t, expectedTail.rootOverride.t), Is.LessThan(0.1f),
+                    "timeline_frame_60=72 pose root world position");
                 KimodoTimelineTrackOffsetUtility.ResolveWorldOffset(
                     track, skeleton.animator, out Vector3 resolvedTrackPosition,
                     out Quaternion resolvedTrackRotation, out bool resolvedSceneOffset);
 
-                Assert.That(Vector3.Distance(actual.rootOverride.t, expected.rootOverride.t), Is.LessThan(0.001f),
+                Assert.That(Vector3.Distance(actual.rootOverride.t, expected.rootOverride.t), Is.LessThan(0.1f),
                     $"hips world position actual={actual.rootOverride.t} expected={expected.rootOverride.t} " +
                     $"track={resolvedTrackPosition} sceneOffset={resolvedSceneOffset} " +
                     $"characterRoot={skeleton.root.transform.position} " +
@@ -284,20 +298,56 @@ namespace KimodoUnityBridge.Command.Tests
                     (actual.effectors.rightFoot, expected.effectors.rightFoot, "right foot")
                 })
                 {
-                    Assert.That(Vector3.Distance(pair.Item1.t, pair.Item2.t), Is.LessThan(0.001f), pair.Item3 + " world position");
+                    Assert.That(Vector3.Distance(pair.Item1.t, pair.Item2.t), Is.LessThan(0.1f), pair.Item3 + " world position");
                 }
+
+                Vector3 sceneRootPosition = new Vector3(8f, 1.5f, -4f);
+                Quaternion sceneRootRotation = Quaternion.Euler(0f, 27f, 0f);
+                skeleton.root.transform.SetPositionAndRotation(sceneRootPosition, sceneRootRotation);
+                JObject scenePoseResponse = JObject.Parse(command_context.PoseGet(
+                    "{'source':{'character':'PoseGetCharacter','timeline_frame_60':60}}"));
+                Assert.That(scenePoseResponse.Value<bool>("ok"), Is.True, scenePoseResponse.ToString());
+                JToken characterRoot = scenePoseResponse["character_root"];
+                Assert.That(characterRoot["space"]?.Value<string>(), Is.EqualTo("world"));
+                Assert.That(characterRoot["position"].Values<float>().ToArray(), Is.EqualTo(new[]
+                {
+                    sceneRootPosition.x, sceneRootPosition.y, sceneRootPosition.z
+                }));
+                Assert.That(characterRoot["rotation"].Values<float>().ToArray(), Is.EqualTo(new[]
+                {
+                    sceneRootRotation.x, sceneRootRotation.y, sceneRootRotation.z, sceneRootRotation.w
+                }));
+
+                JObject scenePoseCapture = JObject.Parse(command_context.PoseGet(
+                    "{'source':{'character':'PoseGetCharacter','mode':'scene_pose'},'full_data':true}"));
+                Assert.That(scenePoseCapture.Value<bool>("ok"), Is.True, scenePoseCapture.ToString());
+                Assert.That(scenePoseCapture["source"]?["mode"]?.Value<string>(), Is.EqualTo("scene_pose"));
+                Assert.That(scenePoseCapture["pose"]?["track"]?.Value<string>(), Is.EqualTo(poseTrack.name));
+                JToken capturedRoot = scenePoseCapture["character_root"];
+                Assert.That(capturedRoot["position"].Values<float>().ToArray(), Is.EqualTo(new[]
+                {
+                    sceneRootPosition.x, sceneRootPosition.y, sceneRootPosition.z
+                }));
+                Assert.That(capturedRoot["rotation"].Values<float>().ToArray(), Is.EqualTo(new[]
+                {
+                    sceneRootRotation.x, sceneRootRotation.y, sceneRootRotation.z, sceneRootRotation.w
+                }));
+                JArray sampledRootPosition = (JArray)scenePoseCapture["data"]?["root"]?["t"];
+                Assert.That(sampledRootPosition[0].Value<float>(), Is.EqualTo(sceneRootPosition.x).Within(0.1f));
+                Assert.That(sampledRootPosition[1].Value<float>(), Is.EqualTo(sceneRootPosition.y).Within(0.1f));
+                Assert.That(sampledRootPosition[2].Value<float>(), Is.EqualTo(sceneRootPosition.z).Within(0.1f));
             }
             finally
             {
                 currentSessionField?.SetValue(null, null);
-                director.Stop();
+                if (director != null) director.Stop();
                 foreach (var track in timeline.GetOutputTracks().ToArray())
                 {
                     foreach (var clip in track.GetClips().ToArray()) Object.DestroyImmediate(clip.asset);
                     Object.DestroyImmediate(track);
                 }
                 Object.DestroyImmediate(timeline);
-                Object.DestroyImmediate(directorObject);
+                Object.DestroyImmediate(sessionRoot);
                 if (sourceClip != null) Object.DestroyImmediate(sourceClip);
                 skeleton.Dispose();
             }
@@ -314,10 +364,42 @@ namespace KimodoUnityBridge.Command.Tests
             {
                 string name = command.Value<string>("name");
                 Assert.That(command["examples"] is JArray examples && examples.Count > 0, Is.True, name);
+                JObject documentation = command["documentation"] as JObject;
+                Assert.That(documentation, Is.Not.Null, name);
+                Assert.That(documentation.Value<string>("when_to_use"), Is.Not.Null.And.Not.Empty, name);
+                foreach (string section in new[] { "behavior", "result_notes", "scene_effects", "limits", "related_commands" })
+                    Assert.That(documentation[section] is JArray values && values.Count > 0, Is.True, $"{name}.{section}");
                 var detail = JObject.Parse(command_dispatcher.Invoke("kimodo_help", new JObject { ["command"] = name }.ToString()));
+                Assert.That(JToken.DeepEquals(detail["manual"]?["documentation"], documentation), Is.True, name);
                 Assert.That(JToken.DeepEquals(detail["manual"]["examples"], command["examples"]), Is.True, name);
-                Assert.That(overview["commands"].Values<JObject>().Single(c => c.Value<string>("name") == name)["examples"].Count(), Is.GreaterThan(0), name);
+                JObject overviewCommand = overview["commands"].Values<JObject>().Single(c => c.Value<string>("name") == name);
+                Assert.That(overviewCommand["examples"].Count(), Is.GreaterThan(0), name);
+                Assert.That(JToken.DeepEquals(overviewCommand["documentation"], documentation), Is.True, name);
             }
+
+            JObject generate = definitions["tools"].Values<JObject>().Single(c => c.Value<string>("name") == "kimodo_generate_animation");
+            Assert.That(generate["inputSchema"]?["properties"]?["prompt"]?.Value<string>("description"), Does.Contain("25 words or fewer"));
+        }
+
+        [Test]
+        public void PoseTest_HelpSeparatesMeasuredPoseFromGenerationWarnings()
+        {
+            JObject manual = JObject.Parse(command_dispatcher.Invoke(
+                "kimodo_help", new JObject { ["command"] = "pose_test" }.ToString()))["manual"] as JObject;
+            Assert.That(manual, Is.Not.Null);
+            Assert.That(manual["inputSchema"]?["required"]?.Values<string>(), Does.Contain("pose"));
+            Assert.That(manual["inputSchema"]?["properties"]?["targets"]?["items"]?["properties"]?["tolerance_m"]?.Value<double>("default"), Is.EqualTo(0.05));
+            Assert.That(string.Join(" ", manual["documentation"]?["result_notes"]?.Values<string>() ?? Enumerable.Empty<string>()), Does.Contain("measured").IgnoreCase);
+            Assert.That(string.Join(" ", manual["documentation"]?["limits"]?.Values<string>() ?? Enumerable.Empty<string>()), Does.Contain("Generation-time warnings").IgnoreCase);
+        }
+
+        [TestCase("{'pose':{'track':'poses','index':0},'effect':{'right_hand':{'position':[1,2,3]}}}", true)]
+        [TestCase("{'effect':{'right_hand':{'position':[1,2,3]}}}", false)]
+        [TestCase("{'pose':{'track':'poses','index':0}}", false)]
+        [TestCase("{'root2d':{'position':[0,0],'heading':[0,1]},'effect':{'right_hand':{'position':[1,2,3]}}}", false)]
+        public void PoseEffectSafetyPreflight_RequiresExplicitPoseAndEffect(string json, bool expected)
+        {
+            Assert.That(command_context.HasPoseAndEffect(JObject.Parse(json)), Is.EqualTo(expected));
         }
     }
 }

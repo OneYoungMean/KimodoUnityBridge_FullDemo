@@ -14,6 +14,7 @@ import urllib.request
 
 DEFAULT_SETUP_LOG_NAME = "setup.log"
 BITSANDBYTES_REQUIRED = "0.49.2"
+PYTORCH3D_WHEEL_INDEX = "https://ImageMindAnalytics.github.io/pytorch3d-wheels/simple/"
 
 
 @dataclass
@@ -346,6 +347,45 @@ def _run_capture(command: list[str], cwd: Path | None = None, env: dict[str, str
         check=False,
     )
     return completed.returncode, completed.stdout or ""
+
+
+def _ensure_pytorch3d(paths: ProjectPaths, uv_bin: str, logger: SetupLogger, default_index: str) -> None:
+    if sys.platform != "win32":
+        return
+    import_check = "from pytorch3d.transforms import axis_angle_to_matrix"
+    rc, _ = _run_capture([str(paths.venv_python), "-c", import_check])
+    if rc == 0:
+        return
+
+    version_script = (
+        "import torch; print(''.join(torch.__version__.split('+')[0].split('.'))); "
+        "print('cpu' if torch.version.cuda is None else 'cu' + torch.version.cuda.replace('.', ''))"
+    )
+    rc, output = _run_capture([str(paths.venv_python), "-c", version_script])
+    values = output.splitlines()
+    if rc != 0 or len(values) < 2:
+        raise SetupError("Could not determine the installed Torch/CUDA version for the PyTorch3D wheel.")
+
+    requirement = f"pytorch3d==0.7.9+pt{values[0].strip()}{values[1].strip()}"
+    logger.log(f"[STEP] Installing GVHMR PyTorch3D wheel {requirement}...")
+    _run_logged(
+        [
+            uv_bin,
+            "pip",
+            "install",
+            "--python",
+            str(paths.venv_python),
+            "--default-index",
+            default_index,
+            "--extra-index-url",
+            PYTORCH3D_WHEEL_INDEX,
+            requirement,
+        ],
+        logger,
+    )
+    rc, _ = _run_capture([str(paths.venv_python), "-c", import_check])
+    if rc != 0:
+        raise SetupError("PyTorch3D installed but its transforms module could not be imported.")
 
 
 def _mirror_is_fast(findlinks_url: str, threshold_ms: int) -> bool:
@@ -743,6 +783,25 @@ def _setup_buildenv(paths: ProjectPaths, setup_mode: str, logger: SetupLogger) -
             logger.log("[WARN] Falling back to torchruntime to pick an architecture-matched build...")
             _install_torch_via_torchruntime(paths, uv_bin, default_index, logger)
             logger.log("[INFO] torchruntime fallback active; continuing without bitsandbytes.")
+
+    mocap_requirements = paths.root_dir / "core" / "requirements_mocap.txt"
+    if mocap_requirements.is_file():
+        logger.log("[STEP] Installing GVHMR dependencies while preserving QuickServer Torch/NumPy...")
+        _run_logged(
+            [
+                uv_bin,
+                "pip",
+                "install",
+                "--python",
+                str(paths.venv_python),
+                "--default-index",
+                default_index,
+                "-r",
+                str(mocap_requirements),
+            ],
+            logger,
+        )
+        _ensure_pytorch3d(paths, uv_bin, logger, default_index)
 
     _ensure_motion_correction(paths, uv_bin, logger, default_index)
     paths.models_dir.mkdir(parents=True, exist_ok=True)

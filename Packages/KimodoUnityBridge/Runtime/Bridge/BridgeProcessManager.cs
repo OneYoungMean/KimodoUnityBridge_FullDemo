@@ -49,7 +49,8 @@ namespace KimodoBridge
         public Process Start(
             string launcherPath,
             int ownerProcessId,
-            bool? enableKimodoStaticGraph = null)
+            bool? enableKimodoStaticGraph = null,
+            string mocapRepositoryPath = null)
         {
             ThrowIfDisposed();
             if (IsRunning)
@@ -75,6 +76,10 @@ namespace KimodoBridge
             {
                 startInfo.EnvironmentVariables["KIMODO_STATIC_GRAPH"] =
                     enableKimodoStaticGraph.Value ? "1" : "0";
+            }
+            if (!string.IsNullOrWhiteSpace(mocapRepositoryPath))
+            {
+                startInfo.EnvironmentVariables["KIMODO_MOCAP_ROOT"] = Path.GetFullPath(mocapRepositoryPath.Trim());
             }
             UnityEngine.Debug.Log($"[Kimodo][BridgeProcess] launch cmd: {startInfo.FileName} {startInfo.Arguments} (cwd={startInfo.WorkingDirectory})");
             var proc = new Process { StartInfo = startInfo, EnableRaisingEvents = true };

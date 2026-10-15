@@ -6,4 +6,7 @@
 /archive/test_runs_archive_*/
 /NvlabKimodoQuickServer~/tools/flatc.exe
 /Runtime/Archive~
-/archive/
+!/archive/
+/archive/*
+!/archive/skill-four-phase-legacy-20261014/
+!/archive/skill-four-phase-legacy-20261014/**

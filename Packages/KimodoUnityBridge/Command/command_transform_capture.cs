@@ -161,7 +161,7 @@ namespace KimodoUnityBridge.Command
                 response["evaluated_joints_world"] = joints;
             }
             File.WriteAllText(Path.Combine(folder, fileName + ".json"), response.ToString(Newtonsoft.Json.Formatting.Indented));
-            return response.ToString(Newtonsoft.Json.Formatting.None);
+            return Ok(response);
         }
 
         private static JArray CapturePositionJson(Vector3 position) => new JArray(position.x, position.y, position.z);

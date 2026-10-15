@@ -29,92 +29,62 @@ namespace KimodoUnityBridge.Command
             string sourceMode = source.Value<string>("mode") ?? string.Empty;
             bool hasScenePose = string.Equals(sourceMode, "scene_pose", StringComparison.OrdinalIgnoreCase);
             bool hasRestPose = string.Equals(sourceMode, "skeleton_rest_pose", StringComparison.OrdinalIgnoreCase);
-            bool hasTimelineTime = source["timeline_time_seconds"] != null;
-            bool hasSceneTime = source["scene_time_seconds"] != null;
-            bool hasClipTime = source["clip"] != null || source["clip_time_seconds"] != null;
-            if (new[] { hasTimelineTime, hasSceneTime, hasClipTime, hasScenePose, hasRestPose }.Count(value => value) != 1)
+            bool hasTimelineFrame = source["timeline_frame_60"] != null;
+            if (new[] { hasTimelineFrame, hasScenePose, hasRestPose }.Count(value => value) != 1)
             {
                 throw new InvalidOperationException(
-                    "source must use exactly one mode: timeline_time_seconds, scene_time_seconds, clip with clip_time_seconds, mode='scene_pose', or mode='skeleton_rest_pose'.");
+                    "source must use exactly one mode: timeline_frame_60, mode='scene_pose', or mode='skeleton_rest_pose'.");
             }
 
-            TimelineAnimationRecord animation = null;
-            double timelineTime;
-            double clipTime = double.NaN;
-            if (hasTimelineTime)
-            {
-                timelineTime = ReadFiniteDouble(source["timeline_time_seconds"], "source.timeline_time_seconds");
-                ValidateTimelineTime(character, timelineTime, "source.timeline_time_seconds");
-            }
-            else if (hasSceneTime)
-            {
-                timelineTime = ReadFiniteDouble(source["scene_time_seconds"], "source.scene_time_seconds");
-                if (timelineTime < 0.0)
-                {
-                    throw new InvalidOperationException("source.scene_time_seconds must be non-negative.");
-                }
-            }
-            else if (hasClipTime)
-            {
-                animation = ResolveAnimation(
-                    new JObject { ["animation"] = RequiredStringValue(source, "clip") },
-                    character);
-                clipTime = ReadFiniteDouble(source["clip_time_seconds"], "source.clip_time_seconds");
-                double clipDuration = animation.TimelineDurationSeconds;
-                if (clipTime < 0.0 || clipTime >= clipDuration - KimodoFrameTimeUtility.FrameTolerance)
-                {
-                    throw new InvalidOperationException(
-                        $"source.clip_time_seconds must be inside clip '{animation.Name}' range [0,{clipDuration:F6}).");
-                }
-                timelineTime = animation.TimelineStartSeconds + clipTime;
-            }
-            else
-            {
-                timelineTime = session.Director != null ? session.Director.time : 0.0;
-            }
-
-            if (hasScenePose || hasRestPose) timelineTime = session.Director != null ? session.Director.time : 0.0;
-            int timelineFrame = (int)Math.Round(timelineTime * SessionFrameRate, MidpointRounding.AwayFromZero);
-            int absoluteFrame = timelineFrame;
+            int timelineFrame = hasTimelineFrame
+                ? RequiredNonNegativeFrame(source, "timeline_frame_60")
+                : Mathf.RoundToInt((float)((session.Director != null ? session.Director.time : 0.0) * SessionFrameRate));
+            if (timelineFrame == int.MaxValue)
+                throw new InvalidOperationException("source.timeline_frame_60 is too large.");
+            double timelineTime = timelineFrame / SessionFrameRate;
             ThrowIfGenerationRangeLocked(
                 session,
                 character,
-                absoluteFrame,
-                absoluteFrame + 1,
+                timelineFrame,
+                timelineFrame + 1,
                 PoseGetCommand);
             bool fullData = arguments.Value<bool?>("full_data") ?? false;
-            KimodoMarkerSampleResult sourceSample = hasScenePose
-                ? CaptureOriginalScenePose(character, restPose: false)
-                : hasRestPose
+            KimodoMarkerSampleResult sourceSample;
+            if (hasScenePose)
+            {
+                bool restorePreview = false;
+                try
+                {
+                    restorePreview = KimodoTimelinePreviewRefreshUtility.TryDisablePreview(session.Director);
+                    sourceSample = CaptureOriginalScenePose(character, restPose: false);
+                }
+                finally
+                {
+                    if (restorePreview && KimodoTimelinePreviewRefreshUtility.TryEnablePreview())
+                        KimodoTimelinePreviewRefreshUtility.RefreshEditorWorkflow(RefreshReason.SceneNeedsUpdate);
+                }
+            }
+            else
+            {
+                sourceSample = hasRestPose
                     ? CaptureOriginalScenePose(character, restPose: true)
                     : CaptureSampleResult(session, character, timelineTime);
+            }
             int index = AllocatePoseIndex(character.PoseCacheTrack);
             KimodoConstraintMarker marker = StoreExternalPose(character, index, sourceSample);
             SaveTimelineSession(session);
             JObject result = new JObject
             {
                 ["pose"] = PoseReferenceJson(character.PoseCacheTrack.name, index),
-                ["source"] = new JObject
-                {
-                    ["character"] = character.Name,
-                    ["timeline_time_seconds"] = timelineTime,
-                    ["timeline_frame_60"] = timelineFrame
-                }
+                ["source"] = new JObject { ["character"] = character.Name },
+                ["character_root"] = CharacterRootTransformJson(character.Root)
             };
             JObject resultSource = (JObject)result["source"];
-            if (animation != null)
-            {
-                resultSource["clip"] = animation.Name;
-                resultSource["clip_time_seconds"] = clipTime;
-            }
-            else if (hasSceneTime)
-            {
-                resultSource["scene_time_seconds"] = timelineTime;
-            }
+            if (hasTimelineFrame) resultSource["timeline_frame_60"] = timelineFrame;
             else if (hasScenePose) resultSource["mode"] = "scene_pose";
             else if (hasRestPose) resultSource["mode"] = "skeleton_rest_pose";
             result["data"] = fullData
-                ? BuildPoseJson(marker.SampleData)
+                ? KimodoConstraintPoseUtility.BuildPoseJson(marker.SampleData)
                 : BuildCompactPose(marker.SampleData);
             return Ok(result);
         });
@@ -123,36 +93,29 @@ namespace KimodoUnityBridge.Command
         {
             GameObject sourceRoot = ResolveSourceCharacterRoot(character);
             Animator sourceAnimator = sourceRoot != null ? sourceRoot.GetComponentInChildren<Animator>(true) : null;
-            Avatar avatar = sourceAnimator != null && KimodoRetargetCoreUtility.IsValidHumanoid(sourceAnimator.avatar)
-                ? sourceAnimator.avatar : character.Avatar;
-            if (sourceAnimator == null || !KimodoRetargetCoreUtility.IsValidHumanoid(avatar))
-                throw new InvalidOperationException($"Character '{character.Name}' requires a scene Humanoid Animator and valid Avatar for this pose source.");
-
-            RetargetSkeleton cache = null;
-            try
+            KimodoLocalAvatarUtility.AvatarResolveResult avatarResult =
+                KimodoLocalAvatarUtility.ResolveTimelineSourceAvatar(character?.Track, sourceAnimator);
+            Avatar avatar = avatarResult.Avatar;
+            if (!avatarResult.IsHumanoid || !KimodoRetargetCoreUtility.IsValidHumanoid(avatar))
             {
-                if (!KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(avatar, "KimodoPoseGetSceneSource", out cache, out string error))
-                    throw new InvalidOperationException($"Pose sampling failed: {error}");
-                if (!restPose)
-                {
-                    cache.root.transform.SetPositionAndRotation(sourceRoot.transform.position, sourceRoot.transform.rotation);
-                    foreach (HumanBodyBones bone in System.Enum.GetValues(typeof(HumanBodyBones)).Cast<HumanBodyBones>())
-                    {
-                        if (bone == HumanBodyBones.LastBone) continue;
-                        Transform sourceBone = sourceAnimator.GetBoneTransform(bone);
-                        if (sourceBone != null && cache.animator.GetBoneTransform(bone) is Transform targetBone)
-                        {
-                            targetBone.localPosition = sourceBone.localPosition;
-                            targetBone.localRotation = sourceBone.localRotation;
-                            targetBone.localScale = sourceBone.localScale;
-                        }
-                    }
-                }
-                if (!KimodoRetargetSamplingUtility.TryCaptureMuscleSample(cache, out MuscleSample sample, out string captureError))
-                    throw new InvalidOperationException($"Pose sampling failed: {captureError}");
-                return BuildCapturedSampleResult(sample, cache, 0.0);
+                string avatarError = string.IsNullOrWhiteSpace(avatarResult.Error)
+                    ? "A valid Humanoid Avatar is required."
+                    : avatarResult.Error;
+                throw new InvalidOperationException(
+                    $"Pose sampling failed: {avatarError}");
             }
-            finally { cache?.Dispose(); }
+            if (!KimodoInOutConstraintTools.TryCaptureOriginalScenePose(
+                    sourceRoot,
+                    sourceAnimator,
+                    avatar,
+                    restPose,
+                    character?.Name,
+                    out KimodoMarkerSampleResult sample,
+                    out string error))
+            {
+                throw new InvalidOperationException($"Pose sampling failed: {error}");
+            }
+            return sample;
         }
 
         public static string PoseSetRootTransform(string argumentsJson) => Execute(argumentsJson, arguments =>
@@ -169,8 +132,98 @@ namespace KimodoUnityBridge.Command
             return Ok(new JObject
             {
                 ["pose"] = PoseReferenceJson(character.PoseCacheTrack.name, reference.Index),
-                ["data"] = BuildPoseJson(sample)
+                ["data"] = KimodoConstraintPoseUtility.BuildPoseJson(sample)
             });
+        });
+
+        public static string PoseTest(string argumentsJson) => Execute(argumentsJson, arguments =>
+        {
+            PoseReference reference = RequirePoseReference(arguments["pose"] as JObject);
+            KimodoConstraintMarker marker = RequirePoseMarker(reference, out TimelineCharacterRecord character);
+            var targets = new Dictionary<HumanBodyBones, Tuple<Vector3, float>>();
+            foreach (JObject target in (arguments["targets"] as JArray ?? new JArray()).OfType<JObject>())
+            {
+                string name = RequiredStringValue(target, "joint");
+                if (!System.Enum.TryParse(name, false, out HumanBodyBones bone) || bone == HumanBodyBones.LastBone)
+                    throw new InvalidOperationException($"Unsupported Humanoid joint '{name}'.");
+                if (targets.ContainsKey(bone)) throw new InvalidOperationException($"targets contains duplicate joint '{name}'.");
+                Vector3 position = ReadVector3(target["position"] as JArray, $"targets.{name}.position");
+                float tolerance = target.Value<float?>("tolerance_m") ?? 0.05f;
+                if (float.IsNaN(tolerance) || float.IsInfinity(tolerance) || tolerance < 0f)
+                    throw new InvalidOperationException($"targets.{name}.tolerance_m must be a finite non-negative number.");
+                targets.Add(bone, Tuple.Create(position, tolerance));
+            }
+
+            var joints = new List<HumanBodyBones>();
+            if (arguments["joints"] is JArray requested)
+            {
+                foreach (string name in requested.Values<string>())
+                {
+                    if (!System.Enum.TryParse(name, false, out HumanBodyBones bone) || bone == HumanBodyBones.LastBone)
+                        throw new InvalidOperationException($"Unsupported Humanoid joint '{name}'.");
+                    if (!joints.Contains(bone)) joints.Add(bone);
+                }
+            }
+            else
+            {
+                joints.AddRange(new[] { HumanBodyBones.Hips, HumanBodyBones.Head, HumanBodyBones.LeftHand,
+                    HumanBodyBones.RightHand, HumanBodyBones.LeftFoot, HumanBodyBones.RightFoot });
+            }
+            foreach (HumanBodyBones bone in targets.Keys)
+                if (!joints.Contains(bone)) joints.Add(bone);
+            if (joints.Count == 0) throw new InvalidOperationException("joints or targets must select at least one Humanoid joint.");
+
+            using (EvaluatedPosePreview preview = CreatePipelinePosePreview(character, marker.SampleData.Clone()))
+            {
+                if (preview.Animator == null || !preview.Animator.isHuman)
+                    throw new InvalidOperationException("pose_test requires a valid Humanoid pose rig.");
+                var results = new JArray();
+                int tested = 0;
+                bool passed = true;
+                foreach (HumanBodyBones bone in joints)
+                {
+                    Transform joint = preview.Animator.GetBoneTransform(bone);
+                    if (joint == null) throw new InvalidOperationException($"Humanoid joint '{bone}' is not available on the sampled rig.");
+                    var item = new JObject
+                    {
+                        ["joint"] = bone.ToString(),
+                        ["world_position"] = new JArray(joint.position.x, joint.position.y, joint.position.z)
+                    };
+                    if (targets.TryGetValue(bone, out Tuple<Vector3, float> target))
+                    {
+                        float distance = Vector3.Distance(joint.position, target.Item1);
+                        bool withinTolerance = distance <= target.Item2;
+                        item["target_position"] = new JArray(target.Item1.x, target.Item1.y, target.Item1.z);
+                        item["distance_m"] = distance;
+                        item["tolerance_m"] = target.Item2;
+                        item["status"] = withinTolerance ? "passed" : "failed";
+                        tested++;
+                        passed &= withinTolerance;
+                    }
+                    else
+                    {
+                        item["target_position"] = JValue.CreateNull();
+                        item["distance_m"] = JValue.CreateNull();
+                        item["tolerance_m"] = JValue.CreateNull();
+                        item["status"] = "not_tested";
+                    }
+                    results.Add(item);
+                }
+
+                var source = new JObject { ["character"] = character.Name };
+                if (marker.sourceRole == "pose_get")
+                {
+                    source["clip"] = marker.sourceClipKey;
+                    source["timeline_frame_60"] = marker.frame;
+                }
+                return Ok(new JObject
+                {
+                    ["pose"] = PoseReferenceJson(reference.Track, reference.Index),
+                    ["source"] = source,
+                    ["overall"] = tested == 0 ? "not_tested" : passed ? "passed" : "failed",
+                    ["joints"] = results
+                });
+            }
         });
 
         public static string PoseSet(string argumentsJson) => Execute(argumentsJson, arguments =>
@@ -245,7 +298,7 @@ namespace KimodoUnityBridge.Command
             return Ok(new JObject
             {
                 ["pose"] = PoseReferenceJson(character.PoseCacheTrack.name, reference.Index),
-                ["data"] = BuildPoseJson(sample)
+                ["data"] = KimodoConstraintPoseUtility.BuildPoseJson(sample)
             });
         });
 
@@ -306,7 +359,7 @@ namespace KimodoUnityBridge.Command
             return Ok(new JObject
             {
                 ["pose"] = PoseReferenceJson(character.PoseCacheTrack.name, reference.Index),
-                ["data"] = BuildPoseJson(sample)
+                ["data"] = KimodoConstraintPoseUtility.BuildPoseJson(sample)
             });
         });
 
@@ -402,7 +455,7 @@ namespace KimodoUnityBridge.Command
                 {
                     throw new InvalidOperationException("Timeline pose sampling returned no sample.");
                 }
-                return BuildCapturedSampleResult(samples[0], sampler.TargetCache, sampleTime);
+                return KimodoConstraintPoseUtility.BuildCapturedSampleResult(samples[0], sampler.TargetCache, sampleTime);
             }
         }
 
@@ -470,7 +523,7 @@ namespace KimodoUnityBridge.Command
                 {
                     throw new InvalidOperationException($"Timeline pose sampling failed: {error}");
                 }
-                return BuildCapturedSampleResult(sample, cache, sampleTime);
+                return KimodoConstraintPoseUtility.BuildCapturedSampleResult(sample, cache, sampleTime);
             }
             finally
             {
@@ -509,29 +562,6 @@ namespace KimodoUnityBridge.Command
                 out Vector3 worldPosition,
                 out Quaternion worldRotation);
             cache.root.transform.SetPositionAndRotation(worldPosition, worldRotation);
-        }
-
-        private static KimodoMarkerSampleResult BuildCapturedSampleResult(
-            MuscleSample sample,
-            RetargetSkeleton cache,
-            double sampleTime)
-        {
-            bool hasSampleData = sample?.IsValid == true;
-            var result = new KimodoMarkerSampleResult
-            {
-                sampleData = sample?.Clone() ?? new MuscleSample(),
-                sampleValid = hasSampleData,
-                // A captured sample is a complete evaluated pose, not a user
-                // constraint selection. The preview pipeline applies its
-                // full-body payload; sampleValid gates the whole capture,
-                // while CaptureWorldTargets fills the scene-facing targets.
-                enableMask = hasSampleData ? KimodoConstraintMask.ForType("fullbody") : new KimodoConstraintMask(),
-                constraintMode = "constraint",
-                sampleTime = sampleTime,
-                enabled = true
-            };
-            KimodoRetargetMarkerSamplingUtility.CaptureWorldTargets(cache, result);
-            return result;
         }
 
         private static KimodoMarkerSampleResult[] CaptureSampleResults(
@@ -599,7 +629,7 @@ namespace KimodoUnityBridge.Command
                 var results = new KimodoMarkerSampleResult[samples.Length];
                 for (int index = 0; index < samples.Length; index++)
                 {
-                    results[index] = BuildCapturedSampleResult(
+                    results[index] = KimodoConstraintPoseUtility.BuildCapturedSampleResult(
                         samples[index],
                         sampler.TargetCache,
                         sampleTimes[index]);
@@ -672,7 +702,7 @@ namespace KimodoUnityBridge.Command
                     {
                         throw new InvalidOperationException($"Timeline pose sampling failed: {error}");
                     }
-                    results[index] = BuildCapturedSampleResult(sample, cache, timelineTime);
+                    results[index] = KimodoConstraintPoseUtility.BuildCapturedSampleResult(sample, cache, timelineTime);
                 }
                 return results;
             }
@@ -820,26 +850,6 @@ namespace KimodoUnityBridge.Command
             ["index"] = index
         };
 
-        private static JObject BuildPoseJson(KimodoMarkerSampleResult sample)
-        {
-            ValidateCommandSample(sample);
-            return new JObject
-            {
-                ["muscles"] = new JArray(sample.sampleData.data.Take(KimodoSampleDataLayout.BodyMuscleCount)),
-                ["root"] = FullTransformJson(GetRootTransform(sample)),
-                ["hands"] = new JObject
-                {
-                    ["left"] = FullTransformJson(GetEndEffector(sample, "left_hand")),
-                    ["right"] = FullTransformJson(GetEndEffector(sample, "right_hand"))
-                },
-                ["feet"] = new JObject
-                {
-                    ["left"] = FullTransformJson(GetEndEffector(sample, "left_foot")),
-                    ["right"] = FullTransformJson(GetEndEffector(sample, "right_foot"))
-                }
-            };
-        }
-
         private static JObject BuildCompactPose(KimodoMarkerSampleResult sample)
         {
             ValidateCommandSample(sample);
@@ -867,15 +877,17 @@ namespace KimodoUnityBridge.Command
             }
         }
 
-        private static JObject FullTransformJson(KimodoRigidTransform transform)
+        private static JObject CharacterRootTransformJson(GameObject characterRoot)
         {
-            var result = new JObject
+            if (characterRoot == null)
+                throw new InvalidOperationException("Pose character has no scene root Transform.");
+            Transform root = characterRoot.transform;
+            return new JObject
             {
-                ["t"] = new JArray(transform.t.x, transform.t.y, transform.t.z),
-                ["q"] = new JArray(transform.q.x, transform.q.y, transform.q.z, transform.q.w),
-                ["enable_rotation"] = transform.enableRotation
+                ["position"] = new JArray(root.position.x, root.position.y, root.position.z),
+                ["rotation"] = new JArray(root.rotation.x, root.rotation.y, root.rotation.z, root.rotation.w),
+                ["space"] = "world"
             };
-            return result;
         }
 
         private static JObject CompactTransformJson(KimodoRigidTransform transform)
@@ -973,44 +985,6 @@ namespace KimodoUnityBridge.Command
             float result = value.Value<float>();
             if (float.IsNaN(result) || float.IsInfinity(result)) throw new InvalidOperationException($"{name} must be finite.");
             return result;
-        }
-
-        private static double ReadFiniteDouble(JToken value, string name)
-        {
-            if (value == null || (value.Type != JTokenType.Integer && value.Type != JTokenType.Float))
-            {
-                throw new InvalidOperationException($"{name} must be a number.");
-            }
-            double result = value.Value<double>();
-            if (double.IsNaN(result) || double.IsInfinity(result))
-            {
-                throw new InvalidOperationException($"{name} must be finite.");
-            }
-            return result;
-        }
-
-        private static void ValidateTimelineTime(
-            TimelineCharacterRecord character,
-            double timelineTime,
-            string name)
-        {
-            TimelineClip[] clips = character.Track != null
-                ? character.Track.GetClips().ToArray()
-                : Array.Empty<TimelineClip>();
-            if (clips.Length == 0)
-            {
-                throw new InvalidOperationException($"Character '{character.Name}' has no Timeline clips.");
-            }
-            bool insideClip = clips.Any(item =>
-                (timelineTime >= item.start - KimodoFrameTimeUtility.FrameTolerance) &&
-                (timelineTime < item.end - KimodoFrameTimeUtility.FrameTolerance));
-            if (!insideClip)
-            {
-                double start = clips.Min(item => item.start);
-                double end = clips.Max(item => item.end);
-                throw new InvalidOperationException(
-                    $"{name} must be inside Character Timeline range [{start:F6},{end:F6}).");
-            }
         }
 
         private static KimodoConstraintMarker FindUntypedPose(AnimationTrack track, int frame) =>

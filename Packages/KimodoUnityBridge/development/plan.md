@@ -20,14 +20,10 @@
 | `development/AGENTS.md` | 仓库协作规则、文档所有权和验证要求 |
 | `../README.md` | 人类用户的安装与入门说明 |
 | `../README.zh-CN.md` | `README.md` 的简体中文版本 |
-| `../SKILL.md` | 安装门槛、任务入口、能力工具编排和公共执行规则 |
+| `../SKILL.md` | 安装门槛、任务入口、通用动画循环和能力工具编排 |
 | `../Command/help.json` | 维护命令、参数、必选关系和嵌套 schema |
-| `../tools/common.md` | 场景上下文、证据、状态和报告公共规则 |
-| `../tools/scene-context.md` | 场景输入与证据边界 |
-| `../tools/recognition.md` | 语义动作识别工作流和证据决策 |
-| `../tools/comparison.md` | 动画质量比较工作流和证据决策 |
-| `../tools/generation.md` | 动画生成、验证、约束和派生修正工作流 |
-| `../tools/pose.md` | External Pose 创建与编辑 |
+| `../tools/common.md` | 通用循环、命令入口、异步状态、证据、识别、比较和修正决策 |
+| `../archive/skill-legacy-20261013/` | 被新阶段手册替换的历史说明，仅供追溯 |
 | `DEVELOPMENT.md` | 临时开发快照，不是执行契约 |
 | `README.md` | 面向维护者的文档导航页 |
 
@@ -46,13 +42,12 @@
 - 保留 QuickServer 旧 `.venv` 检测与迁移，直到升级和回滚路径验证完成。
 - 新代码优先使用 canonical 字段和实时 schema；兼容别名不得继续扩散。
 
-## 暂缓 TODO：Analysis / Pose 协议整理
+## 暂缓 TODO：Analysis Picture 行为修复
 
-- [ ] 在 `animation_analyze` 大修完成后，重新生成并校验 `Command/help.json`，删除已废弃的 `clips[].role` 输入和输出残留。
-- [ ] 删除 `pose_get` 的 `timeline_time_seconds` 协议，只保留 `clip + clip_time_seconds` 的 Clip-local 采样；同步更新 schema、帮助、示例和测试。
+- [ ] 让 `animation_analyze.picture.environment.mode` 真正控制画面环境，并验证 `tiles`、`output` 与返回的图片文件一致；当前这几个选项会被解析和回显，但实际渲染分支没有完整应用它们。
 - [ ] 评估并移除 `BuildEffectiveAnalysisOptions` 对 `keyframe_count`、`keyframes.max_count`、`keyframes.enabled` 的兼容清理；破坏性升级后应由 schema 直接拒绝旧字段。
 - [ ] 区分并保留仍有实际用途的 Timeline segment `role`、Marker `sourceRole` 与 analysis 输入字段，禁止全局关键字替换。
-- [ ] 完成上述协议调整后，重新验证拾取苹果生成流程；在此之前，拾取苹果任务使用当前稳定的 generation 命令链，不依赖未完成的 Analysis 协议重构。
+- [ ] 完成图片选项与 Analysis option 协议调整后，重新验证拾取苹果生成流程；在此之前，拾取苹果任务使用当前稳定的 generation 命令链，不依赖未完成的 Analysis 协议重构。
 
 ## Constraint 重构计划（分批实施）
 

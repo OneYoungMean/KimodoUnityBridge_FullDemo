@@ -14,6 +14,7 @@ namespace KimodoBridge.Editor
                 IsRuntimeSyncRequired,
                 TrySyncRuntimeRootIfNeeded,
                 ResolveKimodoStaticGraphEnabled,
+                ResolveMocapRepositoryPath,
                 BootstrapRuntimeRootIfMissing);
         }
 
@@ -27,6 +28,11 @@ namespace KimodoBridge.Editor
         internal static bool ResolveKimodoStaticGraphEnabled()
         {
             return KimodoPlayableClipGenerationSettings.instance.EnableKimodoStaticGraph;
+        }
+
+        internal static string ResolveMocapRepositoryPath()
+        {
+            return KimodoPlayableClipGenerationSettings.instance.MocapRepositoryPath;
         }
 
         internal static bool BootstrapRuntimeRootIfMissing()

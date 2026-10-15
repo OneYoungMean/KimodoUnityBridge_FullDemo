@@ -11,6 +11,90 @@ namespace KimodoBridge.Editor
         private const string FullBodyConstraintType = "fullbody";
         private const double BoundarySampleEpsilonSeconds = 1e-7;
 
+        internal static bool TryCaptureOriginalScenePose(
+            GameObject sourceRoot,
+            Animator sourceAnimator,
+            Avatar avatar,
+            bool restPose,
+            string characterName,
+            out KimodoMarkerSampleResult result,
+            out string error)
+        {
+            result = null;
+            error = string.Empty;
+            if (sourceRoot == null || sourceAnimator == null || !KimodoRetargetCoreUtility.IsValidHumanoid(avatar))
+            {
+                error = $"Character '{characterName}' requires a scene Humanoid Animator and valid Avatar for this pose source.";
+                return false;
+            }
+
+            if (!KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(
+                    avatar,
+                    "KimodoScenePoseSampler",
+                    out RetargetSkeleton cache,
+                    out error))
+            {
+                return false;
+            }
+
+            try
+            {
+                if (!restPose)
+                {
+                    cache.root.transform.SetPositionAndRotation(
+                        sourceAnimator.transform.position,
+                        sourceAnimator.transform.rotation);
+                    foreach (HumanBodyBones bone in Enum.GetValues(typeof(HumanBodyBones)))
+                    {
+                        if (bone == HumanBodyBones.LastBone)
+                        {
+                            continue;
+                        }
+
+                        Transform sourceBone = sourceAnimator.GetBoneTransform(bone);
+                        Transform targetBone = cache.animator.GetBoneTransform(bone);
+                        if (sourceBone == null || targetBone == null)
+                        {
+                            continue;
+                        }
+
+                        targetBone.localPosition = sourceBone.localPosition;
+                        targetBone.localRotation = sourceBone.localRotation;
+                        targetBone.localScale = sourceBone.localScale;
+                    }
+                }
+
+                if (!KimodoRetargetSamplingUtility.TryCaptureMuscleSample(cache, out MuscleSample sampleData, out error))
+                {
+                    return false;
+                }
+
+                result = new KimodoMarkerSampleResult
+                {
+                    sampleData = sampleData?.Clone() ?? new MuscleSample(),
+                    sampleValid = sampleData?.IsValid == true,
+                    enableMask = sampleData?.IsValid == true
+                        ? KimodoConstraintMask.ForType(FullBodyConstraintType)
+                        : new KimodoConstraintMask(),
+                    constraintMode = "constraint",
+                    sampleTime = 0.0,
+                    enabled = true
+                };
+                KimodoRetargetMarkerSamplingUtility.CaptureWorldTargets(cache, result);
+                if (!result.sampleValid)
+                {
+                    error = "Scene pose sampling returned an invalid FullBody sample.";
+                    result = null;
+                    return false;
+                }
+                return true;
+            }
+            finally
+            {
+                cache.Dispose();
+            }
+        }
+
         // Window lengths and sampling positions use the model's FPS, independent of Timeline's UI FPS.
         internal static int ResolveWindowFrameCount(KimodoInOutConstraintRequest request, bool isBegin)
         {

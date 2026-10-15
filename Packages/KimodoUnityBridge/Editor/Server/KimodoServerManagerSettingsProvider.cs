@@ -145,6 +145,26 @@ namespace KimodoBridge.Editor
             EditorGUILayout.LabelField("Server Version", KimodoServerRuntimeUtil.ReadQuickServerVersion(runtimeRoot));
 
             EditorGUI.BeginChangeCheck();
+            string mocapRepository = EditorGUILayout.DelayedTextField(
+                new GUIContent("Mixamo Mocap Repository", "Checkout containing pipeline/estimate_pose_gvhmr.py."),
+                settings.MocapRepositoryPath);
+            if (GUILayout.Button("Browse Mocap...", GUILayout.Width(120f)))
+            {
+                string selected = EditorUtility.OpenFolderPanel(
+                    "Select Mixamo Mocap Repository", mocapRepository, string.Empty);
+                if (!string.IsNullOrWhiteSpace(selected))
+                {
+                    mocapRepository = selected;
+                    GUI.changed = true;
+                }
+            }
+            if (EditorGUI.EndChangeCheck())
+            {
+                settings.MocapRepositoryPath = mocapRepository;
+                settings.SaveSettings();
+            }
+
+            EditorGUI.BeginChangeCheck();
             bool autoSync = EditorGUILayout.Toggle(
                 new GUIContent(
                     "Auto Sync Server",

@@ -79,14 +79,33 @@ namespace KimodoUnityBridge.Command.Tests
                     ["resolution"] = TestAnalysisResolution
                 });
 
-                Assert.That(analysis.Value<string>("analysis_schema_version"), Is.EqualTo("4-command-60-timeline-keyframes-v1"));
+                Assert.That(analysis.Value<string>("analysis_schema_version"), Is.EqualTo("5-command-60-single-clip-v1"));
+                Assert.That(analysis["picture"], Is.Null);
+                Assert.That(analysis["clips"], Is.Null);
                 Assert.That(analysis["pictures"]?.Value<string>("aspect"), Is.EqualTo("16:9"));
                 Assert.That(analysis["pictures"]?.Value<int>("tile_count"), Is.EqualTo(20));
                 Assert.That(analysis["pictures"]?.Value<string>("render_version"), Is.EqualTo("63-height-time-ratio5-dim-hdrp-lights"));
+                Assert.That(analysis["pictures"]?["title"], Is.Null);
+                Assert.That(analysis["pictures"]?["header"], Is.Null);
+                Assert.That(analysis["pictures"]?["headers"], Is.Null);
 
-                JObject clipAnalysis = analysis["clips"]?.Children<JObject>().Single();
-                Assert.That(clipAnalysis?.Value<int>("start_frame"), Is.EqualTo(0));
-                Assert.That(clipAnalysis?.Value<int>("end_frame_exclusive"), Is.GreaterThan(1));
+                JObject compactContext = Require("scene.context", new JObject());
+                Assert.That(compactContext["history"], Is.Null, "History should be omitted from the default scene context response.");
+                JObject sceneContext = Require("scene.context", new JObject { ["include_history"] = true });
+                Assert.That(sceneContext["session"]?.Value<string>("session_id"), Is.Not.Empty);
+                Assert.That(sceneContext["session"]?.Value<int>("session_revision"), Is.GreaterThan(0));
+                JObject indexedAnalysis = (sceneContext["history"]?["analyses"] as JArray)?.Values<JObject>()
+                    .SingleOrDefault(item => item.Value<string>("analysis_id") == analysis["clip"]?.Value<string>("analysis_id"));
+                Assert.That(indexedAnalysis, Is.Not.Null);
+                Assert.That(indexedAnalysis.Value<string>("animation_id"), Is.Not.Empty);
+                CollectionAssert.Contains(indexedAnalysis["picture_paths"].Values<string>(), analysis["pictures"]?.Value<string>("image_path"));
+                Assert.That((sceneContext["history"]?["animations"] as JArray)?.Values<JObject>()
+                    .Any(item => item.Value<string>("animation_id") == indexedAnalysis.Value<string>("animation_id")), Is.True);
+
+                JObject clipAnalysis = analysis["clip"] as JObject;
+                Assert.That(clipAnalysis?.Value<int>("start_timeline_frame_60"), Is.EqualTo(0));
+                Assert.That(clipAnalysis?.Value<int>("end_timeline_frame_60_exclusive"), Is.GreaterThan(1));
+                Assert.That(clipAnalysis?["analysis_schema_version"], Is.Null);
                 Assert.That(clipAnalysis?.Value<string>("phase_track_version"), Is.EqualTo("1-temporal-cluster-v2-command-60"));
                 JArray phases = clipAnalysis?["phase_track"] as JArray;
                 Assert.That(phases, Is.Not.Null.And.Not.Empty);
@@ -100,11 +119,18 @@ namespace KimodoUnityBridge.Command.Tests
                     Assert.That(keyframe["local_frame_60"], Is.Null);
                     Assert.That(keyframe["frame"], Is.Null);
                 }
-                Assert.That(phases.First().Value<int>("start_frame"), Is.EqualTo(0));
+                Assert.That(phases.First().Value<int>("start_timeline_frame_60"), Is.EqualTo(0));
+                Assert.That(phases.First()["start_frame"], Is.Null);
+                Assert.That(phases.First()["duration_seconds"], Is.Null);
                 int analyzedFrameCount = clipAnalysis["root_trajectory"]?.Value<int>("frame_count") ?? 0;
                 Assert.That(analyzedFrameCount, Is.GreaterThan(1));
-                Assert.That(phases.Last().Value<int>("end_frame"), Is.EqualTo(analyzedFrameCount - 1));
+                Assert.That(phases.Last().Value<int>("end_timeline_frame_60_exclusive"), Is.EqualTo(analyzedFrameCount));
                 Assert.That(clipAnalysis["foot_contacts"]?.Count(), Is.GreaterThan(0));
+                Assert.That(clipAnalysis["foot_contacts"]?.FirstOrDefault()?["timeline_frame_60"], Is.Not.Null);
+                Assert.That(clipAnalysis["foot_contacts"]?.FirstOrDefault()?["frame"], Is.Null);
+                Assert.That(clipAnalysis["root_trajectory"]?["duration_seconds"], Is.Null);
+                Assert.That(clipAnalysis["root_trajectory"]?["samples"]?.FirstOrDefault()?["timeline_frame_60"], Is.Not.Null);
+                Assert.That(clipAnalysis["root_trajectory"]?["samples"]?.FirstOrDefault()?["frame"], Is.Null);
                 Assert.That(clipAnalysis["motion_profile"]?.Value<float>("path_length_xz"), Is.GreaterThan(0.5f));
                 Assert.That(Math.Abs(clipAnalysis["motion_profile"]?.Value<float>("heading_change_degrees") ?? 0f),
                     Is.GreaterThan(45f));
@@ -125,6 +151,36 @@ namespace KimodoUnityBridge.Command.Tests
                 ResetCurrentTestContext(testSession);
                 UnityEngine.Object.DestroyImmediate(character);
             }
+        }
+
+        [Test]
+        public void RootPathSamples_UseOnlyThePathEndpoints()
+        {
+            Type contextType = typeof(command_dispatcher).Assembly
+                .GetType("KimodoUnityBridge.Command.command_context");
+            MethodInfo buildPath = contextType.GetMethod(
+                "BuildRootPathConstraints",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(buildPath, Is.Not.Null);
+
+            var path = new KimodoRootPathData
+            {
+                length = 2f,
+                knots = new List<KimodoRootPathKnot>
+                {
+                    new KimodoRootPathKnot { position = Vector2.zero },
+                    new KimodoRootPathKnot { position = Vector2.up },
+                    new KimodoRootPathKnot { position = Vector2.one }
+                }
+            };
+            var samples = ((IEnumerable<KimodoMarkerSampleResult>)buildPath.Invoke(null, new object[]
+            {
+                path, 0, 12, 73, 0f, 1f,
+                new HashSet<int>(), new HashSet<int>()
+            })).ToArray();
+
+            Assert.That(samples.Select(sample => sample.sampleTime * 60d).ToArray(),
+                Is.EqualTo(new[] { 12d, 72d }));
         }
 
         private static object CreateCurrentTestContext(GameObject character, Animator animator)

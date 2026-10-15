@@ -12,7 +12,7 @@ The maintained public commands are:
 - Scene inputs: commands resolve the active scene and return explicit asset/evidence references
 - Async tasks: `kimodo_generate_animation` returns a generation `request_id`; `kimodo_get_generation` polls either task type; `kimodo_cancel_generation` cancels generation only
 - Analysis/evidence: `animation_analyze`
-- Pose editing: `pose_get`, `pose_set` (or the focused root/muscle setters)
+- Pose editing: `pose_get`, `pose_set` (`pose_set_root_transform` and `pose_set_muscle` remain compatibility aliases)
 - Asset output: `kimodo_retarget_animation`
 
 ## Current boundaries
@@ -21,7 +21,7 @@ The maintained public commands are:
 - Completed Clips are immutable. Corrections, retargets, and generated variants append new Clips rather than replacing an existing Clip.
 - `animation_analyze` accepts one explicit scene clip and returns numeric analysis plus unified graph-space picture evidence. `picture.tiles` selects standard tile types and `picture.output` chooses a composite PNG, independent tile PNGs, or both. Mesh-only targets do not provide Humanoid contact semantics.
 - Root2D, fullbody, and pose-based hand/foot constraints are supplied through `kimodo_generate_animation.constraints`. Humanoid analysis stores and returns a reusable Root Path consumed through `root_path`; Path Override can regenerate with the same seed from absolute Unity-yaw begin/end angles, preserve the baseline path length, and coexist with loop generation. An absolute heading override runs last at 30-frame intervals, replacing Root2D headings without changing the composed Root XZ positions; when Path Override is active, it rewrites that Root2D record instead of appending a duplicate. Generation and Pose sampling require a valid Humanoid Avatar; Mesh-only characters are analysis-only. There is no standalone root-transform application command.
-- `pose_get` creates a new External Pose marker for a Humanoid character. Edit it with `pose_set_root_transform` or `pose_set_muscle`.
+- `pose_get` creates a new External Pose marker for a Humanoid character. Edit it with `pose_set`; the focused root/muscle commands remain compatibility aliases.
 
 ## Active documentation work
 

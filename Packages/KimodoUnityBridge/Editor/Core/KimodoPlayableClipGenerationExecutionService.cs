@@ -846,11 +846,35 @@ namespace KimodoBridge.Editor
                 externalConstraint,
                 token,
                 timelineClipOverride: timelineClipOverride);
+            string modelName = KimodoMotionModelProfiles.NormalizeName(clip.bridgeModelName);
 
             try
             {
                 request.Progress = progress;
-                KimodoEditorGenerationResult result = await KimodoEditorGeneratePipeline.ExecuteAsync(request);
+                KimodoEditorGenerationResult result;
+                if (request.EffectiveRuntimeFrameCount > KimodoMotionModelProfiles.MaxGenerationFrames)
+                {
+                    if (KimodoMotionModelProfiles.TryGetArdy(modelName, out _) ||
+                        (request.Constraints?.clips?.Count ?? 0) > 0)
+                    {
+                        throw new InvalidOperationException(
+                            "Long-clip window generation currently supports standard models and raw constraints only.");
+                    }
+
+                    KimodoBridgeCommandResult combinedMotion = await GenerateWindowedRuntimeAsync(
+                        request,
+                        prompt,
+                        modelName);
+                    result = KimodoEditorGeneratePipeline.BakeRuntimeResult(
+                        request,
+                        prompt,
+                        modelName,
+                        combinedMotion);
+                }
+                else
+                {
+                    result = await KimodoEditorGeneratePipeline.ExecuteAsync(request);
+                }
                 token.ThrowIfCancellationRequested();
                 KimodoPlayableClipGenerationHostService.FinalizeGeneration(clip, request, result);
                 return result;
@@ -859,6 +883,170 @@ namespace KimodoBridge.Editor
             {
                 request.CleanupGeneratedClips();
                 throw;
+            }
+        }
+
+        private static async Task<KimodoBridgeCommandResult> GenerateWindowedRuntimeAsync(
+            KimodoEditorGenerateRequest request,
+            string prompt,
+            string modelName)
+        {
+            int totalFrameCount = request.EffectiveRuntimeFrameCount;
+            float frameRate = request.TargetFrameRate;
+            int overlapFrames = Mathf.Max(2, Mathf.RoundToInt(frameRate));
+            List<KimodoGlobalRawConstraint> anchors = KimodoGenerationWindowPlanner.ReadRootAnchors(
+                request.Constraints?.json);
+            List<KimodoGenerationWindow> windows = KimodoGenerationWindowPlanner.Plan(
+                totalFrameCount,
+                frameRate,
+                KimodoMotionModelProfiles.MaxGenerationFrames,
+                overlapFrames,
+                Mathf.Max(1, Mathf.CeilToInt(3f * frameRate)),
+                Mathf.Max(1, Mathf.FloorToInt(8f * frameRate)),
+                Mathf.Max(1, Mathf.RoundToInt(6f * frameRate)),
+                anchors,
+                Mathf.Max(0, Mathf.RoundToInt(frameRate * 0.5f)));
+
+            int originalTargetFrameCount = request.TargetFrameCount;
+            int originalRuntimeFrameCount = request.RuntimeFrameCount;
+            int originalRuntimeTrimStartFrame = request.RuntimeTrimStartFrame;
+            string originalConstraintsJson = request.Constraints?.json ?? string.Empty;
+            string originalAnalysisOptionsJson = request.AnalysisOptionsJson ?? string.Empty;
+            var coreMotions = new List<KimodoRawMotionData>(windows.Count);
+            var generatedWindows = new List<KimodoRawMotionData>(windows.Count);
+            try
+            {
+                for (int index = 0; index < windows.Count; index++)
+                {
+                    request.Token.ThrowIfCancellationRequested();
+                    KimodoGenerationWindow window = windows[index];
+                    request.TargetFrameCount = window.RequestFrameCount;
+                    request.RuntimeFrameCount = window.RequestFrameCount;
+                    request.RuntimeTrimStartFrame = 0;
+                    request.AnalysisOptionsJson = string.Empty;
+                    request.Constraints.json = KimodoGenerationWindowPlanner.BuildWindowConstraintsJson(
+                        window,
+                        originalConstraintsJson);
+
+                    int seamFrame = window.CoreStartFrame;
+                    if (index > 0)
+                    {
+                        KimodoGenerationWindow previousWindow = windows[index - 1];
+                        KimodoRawMotionData previousMotion = generatedWindows[index - 1];
+                        int previousLocalFrame = seamFrame - previousWindow.RequestStartFrame;
+                        int nextLocalFrame = seamFrame - window.RequestStartFrame;
+                        if (previousLocalFrame < 0 || previousLocalFrame >= previousMotion.FrameCount ||
+                            nextLocalFrame < 0 || nextLocalFrame >= window.RequestFrameCount)
+                        {
+                            throw new InvalidOperationException("Generation seam is outside its overlap window.");
+                        }
+
+                        string fullBodyJson = KimodoRawMotionConstraintBuilder.BuildFullBodyConstraintsJson(
+                            previousMotion,
+                            modelName,
+                            new[] { previousLocalFrame },
+                            clipDurationSeconds: window.RequestFrameCount / (double)frameRate);
+                        JArray fullBody = JArray.Parse(fullBodyJson);
+                        fullBody[0]["frame_indices"] = new JArray(nextLocalFrame);
+                        request.Constraints.json = KimodoClipConstraintBakeUtility.AppendConstraintsJson(
+                            request.Constraints.json,
+                            fullBody.ToString(Formatting.None));
+                    }
+
+                    if (index + 1 < windows.Count)
+                    {
+                        KimodoGlobalRawConstraint before = anchors.LastOrDefault(anchor => anchor.Frame < window.CoreEndFrame);
+                        KimodoGlobalRawConstraint after = anchors.FirstOrDefault(anchor => anchor.Frame > window.CoreEndFrame);
+                        if (before != null && after != null)
+                        {
+                            KimodoGlobalRawConstraint root = KimodoGenerationWindowPlanner.InterpolateRoot2D(
+                                before,
+                                after,
+                                window.CoreEndFrame);
+                            JObject payload = KimodoGenerationWindowPlanner.CreateRoot2DConstraint(
+                                window.CoreEndFrame - window.RequestStartFrame,
+                                root.RootPosition,
+                                root.Heading);
+                            request.Constraints.json = KimodoClipConstraintBakeUtility.AppendConstraintsJson(
+                                request.Constraints.json,
+                                new JArray(payload).ToString(Formatting.None));
+                        }
+                    }
+
+                    request.Progress?.Invoke(
+                        KimodoBridgeCommandStage.Constraint,
+                        $"Generating window {index + 1}/{windows.Count} ({window.RequestFrameCount} frames)...");
+                    KimodoBridgeCommandResult result = await KimodoEditorGeneratePipeline.ExecuteRuntimePipelineAsync(
+                        request,
+                        prompt,
+                        modelName);
+                    if (result?.MotionData == null || result.MotionData.FrameCount != window.RequestFrameCount)
+                    {
+                        throw new InvalidOperationException(
+                            $"Window {index + 1} returned {result?.MotionData?.FrameCount ?? 0} frames; " +
+                            $"expected {window.RequestFrameCount}.");
+                    }
+
+                    generatedWindows.Add(result.MotionData);
+                    int coreStartInRequest = window.CoreStartFrame - window.RequestStartFrame;
+                    if (!KimodoRawMotionUtility.TrySlice(
+                            result.MotionData,
+                            coreStartInRequest,
+                            window.CoreFrameCount,
+                            out KimodoRawMotionData coreMotion,
+                            out string sliceError))
+                    {
+                        throw new InvalidOperationException($"Window {index + 1} core trim failed: {sliceError}");
+                    }
+                    coreMotions.Add(coreMotion);
+                }
+
+                if (!KimodoRawMotionUtility.TryConcatenate(
+                        coreMotions,
+                        totalFrameCount,
+                        out KimodoRawMotionData combined,
+                        out string concatenateError))
+                {
+                    throw new InvalidOperationException($"Generated windows could not be joined: {concatenateError}");
+                }
+
+                request.TargetFrameCount = originalTargetFrameCount;
+                request.RuntimeFrameCount = originalRuntimeFrameCount;
+                request.RuntimeTrimStartFrame = originalRuntimeTrimStartFrame;
+                request.Constraints.json = originalConstraintsJson;
+                request.AnalysisOptionsJson = originalAnalysisOptionsJson;
+                var combinedResult = new KimodoBridgeCommandResult
+                {
+                    MotionData = combined,
+                    MotionJsonCompact = KimodoRawMotionUtility.ToCompactJson(combined),
+                    MotionFormat = "json",
+                    RawStatus = "done"
+                };
+                combinedResult = KimodoEditorGeneratePipeline.TrimRuntimeResultForOutput(
+                    request,
+                    combinedResult,
+                    modelName);
+                if (!string.IsNullOrWhiteSpace(originalAnalysisOptionsJson))
+                {
+                    JObject analysis = await AnalyzeMergedMotionAsync(
+                        request,
+                        modelName,
+                        combinedResult.MotionData,
+                        originalAnalysisOptionsJson,
+                        request.Progress,
+                        request.Token);
+                    combinedResult.AnalysisJson = analysis.ToString(Formatting.None);
+                }
+                return combinedResult;
+            }
+            finally
+            {
+                request.TargetFrameCount = originalTargetFrameCount;
+                request.RuntimeFrameCount = originalRuntimeFrameCount;
+                request.RuntimeTrimStartFrame = originalRuntimeTrimStartFrame;
+                request.AnalysisOptionsJson = originalAnalysisOptionsJson;
+                if (request.Constraints != null)
+                    request.Constraints.json = originalConstraintsJson;
             }
         }
 

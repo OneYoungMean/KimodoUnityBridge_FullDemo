@@ -233,7 +233,8 @@ namespace KimodoBridge.Editor
             Transform parent,
             Dictionary<Transform, Transform> transformMap)
         {
-            var cloneObject = new GameObject(source.name);
+            GameObject cloneObject = EditorUtility.CreateGameObjectWithHideFlags(
+                source.name, HideFlags.HideAndDontSave);
             Transform clone = cloneObject.transform;
             if (parent != null)
             {

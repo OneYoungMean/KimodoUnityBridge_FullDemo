@@ -4,6 +4,7 @@ using System.Linq;
 using KimodoBridge;
 using KimodoBridge.Editor;
 using Newtonsoft.Json.Linq;
+using UnityEngine;
 
 namespace KimodoUnityBridge.Command
 {
@@ -103,8 +104,9 @@ namespace KimodoUnityBridge.Command
                     ["window_frames"] = side.Value<int?>("window_frames") ?? 1,
                     ["model_window_frames"] = window.FrameCount,
                     ["sample_count"] = window.SourceTimes.Length,
-                    ["source_times_seconds"] = new JArray(window.SourceTimes),
-                    ["source_timeline_times_seconds"] = new JArray(window.SourceTimes.Select(t => animation.TimelineStartSeconds + t)),
+                    ["source_frames_60"] = new JArray(window.SourceTimes.Select(t => Mathf.RoundToInt((float)(t * SessionFrameRate)))),
+                    ["source_timeline_frames_60"] = new JArray(window.SourceTimes.Select(t =>
+                        Mathf.RoundToInt((float)((animation.TimelineStartSeconds + t) * SessionFrameRate)))),
                     ["output_model_frames"] = new JArray(window.OutputFrames)
                 };
             }
@@ -143,11 +145,11 @@ namespace KimodoUnityBridge.Command
                     }
                 }
             }
-            diagnostics["context_before_frames"] = request.ContextBeforeFrames;
-            diagnostics["context_after_frames"] = request.ContextAfterFrames;
-            diagnostics["runtime_frame_count"] = runtimeFrames;
-            diagnostics["crop_start_frame"] = request.ContextBeforeFrames;
-            diagnostics["crop_end_frame_exclusive"] = request.ContextBeforeFrames + targetFrames;
+            diagnostics["context_before_model_frames"] = request.ContextBeforeFrames;
+            diagnostics["context_after_model_frames"] = request.ContextAfterFrames;
+            diagnostics["runtime_model_frame_count"] = runtimeFrames;
+            diagnostics["crop_start_model_frame"] = request.ContextBeforeFrames;
+            diagnostics["crop_end_model_frame_exclusive"] = request.ContextBeforeFrames + targetFrames;
             foreach (var plan in plans)
                 diagnostics[plan.IsIn ? "in" : "out"]["runtime_model_frames"] =
                     new JArray(plan.Window.OutputFrames.Select(f => f + request.ContextBeforeFrames));

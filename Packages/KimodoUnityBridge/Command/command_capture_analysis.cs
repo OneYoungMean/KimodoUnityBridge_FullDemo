@@ -127,7 +127,7 @@ namespace KimodoUnityBridge.Command
                         }
                     }
                     canvas = ComposePictureCanvasGpu(images, rects, renderWidth, renderHeight);
-                    DrawTestAnalysisHeader(canvas, subject.Animation?.Name, (float)(data.Pelvis.Length / SessionFrameRate), capturedAt);
+                    DrawTestAnalysisHeader(canvas, subject.Animation?.Name, data.Pelvis.Length, capturedAt);
                     canvas.Apply(false, false);
                     List<RectInt> outputRects = rects;
                     if (width != renderWidth || height != renderHeight)
@@ -160,7 +160,6 @@ namespace KimodoUnityBridge.Command
                     });
                 }
                 string capturedText = capturedAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
-                double duration = data.Pelvis.Length / SessionFrameRate;
                 var result = new JObject
                 {
                     ["picture"] = request.ToJson(), ["level"] = level,
@@ -169,9 +168,9 @@ namespace KimodoUnityBridge.Command
                     ["resolution"] = requestedResolution, ["aspect"] = "16:9",
                     ["header_height"] = Mathf.Max(1, Mathf.RoundToInt(header * height / (float)renderHeight)),
                     ["screenshot_generated_at"] = capturedText, ["supersample"] = 1, ["tile_count"] = tiles.Count,
-                    ["title"] = new JObject { ["animation_name"] = subject.Animation?.Name ?? string.Empty, ["duration_seconds"] = duration, ["guid"] = subject.Animation?.Id.ToString("D") ?? string.Empty },
-                    ["header"] = new JObject { ["clip"] = subject.Animation?.Name ?? string.Empty, ["frame_count"] = data.Pelvis.Length, ["fps"] = SessionFrameRate, ["duration_seconds"] = duration, ["tile_type"] = "analysis-test", ["screenshot_generated_at"] = capturedText },
-                    ["headers"] = new JArray(new JObject { ["subject"] = subject.Character?.Name ?? string.Empty, ["clip"] = subject.Animation?.Name ?? string.Empty, ["total_frames"] = data.Pelvis.Length, ["fps"] = SessionFrameRate, ["duration_seconds"] = duration, ["screenshot_generated_at"] = capturedText, ["tile_types"] = new JArray("3d_track", "height_time_track", "3d_ghost", "3d_ghost_track", "test_pose"), ["rect"] = new JObject { ["x"] = 0, ["y"] = 0, ["width"] = width, ["height"] = height } }),
+                    ["title"] = new JObject { ["animation_name"] = subject.Animation?.Name ?? string.Empty, ["duration_frames"] = data.Pelvis.Length, ["guid"] = subject.Animation?.Id.ToString("D") ?? string.Empty },
+                    ["header"] = new JObject { ["clip"] = subject.Animation?.Name ?? string.Empty, ["frame_count"] = data.Pelvis.Length, ["fps"] = SessionFrameRate, ["duration_frames"] = data.Pelvis.Length, ["tile_type"] = "analysis-test", ["screenshot_generated_at"] = capturedText },
+                    ["headers"] = new JArray(new JObject { ["subject"] = subject.Character?.Name ?? string.Empty, ["clip"] = subject.Animation?.Name ?? string.Empty, ["total_frames"] = data.Pelvis.Length, ["fps"] = SessionFrameRate, ["duration_frames"] = data.Pelvis.Length, ["screenshot_generated_at"] = capturedText, ["tile_types"] = new JArray("3d_track", "height_time_track", "3d_ghost", "3d_ghost_track", "test_pose"), ["rect"] = new JObject { ["x"] = 0, ["y"] = 0, ["width"] = width, ["height"] = height } }),
                     ["images"] = descriptions, ["cached"] = false
                 };
             PersistPictureSummary(session, subject.Record, result);
@@ -601,7 +600,7 @@ namespace KimodoUnityBridge.Command
                 DrawTestAnalysisHeader(
                     canvas,
                     subject.Animation?.Name,
-                    (float)(data.Pelvis.Length / SessionFrameRate),
+                    data.Pelvis.Length,
                     capturedAt);
                 canvas.Apply(false, false);
                     string signature = BuildPictureSignature(new[] { subject }, "legacy-diagnostic", requestedResolution);
@@ -637,7 +636,7 @@ namespace KimodoUnityBridge.Command
                     ["title"] = new JObject
                     {
                         ["animation_name"] = subject.Animation?.Name ?? string.Empty,
-                        ["duration_seconds"] = data.Pelvis.Length / SessionFrameRate,
+                        ["duration_frames"] = data.Pelvis.Length,
                         ["guid"] = subject.Animation?.Id.ToString("D") ?? string.Empty
                     },
                     ["header"] = new JObject
@@ -645,7 +644,7 @@ namespace KimodoUnityBridge.Command
                         ["clip"] = subject.Animation?.Name ?? string.Empty,
                         ["frame_count"] = data.Pelvis.Length,
                         ["fps"] = SessionFrameRate,
-                        ["duration_seconds"] = data.Pelvis.Length / SessionFrameRate,
+                        ["duration_frames"] = data.Pelvis.Length,
                         ["tile_type"] = "analysis-test",
                         ["screenshot_generated_at"] = capturedAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
                     },
@@ -657,7 +656,7 @@ namespace KimodoUnityBridge.Command
                             ["clip"] = subject.Animation?.Name ?? string.Empty,
                             ["total_frames"] = data.Pelvis.Length,
                             ["fps"] = SessionFrameRate,
-                            ["duration_seconds"] = data.Pelvis.Length / SessionFrameRate,
+                            ["duration_frames"] = data.Pelvis.Length,
                             ["screenshot_generated_at"] = capturedAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
                             ["tile_types"] = new JArray("3d_track", "height_time_track", "3d_ghost", "3d_ghost_track", "test_pose"),
                             ["rect"] = new JObject { ["x"] = 0, ["y"] = 0, ["width"] = layout.CanvasWidth, ["height"] = layout.CanvasHeight }

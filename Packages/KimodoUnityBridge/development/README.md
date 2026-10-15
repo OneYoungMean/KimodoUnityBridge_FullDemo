@@ -5,21 +5,17 @@
 ## 文档职责
 
 - [`AGENTS.md`](AGENTS.md)：仓库维护、协作和验证规则。
-- [`DEVELOPMENT.md`](DEVELOPMENT.md)：当前命令面与产品边界的开发快照。
+- [`DEVELOPMENT.md`](DEVELOPMENT.md)：当前命令面和产品边界的开发快照。
 - [`plan.md`](plan.md)：文档与兼容性维护计划。
+- [`animation-workflow-test-cases.md`](animation-workflow-test-cases.md)：通用动画循环交互式验收测试案例。
 - [`KIMODO_CPP_INTEGRATION_TODO.md`](KIMODO_CPP_INTEGRATION_TODO.md)：原生后端接入 TODO。
-- 根目录 [`SKILL.md`](../SKILL.md)：安装门槛、任务入口、能力工具编排和公共执行规则。
-- [`tools/*.md`](../tools/)：公共规则，以及场景上下文、generation、recognition、comparison、pose 和派生输出等能力工具。
+- 根目录 [`SKILL.md`](../SKILL.md)：稳定入口、范围、通用动画循环和能力编排。
+- [`tools/common.md`](../tools/common.md)：循环状态、命令、证据、识别、比较、修订和人工交接规则。
 - [`Command/help.json`](../Command/help.json)：实时命令与参数 schema。
+- [`archive/`](../archive/)：旧四阶段执行文档和历史能力手册，仅供追溯。
 
 ## 交接说明
 
-不再维护独立的 handoff 文件。阅读顺序为：
+执行任务时从根目录 `SKILL.md` 开始，读取 `tools/common.md`，再按任务需要查询 `Command/help.json` 或实时 `kimodo_help`。归档材料不作为当前工作流指令。
 
-1. 根目录 README，确认产品范围和用户/开发者入口；
-2. 根目录 `SKILL.md`，执行安装门槛并选择能力工具；
-3. 对应的 `tools/*.md`，执行具体任务流程；
-4. `Command/help.json`，在命令调用边界检查参数、返回值和错误结构；
-5. 本目录中的维护规则、开发快照和计划。
-
-修改命令或执行规则时，更新对应归属文档，并运行静态审计与 `git diff --check`。
+修改命令或执行规则时，更新其归属文档，并运行静态链接/命令审计与 `git diff --check`。

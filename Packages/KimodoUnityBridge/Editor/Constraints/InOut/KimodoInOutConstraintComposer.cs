@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using TimelineInject;
+using UnityEditor.Timeline;
 using UnityEngine;
 using UnityEngine.Timeline;
 
@@ -9,7 +10,6 @@ namespace KimodoBridge.Editor
     internal static class KimodoInOutConstraintComposer
     {
         private const double AutoBeginAnchorWindowSeconds = 1.0;
-        private const string Root2DConstraintType = "root2d";
 
         internal static bool TryBuild(
             KimodoInOutConstraintRequest request,
@@ -86,7 +86,7 @@ namespace KimodoBridge.Editor
                 new KimodoConstraintExportContext
                 {
                     // Lightweight editor/tests can construct a track-only
-                    // Root2D request. Real Timeline generation always uses the
+                    // constraint request. Real Timeline generation uses the
                     // bound Character projector above.
                     projectedPoseProjector = projectedPoseProjector
                 },
@@ -130,43 +130,52 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            // Auto Begin anchors the effective Timeline track origin. Do not
-            // sample the animated character at the Timeline's first frame:
-            // that pose may contain a clip root offset and is not the scene/
-            // track offset that Timeline will apply during playback.
-            KimodoTimelineTrackOffsetUtility.ResolveWorldOffset(
-                request.TimelineContext.Track,
-                request.TimelineContext.Animator,
-                out Vector3 worldPosition,
-                out Quaternion worldRotation);
-            sample = new KimodoMarkerSampleResult
+            KimodoTimelineInOutConstraintContext context = request.TimelineContext;
+            if (context.Animator == null)
             {
-                rootOverride = new KimodoUnityBridge.KimodoRigidTransform
-                {
-                    t = worldPosition,
-                    q = worldRotation
-                },
-                sampleValid = true,
-                enableMask = new KimodoConstraintMask { rootHeading = true }
-            };
-
-            if (sample?.rootOverride == null)
-            {
-                error = "Auto Begin Root2D offset resolution returned no world root.";
+                error = "Auto Begin FullBody constraint requires the bound Character Animator.";
                 return false;
             }
 
-            // Root2D is an application mode, not a reduced payload format.
-            // AutoBegin therefore retains the complete effective offset pose.
-            sample.constraintMode = Root2DConstraintType;
-            sample.sampleTime = 0.0;
-            sample.enableMask = new KimodoConstraintMask
+            KimodoLocalAvatarUtility.AvatarResolveResult avatarResult =
+                KimodoLocalAvatarUtility.ResolveTimelineSourceAvatar(context.Track, context.Animator);
+            if (!avatarResult.IsHumanoid || !KimodoRetargetCoreUtility.IsValidHumanoid(avatarResult.Avatar))
             {
-                rootHeading = true
-            };
-            sample.sampleValid = true;
-            sample.effectors = new KimodoConstraintEffectors();
-            return true;
+                error = string.IsNullOrWhiteSpace(avatarResult.Error)
+                    ? "Auto Begin FullBody constraint requires a valid Humanoid Avatar."
+                    : avatarResult.Error;
+                return false;
+            }
+
+            bool restorePreview = KimodoTimelinePreviewRefreshUtility.TryDisablePreview(context.Director);
+            try
+            {
+                if (!KimodoInOutConstraintTools.TryCaptureOriginalScenePose(
+                        context.Animator.transform.root.gameObject,
+                        context.Animator,
+                        avatarResult.Avatar,
+                        restPose: false,
+                        characterName: context.Animator.name,
+                        out sample,
+                        out error))
+                {
+                    return false;
+                }
+
+                sample.constraintMode = "fullbody";
+                sample.sampleTime = 0.0;
+                sample.enableMask = KimodoConstraintMask.ForType("fullbody");
+                sample.sampleValid = true;
+                sample.enabled = true;
+                return true;
+            }
+            finally
+            {
+                if (restorePreview && KimodoTimelinePreviewRefreshUtility.TryEnablePreview())
+                {
+                    KimodoTimelinePreviewRefreshUtility.RefreshEditorWorkflow(RefreshReason.SceneNeedsUpdate);
+                }
+            }
         }
 
     }

@@ -177,7 +177,7 @@ namespace KimodoUnityBridge.Command.Tests
                     Is.True,
                     "Returned constraint loss should include the generated frame with the mixed Root2D and right-hand constraint.");
                 AssertGenerationResolvesCachedCharacterByNameAndId(character);
-                string path = status.Value<string>("path");
+                string path = status["clip"]?.Value<string>("asset_path");
                 Assert.That(path, Is.Not.Null.And.Not.Empty, status.ToString());
                 Assert.That(AssetDatabase.LoadAssetAtPath<AnimationClip>(path), Is.Not.Null,
                     $"Generation completed but output Clip was not found at '{path}'.");

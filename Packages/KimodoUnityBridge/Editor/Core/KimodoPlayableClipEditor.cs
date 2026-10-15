@@ -960,7 +960,7 @@ namespace KimodoBridge.Editor
             {
                 EditorGUILayout.PropertyField(
                     autoBeginAnchor,
-                    new GUIContent("Auto Begin Anchor", "When the first second has no effective constraint anchor, add a frame-0 Root2D constraint at the Timeline start pose."));
+                    new GUIContent("Auto Begin Anchor", "When the first second has no effective constraint anchor, capture the scene character pose as a FullBody frame-0 constraint."));
             }
 
             if (KimodoGenerationInspectorGui.IsArdy(bridgeModelName?.stringValue) &&

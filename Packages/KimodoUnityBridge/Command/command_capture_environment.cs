@@ -475,16 +475,16 @@ namespace KimodoUnityBridge.Command
         private static void DrawTestAnalysisHeader(
             Texture2D texture,
             string animationName,
-            float durationSeconds,
+            int durationFrames,
             DateTime capturedAt)
         {
             if (texture == null) return;
             string name = string.IsNullOrWhiteSpace(animationName) ? "(unnamed)" : animationName.Trim();
             string text = string.Format(
                 CultureInfo.InvariantCulture,
-                "Animation: {0}   Duration: {1:0.00}s   Captured: {2:yyyy-MM-dd HH:mm:ss}",
+                "Animation: {0}   Duration: {1} Frames at 60 FPS   Captured: {2:yyyy-MM-dd HH:mm:ss}",
                 name,
-                Math.Max(0f, durationSeconds),
+                Math.Max(0, durationFrames),
                 capturedAt);
             int headerHeight = Mathf.Clamp(Mathf.RoundToInt(texture.width * 60f / 1920f), 48, 96);
             int scale = Mathf.Clamp(texture.width / Math.Max(1, text.Length * 6), 1, 4);
@@ -1022,7 +1022,7 @@ namespace KimodoUnityBridge.Command
                 ["character_ref"] = character?.CharacterRef ?? string.Empty,
                 ["rig_type"] = IsHumanoidCharacter(character) ? "humanoid" : "mesh",
                 ["animation_id"] = animation?.Id.ToString("D") ?? string.Empty,
-                ["start_frame"] = animation?.StartFrame ?? 0,
+                ["start_timeline_frame_60"] = animation?.StartFrame ?? 0,
                 ["end_frame_exclusive"] = animation?.EndFrameExclusive ?? 0,
                 ["options"] = CanonicalizeJson(effectiveOptions ?? new JObject())
             };

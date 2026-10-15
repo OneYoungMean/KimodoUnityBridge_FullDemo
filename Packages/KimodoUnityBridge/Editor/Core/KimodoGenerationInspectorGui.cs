@@ -7,6 +7,8 @@ namespace KimodoBridge.Editor
 {
     internal static class KimodoGenerationInspectorGui
     {
+        private static GUIStyle promptTextAreaStyle;
+
         private static readonly string[] BaseModelOptions = { "Kimodo", "ARDY" };
 
         internal static bool IsArdy(string modelName)
@@ -126,7 +128,14 @@ namespace KimodoBridge.Editor
             bool previousShowMixedValue = EditorGUI.showMixedValue;
             EditorGUI.showMixedValue = prompt.hasMultipleDifferentValues;
             EditorGUI.BeginChangeCheck();
-            string value = EditorGUILayout.TextArea(prompt.stringValue, GUILayout.Height(60));
+            if (promptTextAreaStyle == null)
+            {
+                promptTextAreaStyle = new GUIStyle(EditorStyles.textArea)
+                {
+                    wordWrap = true
+                };
+            }
+            string value = EditorGUILayout.TextArea(prompt.stringValue, promptTextAreaStyle, GUILayout.Height(60));
             ApplyPromptEdit(prompt, value, EditorGUI.EndChangeCheck());
             EditorGUI.showMixedValue = previousShowMixedValue;
         }

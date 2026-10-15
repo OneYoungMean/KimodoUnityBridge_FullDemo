@@ -99,9 +99,54 @@ namespace KimodoBridge.Editor
 
             if (Directory.Exists(runtimeRoot))
             {
-                ClearRuntimeRootExceptModels(runtimeRoot);
+                string templateRoot = ResolvePackagedRuntimeRoot(projectRoot);
+                if (Directory.Exists(templateRoot) &&
+                    string.Equals(Path.GetFullPath(runtimeRoot), Path.GetFullPath(templateRoot), StringComparison.OrdinalIgnoreCase))
+                {
+                    Debug.LogError("QuickServer reinstall refused because the configured runtime is the packaged template itself.");
+                    return false;
+                }
+
+                if (!ArchiveRuntimeRootExceptModels(runtimeRoot))
+                {
+                    return false;
+                }
             }
             return TryBootstrapRuntimeRootFromPackage(projectRoot, runtimeRoot);
+        }
+
+        private static bool ArchiveRuntimeRootExceptModels(string runtimeRoot)
+        {
+            string parent = Path.GetDirectoryName(Path.GetFullPath(runtimeRoot));
+            string archiveRoot = Path.Combine(parent ?? runtimeRoot, "archive", "quickserver-runtime-" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss_fff"));
+            try
+            {
+                foreach (string file in Directory.GetFiles(runtimeRoot))
+                {
+                    string destination = Path.Combine(archiveRoot, Path.GetFileName(file));
+                    Directory.CreateDirectory(archiveRoot);
+                    File.Move(file, destination);
+                }
+
+                foreach (string directory in Directory.GetDirectories(runtimeRoot))
+                {
+                    if (string.Equals(Path.GetFileName(directory), "models", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    string destination = Path.Combine(archiveRoot, Path.GetFileName(directory));
+                    Directory.CreateDirectory(archiveRoot);
+                    Directory.Move(directory, destination);
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"QuickServer reinstall could not archive the existing runtime at '{runtimeRoot}': {ex.Message}");
+                return false;
+            }
         }
 
         internal static bool RefreshRuntimeRoot()

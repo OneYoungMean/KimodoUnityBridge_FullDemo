@@ -3,6 +3,25 @@
     {
       "name": "kimodo_help",
       "description": "Return the command manual, detailed parameter documentation for one command, or currently viable model configurations.",
+      "documentation": {
+        "when_to_use": "Discover the public command contract, inspect one command, list viable models, or review constraint rules.",
+        "behavior": [
+          "Pass command to return its complete definition; otherwise section selects the command overview, model list, or constraint reference."
+        ],
+        "result_notes": [
+          "The command-specific form returns the full input and output schemas with usage examples."
+        ],
+        "scene_effects": [
+          "Read-only, except section=models queries the configured local generation service."
+        ],
+        "limits": [
+          "The models section reports current availability and may change with runtime configuration."
+        ],
+        "related_commands": [
+          "scene.context",
+          "kimodo_generate_animation"
+        ]
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -17,11 +36,158 @@
               "models",
               "constraints"
             ],
-            "default": "commands"
+            "default": "commands",
+            "description": "Select the command overview, currently viable models, or generation constraint reference; ignored when command is supplied."
           }
         },
         "required": [],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": true
+          },
+          "manual": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object"
+              }
+            ]
+          },
+          "usage": {
+            "type": "string"
+          },
+          "execution_model": {
+            "type": "array"
+          },
+          "routing": {
+            "type": "array"
+          },
+          "handles": {
+            "type": "object"
+          },
+          "workflow": {
+            "type": "array"
+          },
+          "commands": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "documentation": {
+                  "type": "object",
+                  "properties": {
+                    "when_to_use": {
+                      "type": "string"
+                    },
+                    "behavior": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "result_notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "scene_effects": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "limits": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "related_commands": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "when_to_use",
+                    "behavior",
+                    "result_notes",
+                    "scene_effects",
+                    "limits",
+                    "related_commands"
+                  ],
+                  "additionalProperties": false
+                },
+                "required": {
+                  "type": "array"
+                },
+                "outputSchema": {
+                  "type": "object"
+                },
+                "examples": {
+                  "type": "array"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "constraints": {
+            "type": "array"
+          },
+          "constraint_rules": {
+            "type": "array"
+          },
+          "configs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": true
+            }
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": true
       },
       "examples": [
         {
@@ -33,13 +199,417 @@
       ]
     },
     {
+      "name": "scene.context",
+      "description": "Return the current active-scene context JSON. Use this response as the authoritative source for scene characters, Clips, Timeline ranges, and object references. Set include_history=true to include the compact Session artifact index.",
+      "documentation": {
+        "when_to_use": "Read the active Unity scene, its Kimodo Timeline, character handles, and current Session identity.",
+        "behavior": [
+          "Use returned scene object references for later commands instead of guessing from names or asset paths.",
+          "Set include_history only when the Session-wide animation, generation, and analysis index is needed."
+        ],
+        "result_notes": [
+          "Returns current scene and director details, character/Clip references, frame-rate metadata, and Session identifiers.",
+          "When requested, history includes compact animation, generation, and analysis records."
+        ],
+        "scene_effects": [
+          "Read-only; does not create, modify, or clear scene objects or animation assets."
+        ],
+        "limits": [
+          "Context reflects the active loaded scene and current Session; history is omitted by default.",
+          "A Clip asset path is asset metadata and is not itself a scene Clip handle."
+        ],
+        "related_commands": [
+          "kimodo_generate_animation",
+          "animation_analyze",
+          "pose_get"
+        ]
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_history": {
+            "type": "boolean",
+            "description": "Include compact animation, generation, and analysis history; defaults to false."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": true
+          },
+          "session": {
+            "type": "object",
+            "properties": {
+              "session_id": {
+                "type": "string"
+              },
+              "session_revision": {
+                "type": "integer"
+              },
+              "schema_version": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "history": {
+            "type": "object",
+            "properties": {
+              "animations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "animation_id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "character": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "start_timeline_frame_60": {
+                      "type": "integer"
+                    },
+                    "duration_frames": {
+                      "type": "integer"
+                    },
+                    "segments": {
+                      "type": "array"
+                    },
+                    "transition": {
+                      "type": "object"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "generations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "request_id": {
+                      "type": "string"
+                    },
+                    "animation_id": {
+                      "type": "string"
+                    },
+                    "character": {
+                      "type": "string"
+                    },
+                    "animation": {
+                      "type": "object"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "stage": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "started_at_utc": {
+                      "type": "string"
+                    },
+                    "updated_at_utc": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "analyses": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "analysis_id": {
+                      "type": "string"
+                    },
+                    "session_id": {
+                      "type": "string"
+                    },
+                    "character": {
+                      "type": "string"
+                    },
+                    "animation_id": {
+                      "type": "string"
+                    },
+                    "animation_name": {
+                      "type": "string"
+                    },
+                    "input_signature": {
+                      "type": "string"
+                    },
+                    "created_at_utc": {
+                      "type": "string"
+                    },
+                    "analysis_path": {
+                      "type": "string"
+                    },
+                    "picture_paths": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "scene": {
+            "type": "string"
+          },
+          "scene_name": {
+            "type": "string"
+          },
+          "director": {
+            "type": "string"
+          },
+          "directors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "object_ref": {
+                  "type": "string"
+                },
+                "hierarchy_path": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "playable_asset": {
+                  "type": "string"
+                },
+                "timeline_frame_60": {
+                  "type": "integer"
+                },
+                "duration_frames_60": {
+                  "type": "integer"
+                },
+                "frame_rate": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "command_context_director": {
+            "type": "string"
+          },
+          "playable_asset": {
+            "type": "string"
+          },
+          "playable_asset_path": {
+            "type": "string"
+          },
+          "duration_frames_60": {
+            "type": "integer"
+          },
+          "frame_rate": {
+            "type": "number"
+          },
+          "current_frame_60": {
+            "type": "integer"
+          },
+          "characters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string"
+                },
+                "scene_object": {
+                  "type": "string"
+                },
+                "object_ref": {
+                  "type": "string"
+                },
+                "animator": {
+                  "type": "string"
+                },
+                "timeline_preview": {
+                  "type": "object"
+                },
+                "avatar": {
+                  "type": "string"
+                },
+                "avatar_valid_humanoid": {
+                  "type": "boolean"
+                },
+                "animations": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "animation_id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "start_timeline_frame_60": {
+                        "type": "integer"
+                      },
+                      "duration_frames": {
+                        "type": "integer"
+                      },
+                      "segments": {
+                        "type": "array"
+                      },
+                      "transition": {
+                        "type": "object"
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": true
+      },
+      "examples": [
+        {
+          "description": "Read the scene and current Session identity.",
+          "arguments": {}
+        },
+        {
+          "description": "Include the compact Session artifact history when needed.",
+          "arguments": {
+            "include_history": true
+          }
+        }
+      ]
+    },
+    {
       "name": "kimodo_install_server",
-      "description": "Start an asynchronous project-local QuickServer installation task. Returns a request_id (install:<guid>) that can be polled with kimodo_get_generation; models and the Python environment are preserved.",
+      "description": "Start an asynchronous project-local QuickServer installation task. Returns only request_id and status; poll that request with kimodo_get_generation. Models and the Python environment are preserved.",
+      "documentation": {
+        "when_to_use": "Install or refresh the project-local QuickServer runtime before generation when it is unavailable or needs updating.",
+        "behavior": [
+          "Starts an asynchronous install task; save the returned request_id and poll it with kimodo_get_generation."
+        ],
+        "result_notes": [
+          "The accepted response contains request_id and status; terminal progress and failure details come from polling."
+        ],
+        "scene_effects": [
+          "Changes project-local runtime files; existing model files and the Python environment are preserved."
+        ],
+        "limits": [
+          "Installation requests cannot be canceled with kimodo_cancel_generation."
+        ],
+        "related_commands": [
+          "kimodo_get_generation"
+        ]
+      },
       "inputSchema": {
         "type": "object",
         "properties": {},
         "required": [],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": true
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted"
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": true
       },
       "examples": [
         {
@@ -50,7 +620,29 @@
     },
     {
       "name": "animation_analyze",
-      "description": "Analyze one animation clip at 60 FPS and render graph-space evidence. Results include Timeline start_frame and keyframes using absolute timeline_frame_60. Loaded clips are reused; external Assets/ or Packages/ clip references are appended to the character's Kimodo Timeline. Source clips are never modified.",
+      "description": "Analyze one animation clip at 60 FPS and render graph-space picture evidence. Pass a clips array containing exactly one scene character and one loaded Clip name or Assets/Packages Clip path. The result contains one clip analysis and one pictures evidence object; temporal positions use absolute Timeline-global 60 FPS frames. External Clips are appended to the character's Kimodo Timeline and never modified.",
+      "documentation": {
+        "when_to_use": "Analyze one loaded animation Clip and produce structured motion data with renderable image evidence.",
+        "behavior": [
+          "Use the scene character and a loaded Clip name or an Assets/Packages asset path.",
+          "Open returned pictures before making visual claims; use structured fields for measurements and temporal positions."
+        ],
+        "result_notes": [
+          "Returns one clip analysis and one pictures object; analysis frame positions use Timeline-global 60 FPS coordinates."
+        ],
+        "scene_effects": [
+          "An external Clip asset is appended to the character's Kimodo Timeline for analysis; the source asset is not modified."
+        ],
+        "limits": [
+          "The clips array must contain exactly one Clip.",
+          "Static pictures do not establish playback continuity, velocity smoothness, foot sliding, or other time-continuous properties."
+        ],
+        "related_commands": [
+          "scene.context",
+          "pose_get",
+          "transform_capture"
+        ]
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -92,6 +684,153 @@
         ],
         "additionalProperties": false
       },
+      "outputSchema": {
+        "type": "object",
+        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": true
+          },
+          "analysis_schema_version": {
+            "type": "string"
+          },
+          "clip": {
+            "type": "object",
+            "properties": {
+              "analysis_id": {
+                "type": "string"
+              },
+              "session_id": {
+                "type": "string"
+              },
+              "character": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "start_timeline_frame_60": {
+                "type": "integer"
+              },
+              "end_timeline_frame_60_exclusive": {
+                "type": "integer"
+              },
+              "analysis_mode": {
+                "type": "string"
+              },
+              "phase_track_version": {
+                "type": "string"
+              },
+              "phase_track": {
+                "type": "array"
+              },
+              "keyframes": {
+                "type": "array"
+              },
+              "foot_contacts": {
+                "type": "array"
+              },
+              "root_trajectory": {
+                "type": "object"
+              },
+              "endpoint_pose_comparison": {
+                "type": "object"
+              },
+              "motion_profile": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": true
+          },
+          "pictures": {
+            "type": "object",
+            "properties": {
+              "picture": {
+                "type": "object",
+                "properties": {
+                  "tiles": {
+                    "type": "array"
+                  },
+                  "output": {
+                    "type": "string"
+                  },
+                  "environment": {
+                    "type": "object"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "level": {
+                "type": "string"
+              },
+              "aspect": {
+                "type": "string"
+              },
+              "tile_count": {
+                "type": "integer"
+              },
+              "render_version": {
+                "type": "string"
+              },
+              "image_path": {
+                "type": "string"
+              },
+              "width": {
+                "type": "integer"
+              },
+              "height": {
+                "type": "integer"
+              },
+              "resolution": {
+                "type": "integer"
+              },
+              "supersample": {
+                "type": "integer"
+              },
+              "images": {
+                "type": "array"
+              },
+              "tile_paths": {
+                "type": "array"
+              },
+              "cached": {
+                "type": "boolean"
+              },
+              "header_height": {
+                "type": "integer"
+              },
+              "screenshot_generated_at": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": true
+      },
       "examples": [
         {
           "description": "Analyze one returned Clip; open the returned image to inspect it.",
@@ -105,7 +844,210 @@
             "picture": {
               "output": "composite"
             },
-            "resolution": 1920
+            "resolution": 512
+          }
+        }
+      ]
+    },
+    {
+      "name": "analysis.video",
+      "description": "Estimate a per-frame SMPL-X pose sequence from a local video. This starts an asynchronous analysis job; poll kimodo_get_generation with its request_id. The result includes raw SMPL-X poses and matching FullBody constraints in the existing raw constraint format; it does not create or apply a Unity animation.",
+      "documentation": {
+        "when_to_use": "Use when a video file should be converted into a time-ordered SMPL-X pose array for downstream retargeting or analysis.",
+        "behavior": [
+          "Pass an absolute video_path that the QuickServer machine can read. Supported formats are MP4, MOV, M4V, AVI, and MKV; the file must not exceed 2 GiB.",
+          "The command returns immediately with status=accepted and a request_id. Poll kimodo_get_generation using that exact id until status is completed, failed, or canceled; do not submit the video again just to check progress.",
+          "For a two-person video, optionally set person to left or right to select the performer by screen position. Omit person for the default selection."
+        ],
+        "result_notes": [
+          "A completed request returns poses in source-video order plus one top-level constraints array, fps, frame_count, source_frame_count, joint_names, betas, and rest_joints_m.",
+          "Each pose contains raw global_orient_axis_angle, body_pose_axis_angle, and translation_m values. The top-level constraints array uses the same merged raw FullBody constraint format accepted by animation generation.",
+          "Rotations are axis-angle radians; translation and rest joints are in meters. The global coordinate space is gravity-aligned Y-up. Optional incam_* fields use OpenCV camera coordinates: X-right, Y-down, Z-forward.",
+          "The result does not create a clip, Playable track, character binding, or timeline edit."
+        ],
+        "scene_effects": [
+          "Read-only; does not create, modify, or clear Unity scene objects or animation assets."
+        ],
+        "limits": [
+          "The top-level constraints array groups the whole sequence into the existing raw FullBody payload; the command still does not return a rendered animation or create a Unity Humanoid muscle track.",
+          "The request can fail if QuickServer's GVHMR runtime, checkpoints, or the SMPL-X Avatar asset are unavailable."
+        ],
+        "related_commands": [
+          "analysis.picture",
+          "kimodo_get_generation",
+          "kimodo_retarget_animation"
+        ]
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "video_path": {
+            "type": "string",
+            "description": "Absolute path to a local video readable by QuickServer."
+          },
+          "person": {
+            "type": "string",
+            "enum": [
+              "left",
+              "right"
+            ],
+            "description": "Select one performer by screen side in a two-person video."
+          }
+        },
+        "required": [
+          "video_path"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": true
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "running",
+              "completed",
+              "failed",
+              "canceled"
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": true
+      },
+      "examples": [
+        {
+          "description": "Estimate SMPL-X poses from a video, then poll for the pose array.",
+          "arguments": {
+            "video_path": "C:/data/mocap.mp4",
+            "person": "left"
+          }
+        }
+      ]
+    },
+    {
+      "name": "analysis.picture",
+      "description": "Estimate one SMPL-X pose from a local still image. This starts an asynchronous analysis job; poll kimodo_get_generation with its request_id. The result includes raw SMPL-X pose data and a FullBody constraint in the existing raw constraint format; it does not create or apply a Unity animation.",
+      "documentation": {
+        "when_to_use": "Use when a still image should be converted into a single SMPL-X pose sample for downstream retargeting or analysis.",
+        "behavior": [
+          "Pass an absolute image_path for a PNG, JPG, or JPEG file that the QuickServer machine can read. The file must not exceed 2 GiB.",
+          "The command returns immediately with status=accepted and a request_id. Poll kimodo_get_generation using that exact id until status is completed, failed, or canceled; do not submit the image again just to check progress.",
+          "The estimator temporarily treats the still image as a one-second clip and returns one pose sample from it."
+        ],
+        "result_notes": [
+          "A completed request returns one raw SMPL-X pose plus a top-level constraints array containing the matching raw FullBody constraint, along with joint_names, betas, and rest_joints_m.",
+          "The pose contains raw global_orient_axis_angle, body_pose_axis_angle, and translation_m values. The constraints array uses the same format accepted by animation generation.",
+          "Rotations are axis-angle radians; translation and rest joints are in meters. The global coordinate space is gravity-aligned Y-up. Optional incam_* fields use OpenCV camera coordinates: X-right, Y-down, Z-forward.",
+          "The result does not create a clip, Playable track, character binding, or timeline edit."
+        ],
+        "scene_effects": [
+          "Read-only; does not create, modify, or clear Unity scene objects or animation assets."
+        ],
+        "limits": [
+          "The constraints array is a raw FullBody payload with one frame; the command still does not return a rendered animation or create a Unity Humanoid muscle track.",
+          "The request can fail if QuickServer's GVHMR runtime, checkpoints, or the SMPL-X Avatar asset are unavailable."
+        ],
+        "related_commands": [
+          "analysis.video",
+          "kimodo_get_generation",
+          "kimodo_retarget_animation"
+        ]
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "image_path": {
+            "type": "string",
+            "description": "Absolute path to a local PNG or JPEG readable by QuickServer."
+          }
+        },
+        "required": [
+          "image_path"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": true
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "running",
+              "completed",
+              "failed",
+              "canceled"
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": true
+      },
+      "examples": [
+        {
+          "description": "Estimate one SMPL-X pose from a still image, then poll for the pose array.",
+          "arguments": {
+            "image_path": "C:/data/pose.jpg"
           }
         }
       ]
@@ -113,6 +1055,26 @@
     {
       "name": "transform_capture",
       "description": "Capture the current scene or an External Pose returned by pose_get together with scene objects, in world space. Returns a four-view image and evaluated joint positions; does not change scene poses.",
+      "documentation": {
+        "when_to_use": "Render a four-view image and world-space joint measurements for a scene character or a sampled External Pose, optionally framed with scene objects.",
+        "behavior": [
+          "Use character_path for the current scene character or a Pose reference returned by pose_get.",
+          "Use @pose or @pose/<relative bone path> to include the evaluated Pose in the capture."
+        ],
+        "result_notes": [
+          "Returns image_path, view/tile metadata, target references, and evaluated joint positions in world space."
+        ],
+        "scene_effects": [
+          "Creates image evidence but does not change scene poses."
+        ],
+        "limits": [
+          "To capture a Clip frame, sample it first with pose_get; transforms must resolve in the current scene or Pose."
+        ],
+        "related_commands": [
+          "pose_get",
+          "scene.context"
+        ]
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -156,6 +1118,142 @@
         ],
         "additionalProperties": false
       },
+      "outputSchema": {
+        "type": "object",
+        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": true
+          },
+          "image_path": {
+            "type": "string"
+          },
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "tile_size": {
+            "type": "integer"
+          },
+          "tiles": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tile": {
+                  "type": "string"
+                },
+                "view": {
+                  "type": "string"
+                },
+                "projection": {
+                  "type": "string"
+                },
+                "transforms": {
+                  "type": "array"
+                },
+                "bounds": {
+                  "type": "object"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "character": {
+                "type": "string"
+              },
+              "character_path": {
+                "type": "object"
+              },
+              "pose": {
+                "type": "object"
+              },
+              "clip": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "frame": {
+                "oneOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "timeline_frame_60": {
+                "type": "integer"
+              },
+              "mode": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "world_position": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "evaluated_joints_world": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": true
+      },
       "examples": [
         {
           "description": "Capture the External Pose returned by pose_get together with scene objects, without moving the scene character.",
@@ -177,12 +1275,31 @@
     {
       "name": "kimodo_retarget_animation",
       "description": "Retarget one loaded animation to another current scene context character and append the result.",
+      "documentation": {
+        "when_to_use": "Retarget one loaded source Clip to another character in the current scene context.",
+        "behavior": [
+          "Resolve both characters and the source Clip from current scene context before submission."
+        ],
+        "result_notes": [
+          "Returns the source character, target character, and the newly retargeted animation reference."
+        ],
+        "scene_effects": [
+          "Appends a derived animation to the target character; the source Clip remains available."
+        ],
+        "limits": [
+          "Source and target must be supported scene characters; Session preview objects are rejected."
+        ],
+        "related_commands": [
+          "scene.context",
+          "animation_analyze"
+        ]
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
           "source_character": {
             "type": "string",
-            "description": "Source scene character name or object_ref. Ghost character paths are rejected."
+            "description": "Source scene character name or object_ref. Session preview objects are rejected."
           },
           "animation": {
             "type": "string",
@@ -190,7 +1307,7 @@
           },
           "target_character": {
             "type": "string",
-            "description": "Target scene character name or object_ref. Ghost character paths are rejected."
+            "description": "Target scene character name or object_ref. Session preview objects are rejected."
           },
           "output": {
             "type": "object",
@@ -221,6 +1338,81 @@
         ],
         "additionalProperties": false
       },
+      "outputSchema": {
+        "type": "object",
+        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": true
+          },
+          "retargeted": {
+            "type": "boolean"
+          },
+          "source_character": {
+            "type": "string"
+          },
+          "character": {
+            "type": "string"
+          },
+          "animation": {
+            "type": "object",
+            "properties": {
+              "animation_id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "character": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "start_timeline_frame_60": {
+                "type": "integer"
+              },
+              "duration_frames": {
+                "type": "integer"
+              },
+              "segments": {
+                "type": "array"
+              },
+              "transition": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": true
+      },
       "examples": [
         {
           "description": "Retarget a loaded Clip to another scene character.",
@@ -237,21 +1429,51 @@
     },
     {
       "name": "kimodo_generate_animation",
-      "description": "Start asynchronous generation for a character in the current scene context. The accepted response includes non-blocking generation checks and must be polled by request_id.",
+      "description": "Start asynchronous generation for a character in the current scene context. Command-created Timeline Clips enable AutoBegin anchoring automatically; explicit first-frame or In/Out samples take precedence. The accepted response contains request_id, status, and non-blocking request/constraint warnings; pose/effect safety preflight runs only when the same point constraint explicitly contains both pose and effect, never for effect-only constraints. These warnings are not measured joint positions in the generated motion; use pose_get then pose_test to measure sampled joint positions and contact reach after generation. Supply trajectory settings only when the requested path is known from explicit requirements or confirmed scene/analysis evidence; prompt wording never selects path options.",
+      "documentation": {
+        "when_to_use": "Submit one animation generation request for a character in the current scene context.",
+        "behavior": [
+          "Describe one simple semantic action in prompt; aim for 25 words or fewer.",
+          "Represent exact body pose, root position, effector targets, duration, path, loop, and Clip windows in their explicit fields when required.",
+          "Save request_id and use kimodo_get_generation to poll; do not resubmit a running request."
+        ],
+        "result_notes": [
+          "The accepted response contains request_id, status, non-blocking check results, and warnings. Pose/effect safety preflight runs only when the same point constraint explicitly contains both pose and effect; effect-only constraints skip it.",
+          "On completion, kimodo_get_generation returns the generated Clip metadata, asset path, animation_id, and available generation diagnostics."
+        ],
+        "scene_effects": [
+          "A completed result is appended as a Timeline Clip; existing completed Clips are retained.",
+          "The first scene pose is used as the automatic starting anchor unless explicit first-frame or In/Out samples take precedence."
+        ],
+        "limits": [
+          "Trajectory overrides require an explicit requirement or confirmed scene/analysis evidence; prompt words do not select path options.",
+          "analysis_option is lightweight generation-time analysis, not the full animation_analyze command.",
+          "Command checks validate supported request boundaries; they do not judge semantic or artistic quality."
+        ],
+        "related_commands": [
+          "scene.context",
+          "pose_get",
+          "kimodo_get_generation",
+          "kimodo_cancel_generation",
+          "animation_analyze"
+        ]
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
           "character": {
             "type": "string",
-            "description": "Scene character name or object_ref. Ghost character paths are rejected; use the source scene character."
+            "description": "Scene character name or object_ref. Session preview objects are rejected; use the source scene character."
           },
           "prompt": {
             "type": "string",
-            "description": "Motion prompt."
+            "description": "Short semantic description of the current Clip's action; aim for 25 words or fewer. Express exact FullBody, position, and effector anchors through structured constraints."
           },
           "duration_frames": {
             "type": "integer",
-            "description": "Duration in 60 FPS frames; defaults to 300."
+            "minimum": 1,
+            "default": 300,
+            "description": "Duration in 60 FPS frames; defaults to 300 frames (5 seconds)."
           },
           "loop": {
             "description": "Enable loop preprocessing, or provide per-axis endpoint locks with {enabled, lock_pos:{x,y,z}, lock_rot:{x,y,z}}.",
@@ -319,7 +1541,7 @@
                 "type": "number"
               }
             },
-            "description": "Optional Root2D path override. Any angle enables path override; distance replaces the measured path length; heading is applied after path composition."
+            "description": "Optional Root2D path override. Use only when the trajectory is known from an explicit requirement or confirmed scene/analysis evidence; never infer these fields from prompt keywords. Any angle enables path override; distance replaces the measured path length; heading is applied after path composition."
           },
           "generation": {
             "type": "object",
@@ -367,11 +1589,11 @@
           },
           "analysis_option": {
             "type": "object",
-            "description": "Optional analysis object for the phase-track analyzer. Legacy uniform keyframe-count controls are removed; Humanoid output always uses phase_track_version and continuous phase_track intervals."
+            "description": "Optional generation-time lightweight analysis. When enabled, generation returns sparse salient keyframe markers and foot-contact changes; it does not run the full animation_analyze command."
           },
           "constraints": {
             "type": "array",
-            "description": "Point constraints are selected by optional pose, root2d, and effect data; multiple fields at one frame compose by channel. root_path and inout remain separate constraint forms; duplicate frames are rejected; command frames use 60 FPS.",
+            "description": "Point constraints are selected by optional pose, root2d, and effect data; multiple fields at one frame compose by channel. Pose/effect safety preflight runs only when the same point constraint explicitly contains both pose and effect; effect-only constraints skip it. root_path and inout remain separate constraint forms; duplicate frames are rejected; command frames use 60 FPS.",
             "items": {
               "oneOf": [
                 {
@@ -384,7 +1606,7 @@
                     },
                     "pose": {
                       "type": "object",
-                      "description": "External Pose slot in current scene context.",
+                      "description": "External Pose slot in the current scene context.",
                       "additionalProperties": false,
                       "properties": {
                         "track": {
@@ -402,6 +1624,7 @@
                     },
                     "root2d": {
                       "type": "object",
+                      "description": "Planar root position and heading constraint; supply both channels together.",
                       "additionalProperties": false,
                       "properties": {
                         "position": {
@@ -410,7 +1633,8 @@
                             "type": "number"
                           },
                           "minItems": 2,
-                          "maxItems": 2
+                          "maxItems": 2,
+                          "description": "Planar root position [x,z]."
                         },
                         "heading": {
                           "type": "array",
@@ -418,7 +1642,8 @@
                             "type": "number"
                           },
                           "minItems": 2,
-                          "maxItems": 2
+                          "maxItems": 2,
+                          "description": "Planar heading direction [x,z]."
                         }
                       },
                       "required": [
@@ -436,19 +1661,21 @@
                           "properties": {
                             "position": {
                               "type": "array",
+                              "minItems": 3,
+                              "maxItems": 3,
                               "items": {
                                 "type": "number"
                               },
-                              "minItems": 3,
-                              "maxItems": 3
+                              "description": "World-space target position [x,y,z]."
                             },
                             "rotation": {
                               "type": "array",
+                              "minItems": 4,
+                              "maxItems": 4,
                               "items": {
                                 "type": "number"
                               },
-                              "minItems": 4,
-                              "maxItems": 4
+                              "description": "Target rotation quaternion [x,y,z,w]."
                             }
                           },
                           "anyOf": [
@@ -470,19 +1697,21 @@
                           "properties": {
                             "position": {
                               "type": "array",
+                              "minItems": 3,
+                              "maxItems": 3,
                               "items": {
                                 "type": "number"
                               },
-                              "minItems": 3,
-                              "maxItems": 3
+                              "description": "World-space target position [x,y,z]."
                             },
                             "rotation": {
                               "type": "array",
+                              "minItems": 4,
+                              "maxItems": 4,
                               "items": {
                                 "type": "number"
                               },
-                              "minItems": 4,
-                              "maxItems": 4
+                              "description": "Target rotation quaternion [x,y,z,w]."
                             }
                           },
                           "anyOf": [
@@ -504,19 +1733,21 @@
                           "properties": {
                             "position": {
                               "type": "array",
+                              "minItems": 3,
+                              "maxItems": 3,
                               "items": {
                                 "type": "number"
                               },
-                              "minItems": 3,
-                              "maxItems": 3
+                              "description": "World-space target position [x,y,z]."
                             },
                             "rotation": {
                               "type": "array",
+                              "minItems": 4,
+                              "maxItems": 4,
                               "items": {
                                 "type": "number"
                               },
-                              "minItems": 4,
-                              "maxItems": 4
+                              "description": "Target rotation quaternion [x,y,z,w]."
                             }
                           },
                           "anyOf": [
@@ -538,19 +1769,21 @@
                           "properties": {
                             "position": {
                               "type": "array",
+                              "minItems": 3,
+                              "maxItems": 3,
                               "items": {
                                 "type": "number"
                               },
-                              "minItems": 3,
-                              "maxItems": 3
+                              "description": "World-space target position [x,y,z]."
                             },
                             "rotation": {
                               "type": "array",
+                              "minItems": 4,
+                              "maxItems": 4,
                               "items": {
                                 "type": "number"
                               },
-                              "minItems": 4,
-                              "maxItems": 4
+                              "description": "Target rotation quaternion [x,y,z,w]."
                             }
                           },
                           "anyOf": [
@@ -567,7 +1800,28 @@
                           ]
                         }
                       },
-                      "minProperties": 1
+                      "anyOf": [
+                        {
+                          "required": [
+                            "left_hand"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "right_hand"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "left_foot"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "right_foot"
+                          ]
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -599,7 +1853,7 @@
                       "type": "integer",
                       "minimum": 0,
                       "default": 0,
-                      "description": "First path frame; defaults to the clip start."
+                      "description": "First path frame; defaults to the clip start. Use a confirmed path for the intended character and motion; root_path generates only start and end Root2D constraints, not intermediate route enforcement."
                     },
                     "root_path": {
                       "type": "object",
@@ -607,7 +1861,7 @@
                       "properties": {
                         "path": {
                           "type": "object",
-                          "description": "Analyzed Root Path slot returned by animation_analyze at clips[].root_trajectory.path.",
+                          "description": "Confirmed analyzed Root Path slot for the intended character and motion, returned by animation_analyze at clip.root_trajectory.path.",
                           "additionalProperties": false,
                           "properties": {
                             "track": {
@@ -766,20 +2020,70 @@
         ],
         "additionalProperties": false
       },
+      "outputSchema": {
+        "type": "object",
+        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": true
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted"
+            ]
+          },
+          "check": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          },
+          "warnings": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": true
+      },
       "examples": [
         {
-          "description": "Generate two seconds and poll the returned request_id.",
+          "description": "Submit one Clip request; use the returned request_id with kimodo_get_generation.",
           "arguments": {
             "character": "<character>",
-            "prompt": "Stand still and breathe naturally",
+            "prompt": "<short action for one Clip>",
             "duration_frames": 120
           }
         },
         {
-          "description": "Continue a source Clip using its final half-second sampled five times. Names must come from the current scene context; the result contains inout_sampling diagnostics.",
+          "description": "Continue a source Clip using its final half-second sampled five times. Names must come from the current scene context; inspect inout_sampling after generation completes.",
           "arguments": {
             "character": "<character>",
-            "prompt": "Stop walking and stand upright",
+            "prompt": "<short action for one Clip>",
             "duration_frames": 120,
             "loop": false,
             "constraints": [
@@ -802,7 +2106,7 @@
           "description": "Use explicit previous/next Clips as context on both sides; crop context from the returned two-second output.",
           "arguments": {
             "character": "<character>",
-            "prompt": "Reach for the apple and pick it up",
+            "prompt": "<short action for one Clip>",
             "duration_frames": 120,
             "loop": false,
             "constraints": [
@@ -831,7 +2135,7 @@
           "description": "Keep sampled opening and closing windows inside the returned Clip.",
           "arguments": {
             "character": "<character>",
-            "prompt": "Bend down then stand up",
+            "prompt": "<short action for one Clip>",
             "duration_frames": 120,
             "loop": false,
             "constraints": [
@@ -862,7 +2166,7 @@
           "description": "Set one Root2D point. The selected data fields determine the constraint family; no type tag is needed.",
           "arguments": {
             "character": "<character>",
-            "prompt": "Walk to the target",
+            "prompt": "<short action for one Clip>",
             "duration_frames": 120,
             "constraints": [
               {
@@ -885,7 +2189,7 @@
           "description": "Mix a FullBody pose, Root2D root override, and hand target at one frame. Root2D overlays the pose root channels and effect overlays the named hand target.",
           "arguments": {
             "character": "<character>",
-            "prompt": "Reach to the apple",
+            "prompt": "<short action for one Clip>",
             "duration_frames": 180,
             "loop": false,
             "constraints": [
@@ -922,33 +2226,42 @@
     },
     {
       "name": "pose_get",
-      "description": "Sample a Timeline time, scene time, Clip-local time, the original scene Animator pose, or the Avatar skeleton rest pose into an External Pose slot. Returns the reusable pose identity {track,index}.",
+      "description": "Sample one absolute Timeline-global frame at 60 FPS, or select mode scene_pose / skeleton_rest_pose to read the original scene Animator or Avatar rest pose. Every response includes character_root, the bound scene GameObject root Transform in world space; data.root is the sampled Pose root channel. Every call creates an External Pose slot and returns {track,index}.",
+      "documentation": {
+        "when_to_use": "Materialize an External Pose from a Timeline frame, the current scene Animator pose, or the Avatar skeleton rest pose.",
+        "behavior": [
+          "For an animation frame, pass its absolute Timeline-global frame at 60 FPS.",
+          "Inspect the returned Pose and confirm its role before using its {track,index} reference as a generation constraint."
+        ],
+        "result_notes": [
+          "Returns an External Pose reference, source details, character_root world Transform, and sampled Pose data.",
+          "character_root is the bound scene GameObject root; data.root is the sampled Pose root channel."
+        ],
+        "scene_effects": [
+          "Every call creates an External Pose slot in the current scene context."
+        ],
+        "limits": [
+          "A Timeline frame and scene_pose/skeleton_rest_pose mode are alternative source forms.",
+          "Use full_data only when all muscle and TQ channels are needed."
+        ],
+        "related_commands": [
+          "scene.context",
+          "animation_analyze",
+          "transform_capture",
+          "pose_set"
+        ]
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
           "source": {
             "type": "object",
+            "description": "Select exactly one source form: a Timeline-global frame, the current scene Animator pose, or the Avatar skeleton rest pose.",
             "additionalProperties": false,
             "properties": {
               "character": {
-                "type": "string"
-              },
-              "clip": {
-                "type": "string"
-              },
-              "timeline_time_seconds": {
-                "type": "number",
-                "description": "Absolute Timeline-global time in seconds."
-              },
-              "scene_time_seconds": {
-                "type": "number",
-                "minimum": 0,
-                "description": "Absolute scene Timeline time in seconds. Samples the bound Animator directly, even when the character has no animation Clip."
-              },
-              "clip_time_seconds": {
-                "type": "number",
-                "minimum": 0,
-                "description": "Time in seconds relative to the selected Clip's Timeline range."
+                "type": "string",
+                "description": "Current scene character name or object_ref."
               },
               "mode": {
                 "type": "string",
@@ -957,6 +2270,11 @@
                   "skeleton_rest_pose"
                 ],
                 "description": "Sample the original scene Animator's currently evaluated pose, or the Avatar's stored skeleton rest pose."
+              },
+              "timeline_frame_60": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Absolute Timeline-global frame at 60 FPS. Use animation_analyze to find the selected Clip's start frame, then add the clip-local frame offset."
               }
             },
             "required": [
@@ -966,86 +2284,11 @@
               {
                 "required": [
                   "character",
-                  "timeline_time_seconds"
+                  "timeline_frame_60"
                 ],
                 "not": {
-                  "anyOf": [
-                    {
-                      "required": [
-                        "clip"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "clip_time_seconds"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "scene_time_seconds"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "mode"
-                      ]
-                    }
-                  ]
-                }
-              },
-              {
-                "required": [
-                  "character",
-                  "scene_time_seconds"
-                ],
-                "not": {
-                  "anyOf": [
-                    {
-                      "required": [
-                        "timeline_time_seconds"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "clip"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "clip_time_seconds"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "mode"
-                      ]
-                    }
-                  ]
-                }
-              },
-              {
-                "required": [
-                  "character",
-                  "clip",
-                  "clip_time_seconds"
-                ],
-                "not": {
-                  "anyOf": [
-                    {
-                      "required": [
-                        "timeline_time_seconds"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "scene_time_seconds"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "mode"
-                      ]
-                    }
+                  "required": [
+                    "mode"
                   ]
                 }
               },
@@ -1062,27 +2305,8 @@
                   }
                 },
                 "not": {
-                  "anyOf": [
-                    {
-                      "required": [
-                        "timeline_time_seconds"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "scene_time_seconds"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "clip"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "clip_time_seconds"
-                      ]
-                    }
+                  "required": [
+                    "timeline_frame_60"
                   ]
                 }
               },
@@ -1099,27 +2323,8 @@
                   }
                 },
                 "not": {
-                  "anyOf": [
-                    {
-                      "required": [
-                        "timeline_time_seconds"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "scene_time_seconds"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "clip"
-                      ]
-                    },
-                    {
-                      "required": [
-                        "clip_time_seconds"
-                      ]
-                    }
+                  "required": [
+                    "timeline_frame_60"
                   ]
                 }
               }
@@ -1135,40 +2340,146 @@
         ],
         "additionalProperties": false
       },
+      "outputSchema": {
+        "type": "object",
+        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": true
+          },
+          "pose": {
+            "type": "object",
+            "properties": {
+              "track": {
+                "type": "string"
+              },
+              "index": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": true
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "character": {
+                "type": "string"
+              },
+              "character_path": {
+                "type": "object"
+              },
+              "pose": {
+                "type": "object"
+              },
+              "clip": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "frame": {
+                "oneOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "timeline_frame_60": {
+                "type": "integer"
+              },
+              "mode": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "character_root": {
+            "type": "object",
+            "description": "The bound scene character GameObject root Transform in Unity world space. This is distinct from data.root, which is the sampled Pose root channel (Hips).",
+            "properties": {
+              "position": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                }
+              },
+              "rotation": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 4,
+                "maxItems": 4,
+                "description": "World-space quaternion [x,y,z,w]."
+              },
+              "space": {
+                "type": "string",
+                "enum": [
+                  "world"
+                ]
+              }
+            },
+            "required": [
+              "position",
+              "rotation",
+              "space"
+            ],
+            "additionalProperties": false
+          },
+          "data": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": true
+      },
       "examples": [
         {
-          "description": "Capture a pose at an absolute Timeline-global time in seconds.",
+          "description": "Capture a pose at an absolute Timeline-global frame. Analyze the Clip first, then add its local frame offset to start_timeline_frame_60.",
           "arguments": {
             "source": {
               "character": "<character>",
-              "timeline_time_seconds": 1.5
+              "timeline_frame_60": 90
             },
             "full_data": true
           }
         },
         {
-          "description": "Capture the current scene Timeline pose when no source Clip exists.",
-          "arguments": {
-            "source": {
-              "character": "<character>",
-              "scene_time_seconds": 1.5
-            },
-            "full_data": true
-          }
-        },
-        {
-          "description": "Capture a pose at a time relative to a target Clip's Timeline range.",
-          "arguments": {
-            "source": {
-              "character": "<character>",
-              "clip": "<clip>",
-              "clip_time_seconds": 0.5
-            },
-            "full_data": true
-          }
-        },
-        {
-          "description": "Capture the original scene Animator's currently evaluated pose, independent of the Timeline Ghost.",
+          "description": "Capture the original scene Animator's currently evaluated pose, independent of Timeline preview time.",
           "arguments": {
             "source": {
               "character": "<character>",
@@ -1190,8 +2501,343 @@
       ]
     },
     {
+      "name": "pose_test",
+      "description": "Measure actual Humanoid joint world positions after evaluating any External Pose, including a pose sampled from a generated effect-only result. Optionally compare selected joints with world-space target positions; this is an explicit pose measurement, separate from generation-time non-blocking warnings.",
+      "documentation": {
+        "when_to_use": "Measure the actual world-space positions of Humanoid joints in an External Pose, optionally checking them against expected contact targets.",
+        "behavior": [
+          "Call pose_get for the desired scene or Timeline frame first, then pass its returned pose reference.",
+          "Use targets when a contact or reach criterion needs a numerical pass/fail check; target positions and tolerances are in meters in world space."
+        ],
+        "result_notes": [
+          "Returns measured joint world positions, optional target distances and tolerance results, and an overall status.",
+          "This samples the evaluated Pose rig; it does not judge whether the pose looks natural or whether a generated Clip plays smoothly."
+        ],
+        "scene_effects": [
+          "Read-only with respect to the scene, Timeline, Pose slot, and animation assets; evaluation uses a transient preview rig."
+        ],
+        "limits": [
+          "pose_test explicitly measures the actual joints in any sampled Pose, including after effect-only generation. Generation-time pose/effect safety preflight is separate and runs only when the same constraint explicitly includes both pose and effect.",
+          "Requires a valid Humanoid character and a Pose reference from the current context."
+        ],
+        "related_commands": [
+          "pose_get",
+          "transform_capture",
+          "kimodo_generate_animation"
+        ]
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pose": {
+            "type": "object",
+            "description": "External Pose slot in the current scene context.",
+            "additionalProperties": false,
+            "properties": {
+              "track": {
+                "type": "string"
+              },
+              "index": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "track",
+              "index"
+            ]
+          },
+          "joints": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Hips",
+                "Head",
+                "LeftHand",
+                "RightHand",
+                "LeftFoot",
+                "RightFoot",
+                "LeftUpperArm",
+                "RightUpperArm",
+                "LeftLowerArm",
+                "RightLowerArm",
+                "LeftUpperLeg",
+                "RightUpperLeg",
+                "LeftLowerLeg",
+                "RightLowerLeg"
+              ]
+            },
+            "description": "Humanoid joints to measure. Defaults to hips, head, hands, and feet; joints named in targets are included automatically."
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "joint": {
+                  "type": "string",
+                  "enum": [
+                    "Hips",
+                    "Head",
+                    "LeftHand",
+                    "RightHand",
+                    "LeftFoot",
+                    "RightFoot",
+                    "LeftUpperArm",
+                    "RightUpperArm",
+                    "LeftLowerArm",
+                    "RightLowerArm",
+                    "LeftUpperLeg",
+                    "RightUpperLeg",
+                    "LeftLowerLeg",
+                    "RightLowerLeg"
+                  ]
+                },
+                "position": {
+                  "type": "array",
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "tolerance_m": {
+                  "type": "number",
+                  "minimum": 0,
+                  "default": 0.05
+                }
+              },
+              "required": [
+                "joint",
+                "position"
+              ]
+            },
+            "description": "Optional expected world-space joint positions and per-target tolerances in meters."
+          }
+        },
+        "required": [
+          "pose"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": true
+          },
+          "pose": {
+            "type": "object",
+            "properties": {
+              "track": {
+                "type": "string"
+              },
+              "index": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": true
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "character": {
+                "type": "string"
+              },
+              "character_path": {
+                "type": "object"
+              },
+              "pose": {
+                "type": "object"
+              },
+              "clip": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "frame": {
+                "oneOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "timeline_frame_60": {
+                "type": "integer"
+              },
+              "mode": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "overall": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "not_tested"
+            ]
+          },
+          "joints": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "joint": {
+                  "type": "string"
+                },
+                "world_position": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "target_position": {
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "distance_m": {
+                  "oneOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "tolerance_m": {
+                  "oneOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "passed",
+                    "failed",
+                    "not_tested"
+                  ]
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": true
+      },
+      "examples": [
+        {
+          "description": "Measure the actual world-space hand positions in a sampled Timeline pose.",
+          "arguments": {
+            "pose": {
+              "track": "<pose track returned by pose_get>",
+              "index": 0
+            },
+            "joints": [
+              "RightHand",
+              "LeftHand"
+            ]
+          }
+        },
+        {
+          "description": "Check whether the sampled right hand reaches a world-space contact point within 5 cm.",
+          "arguments": {
+            "pose": {
+              "track": "<pose track returned by pose_get>",
+              "index": 0
+            },
+            "targets": [
+              {
+                "joint": "RightHand",
+                "position": [
+                  1.2,
+                  0.9,
+                  2.4
+                ],
+                "tolerance_m": 0.05
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "pose_set",
       "description": "Modify an External Pose slot. Supply root, muscles, effector, or any combination.",
+      "documentation": {
+        "when_to_use": "Update the root transform, muscle channels, or effector targets of an existing External Pose slot.",
+        "behavior": [
+          "Use only a {track,index} reference returned by pose_get or another Pose editing command.",
+          "Supply at least one of root, muscles, or effector; multiple supplied channels are updated together."
+        ],
+        "result_notes": [
+          "Returns the Pose reference and the updated Pose data."
+        ],
+        "scene_effects": [
+          "Mutates the referenced External Pose slot in the current scene context."
+        ],
+        "limits": [
+          "This edits Pose data; it does not generate an animation Clip."
+        ],
+        "related_commands": [
+          "pose_get",
+          "pose_set_root_transform",
+          "pose_set_muscle"
+        ]
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1215,11 +2861,35 @@
           },
           "root": {
             "type": "object",
-            "description": "Root position and rotation."
+            "description": "Root position [x,y,z] and/or rotation quaternion [x,y,z,w]. A rotation update requires an existing or supplied root position.",
+            "properties": {
+              "position": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                  "type": "number"
+                }
+              },
+              "rotation": {
+                "type": "array",
+                "minItems": 4,
+                "maxItems": 4,
+                "items": {
+                  "type": "number"
+                }
+              }
+            },
+            "additionalProperties": false,
+            "minProperties": 1
           },
           "muscles": {
             "type": "object",
-            "description": "Map of muscle channel names to values."
+            "description": "Non-empty map of canonical Humanoid muscle channel names to finite numeric values.",
+            "additionalProperties": {
+              "type": "number"
+            },
+            "minProperties": 1
           },
           "effector": {
             "type": "object",
@@ -1366,7 +3036,8 @@
                 "description": "Effector target position and/or rotation."
               }
             },
-            "minProperties": 1
+            "minProperties": 1,
+            "description": "World-space targets for one or more hands or feet. Supply position and/or rotation for each target."
           }
         },
         "required": [
@@ -1390,6 +3061,56 @@
           }
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": true
+          },
+          "pose": {
+            "type": "object",
+            "properties": {
+              "track": {
+                "type": "string"
+              },
+              "index": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": true
+          },
+          "data": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": true
       },
       "examples": [
         {
@@ -1418,7 +3139,26 @@
     },
     {
       "name": "pose_set_root_transform",
-      "description": "Modify the root transform of an External Pose slot.",
+      "description": "Compatibility alias for pose_set with a root-only update. Prefer pose_set for new calls.",
+      "documentation": {
+        "when_to_use": "Compatibility alias for a root-only pose_set update.",
+        "behavior": [
+          "Use pose_set for new calls; this command accepts one Pose reference and root transform."
+        ],
+        "result_notes": [
+          "Returns the updated Pose reference and data."
+        ],
+        "scene_effects": [
+          "Mutates the referenced External Pose slot."
+        ],
+        "limits": [
+          "Only the root transform is accepted by this alias."
+        ],
+        "related_commands": [
+          "pose_set",
+          "pose_get"
+        ]
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1451,6 +3191,56 @@
         ],
         "additionalProperties": false
       },
+      "outputSchema": {
+        "type": "object",
+        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": true
+          },
+          "pose": {
+            "type": "object",
+            "properties": {
+              "track": {
+                "type": "string"
+              },
+              "index": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": true
+          },
+          "data": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": true
+      },
       "examples": [
         {
           "description": "Set a returned Pose slot's root position.",
@@ -1472,7 +3262,26 @@
     },
     {
       "name": "pose_set_muscle",
-      "description": "Modify one or more muscles of an External Pose slot.",
+      "description": "Compatibility alias for pose_set with a muscles-only update. Prefer pose_set for new calls.",
+      "documentation": {
+        "when_to_use": "Compatibility alias for a muscles-only pose_set update.",
+        "behavior": [
+          "Use pose_set for new calls; this command accepts one Pose reference and a muscle-value map."
+        ],
+        "result_notes": [
+          "Returns the updated Pose reference and data."
+        ],
+        "scene_effects": [
+          "Mutates the referenced External Pose slot."
+        ],
+        "limits": [
+          "Only muscle channels are accepted by this alias."
+        ],
+        "related_commands": [
+          "pose_set",
+          "pose_get"
+        ]
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1505,6 +3314,56 @@
         ],
         "additionalProperties": false
       },
+      "outputSchema": {
+        "type": "object",
+        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": true
+          },
+          "pose": {
+            "type": "object",
+            "properties": {
+              "track": {
+                "type": "string"
+              },
+              "index": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": true
+          },
+          "data": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": true
+      },
       "examples": [
         {
           "description": "Edit the Spine Front-Back muscle of a returned Pose slot.",
@@ -1522,13 +3381,35 @@
     },
     {
       "name": "kimodo_get_generation",
-      "description": "Get status, progress, remaining seconds, and message for an install or generation request. Generated animation metadata and its project-relative asset path are included only after a generation completes.",
+      "description": "Get status and results for install, generation, or Mocap analysis requests. A completed Mocap analysis returns poses and SMPL-X coordinate metadata at the top level. include_request_json explicitly opts into the submitted generation payload.",
+      "documentation": {
+        "when_to_use": "Read progress, terminal status, and results for an installation or generation request.",
+        "behavior": [
+          "Pass the exact request_id returned by kimodo_install_server or kimodo_generate_animation.",
+          "Poll until a terminal status; a successful command response can still report task status failed or canceled."
+        ],
+        "result_notes": [
+          "Returns lifecycle status, stage, progress, and error details; completed generation includes Clip metadata and available diagnostics.",
+          "Set include_request_json=true only when the exact backend payload is needed."
+        ],
+        "scene_effects": [
+          "Read-only; does not resubmit or alter the task."
+        ],
+        "limits": [
+          "Request records are retained for a bounded number of recent jobs; an unknown or expired id returns an error."
+        ],
+        "related_commands": [
+          "kimodo_install_server",
+          "kimodo_generate_animation",
+          "kimodo_cancel_generation"
+        ]
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
           "request_id": {
             "type": "string",
-            "description": "Request id returned by kimodo_install_server or kimodo_generate_animation."
+            "description": "Request id returned by kimodo_install_server, kimodo_generate_animation, analysis.video, or analysis.picture."
           },
           "include_request_json": {
             "type": "boolean",
@@ -1539,6 +3420,280 @@
           "request_id"
         ],
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": true
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "running",
+              "completed",
+              "failed",
+              "canceled"
+            ]
+          },
+          "stage": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "started_at_utc": {
+            "type": "string"
+          },
+          "estimated_completion_utc": {
+            "type": "string"
+          },
+          "eta_seconds": {
+            "oneOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "progress_current": {
+            "type": "integer"
+          },
+          "progress_total": {
+            "type": "integer"
+          },
+          "progress_rate": {
+            "oneOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "backend_progress": {
+            "type": "string"
+          },
+          "runtime_root": {
+            "type": "string"
+          },
+          "runtime_version": {
+            "type": "string"
+          },
+          "install_mode": {
+            "type": "string"
+          },
+          "server_connected": {
+            "type": "boolean"
+          },
+          "clip": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "character": {
+                "type": "string"
+              },
+              "asset_path": {
+                "type": "string"
+              },
+              "start_timeline_frame_60": {
+                "type": "integer"
+              },
+              "end_timeline_frame_60_exclusive": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": true
+          },
+          "animation_id": {
+            "type": "string"
+          },
+          "seed": {
+            "type": "integer"
+          },
+          "analysis": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          },
+          "analysis_schema_version": {
+            "type": "string"
+          },
+          "source_type": {
+            "type": "string"
+          },
+          "skeleton": {
+            "type": "string"
+          },
+          "person": {
+            "type": "string"
+          },
+          "fps": {
+            "type": "number"
+          },
+          "source_frame_count": {
+            "type": "integer"
+          },
+          "frame_count": {
+            "type": "integer"
+          },
+          "joint_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pose_parameterization": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          },
+          "coordinate_spaces": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          },
+          "betas": {
+            "type": "array"
+          },
+          "rest_joints_m": {
+            "type": "array"
+          },
+          "poses": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "frame": {
+                  "type": "integer"
+                },
+                "source_frame": {
+                  "type": "integer"
+                },
+                "timestamp_seconds": {
+                  "type": "number"
+                },
+                "global_orient_axis_angle": {
+                  "type": "array"
+                },
+                "body_pose_axis_angle": {
+                  "type": "array"
+                },
+                "translation_m": {
+                  "type": "array"
+                },
+                "incam_global_orient_axis_angle": {
+                  "type": "array"
+                },
+                "incam_body_pose_axis_angle": {
+                  "type": "array"
+                },
+                "incam_translation_m": {
+                  "type": "array"
+                },
+                "static_confidence": {
+                  "type": "array"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "frame_indices": {
+                  "type": "array"
+                },
+                "smooth_root_2d": {
+                  "type": "array"
+                },
+                "global_root_heading": {
+                  "type": "array"
+                },
+                "local_joints_rot": {
+                  "type": "array"
+                },
+                "root_positions": {
+                  "type": "array"
+                },
+                "target_positions": {
+                  "type": "array"
+                },
+                "joint_names": {
+                  "type": "array"
+                },
+                "dense_path": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "constraint_loss": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          },
+          "inout_sampling": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          },
+          "target_alive": {
+            "type": "boolean"
+          },
+          "backend_request_json": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": true
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": true
       },
       "examples": [
         {
@@ -1551,7 +3706,27 @@
     },
     {
       "name": "kimodo_cancel_generation",
-      "description": "Cancel an active animation generation request. Installation requests cannot be canceled.",
+      "description": "Request cancellation of an active animation generation and return its compact lifecycle result. Installation requests cannot be canceled; use kimodo_get_generation for detailed progress and diagnostics.",
+      "documentation": {
+        "when_to_use": "Request cancellation of an active animation generation.",
+        "behavior": [
+          "Pass the exact generation request_id, then poll with kimodo_get_generation to confirm its terminal state."
+        ],
+        "result_notes": [
+          "Returns the compact cancellation/lifecycle result and any completed Clip metadata."
+        ],
+        "scene_effects": [
+          "May stop generation work that has not already completed; it does not undo a completed Clip."
+        ],
+        "limits": [
+          "Installation tasks cannot be canceled with this command.",
+          "A cancellation request is not proof of a canceled terminal state; check the returned status."
+        ],
+        "related_commands": [
+          "kimodo_get_generation",
+          "kimodo_generate_animation"
+        ]
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1569,6 +3744,81 @@
         ],
         "additionalProperties": false
       },
+      "outputSchema": {
+        "type": "object",
+        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": true
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "completed",
+              "failed",
+              "canceled"
+            ]
+          },
+          "stage": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "canceled": {
+            "type": "boolean"
+          },
+          "clip": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "character": {
+                "type": "string"
+              },
+              "asset_path": {
+                "type": "string"
+              },
+              "start_timeline_frame_60": {
+                "type": "integer"
+              },
+              "end_timeline_frame_60_exclusive": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": true
+      },
       "examples": [
         {
           "description": "Cancel using the exact active generation request_id.",
@@ -1581,16 +3831,79 @@
     },
     {
       "name": "session.clear",
-      "description": "Clear the active scene context by destroying transient context GameObjects. Persisted Timeline and animation assets are retained; the automatic session is recreated lazily by the next command.",
+      "description": "Clear the active scene context by destroying its transient context GameObjects. Persisted Timeline and animation assets are retained, and one fresh context is recreated lazily by the next command.",
+      "documentation": {
+        "when_to_use": "Clear transient Kimodo context objects from the active scene Session.",
+        "behavior": [
+          "Use when the current transient Session context must be reset."
+        ],
+        "result_notes": [
+          "Returns whether the context was cleared, how many context objects were destroyed, and lazy recreation information."
+        ],
+        "scene_effects": [
+          "Destroys transient context GameObjects; persisted Timeline and animation assets are retained."
+        ],
+        "limits": [
+          "References to transient Session objects may no longer resolve after clearing; the next command recreates context lazily."
+        ],
+        "related_commands": [
+          "scene.context"
+        ]
+      },
       "inputSchema": {
         "type": "object",
         "properties": {},
         "required": [],
         "additionalProperties": false
       },
+      "outputSchema": {
+        "type": "object",
+        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": true
+          },
+          "cleared": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "destroyed_context_count": {
+            "type": "integer"
+          },
+          "recreated_on_next_command": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": true
+      },
       "examples": [
         {
-          "description": "Destroy the current temporary workspace while retaining persisted Timeline and animation assets.",
+          "description": "Clear the current runtime session while retaining persisted assets.",
           "arguments": {}
         }
       ]

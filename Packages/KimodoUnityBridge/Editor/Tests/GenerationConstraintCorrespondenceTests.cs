@@ -28,6 +28,59 @@ namespace KimodoUnityBridge.Command.Tests
         private const float Root2DGenerationToleranceMeters = 0.1f;
         private const float EffectorRootGenerationToleranceMeters = 0.1f;
 
+        [Test]
+        public void HipsComparison_UsesTimelineEvaluationOnSourceCharacterHumanoidRig()
+        {
+            using (var fixture = new GenerationFixture("HipsComparison"))
+            {
+                const string model = KimodoMotionModelProfiles.DefaultModelName;
+                KimodoMarkerSampleResult constraint = fixture.Capture("root2d", 0.5d);
+                KimodoEditorGenerateRequest request = fixture.BuildTimelineComparisonRequest();
+                Assert.That(KimodoConstraintPoseRigFactory.TryCreatePoseRig(
+                    model,
+                    fixture.Skeleton.animator,
+                    fixture.Skeleton.avatar,
+                    out KimodoConstraintPoseRigFactory.PoseRigInstance rig,
+                    out string error), Is.True, error);
+
+                AnimationClip clip = null;
+                try
+                {
+                    Assert.That(KimodoConstraintPoseRigFactory.TryApplyPose(
+                        rig, constraint, model, out error), Is.True, error);
+                    BoneSample pose = KimodoRetargetSamplingUtility.CaptureBoneSample(rig.TargetCache);
+                    var poses = new BoneSample[16];
+                    for (int i = 0; i < poses.Length; i++) poses[i] = pose;
+                    Assert.That(KimodoRetargetSamplingUtility.TryCreateTransientBoneClip(
+                        poses, 30f, out clip, out error), Is.True, error);
+                    fixture.Playable.clip = clip;
+
+                    JObject comparison = KimodoGenerationConstraintHipsComparer.Compare(
+                        clip,
+                        request.TimelineClipSnapshot,
+                        model,
+                        new[] { constraint },
+                        0,
+                        30f,
+                        request.TimelineContextSnapshot);
+
+                    Assert.That(comparison.Value<string>("status"), Is.EqualTo("ok"));
+                    Assert.That(comparison.Value<string>("comparison_basis"),
+                        Is.EqualTo("timeline_evaluated_source_character_humanoid_rig"));
+                    JObject frame = comparison["frames"].Values<JObject>().Single();
+                    Assert.That(frame["constraint_hips_world"].Values<float>().Count(), Is.EqualTo(3));
+                    Assert.That(frame["generated_hips_world"].Values<float>().Count(), Is.EqualTo(3));
+                    Assert.That(frame["delta_xyz_m"].Values<float>().ToArray(), Is.EqualTo(new[] { 0f, 0f, 0f }));
+                    Assert.That(frame.Value<float>("distance_m"), Is.EqualTo(0f).Within(0.0001f));
+                }
+                finally
+                {
+                    KimodoConstraintPoseRigFactory.DisposePoseRig(rig);
+                    if (clip != null) Object.DestroyImmediate(clip);
+                }
+            }
+        }
+
         [Test, Timeout(10 * 60 * 1000)]
         public async Task RealKModelGeneration_RetargetedClipMatchesRoot2DKeyframe()
         {
@@ -75,7 +128,13 @@ namespace KimodoUnityBridge.Command.Tests
                     result = await KimodoEditorGeneratePipeline.ExecuteAsync(request);
                     Assert.That(result, Is.Not.Null);
                     Assert.That(result.GeneratedClip, Is.Not.Null);
+                    KimodoPlayableClipGenerationHostService.FinalizeGeneration(
+                        fixture.Playable,
+                        request,
+                        result);
                     Assert.That(result.ConstraintLoss, Is.Not.Null);
+                    Assert.That(result.ConstraintLoss.Value<string>("comparison_basis"),
+                        Is.EqualTo("timeline_evaluated_source_character_humanoid_rig"));
 
                     JObject exportedRoot2D = JArray.Parse(request.Constraints.json)
                         .OfType<JObject>()
@@ -89,6 +148,14 @@ namespace KimodoUnityBridge.Command.Tests
                             item.Value<int>("frame") == outputConstraintFrame),
                         Is.True,
                         "The returned constraint-loss details should include the generated frame that corresponds to the Root2D constraint.");
+                    Assert.That(result.ConstraintLoss["frames"].Values<JObject>().Any(item =>
+                            item.Value<int>("frame") == outputConstraintFrame &&
+                            item["constraint_hips_world"]?.Values<float>().Count() == 3 &&
+                            item["generated_hips_world"]?.Values<float>().Count() == 3 &&
+                            item["delta_xyz_m"]?.Values<float>().Count() == 3 &&
+                            item.Value<float?> ("distance_m").HasValue),
+                        Is.True,
+                        "The Hips comparison should report both world positions, XYZ delta, and distance at the generated constraint frame.");
                     double constrainedTime = constrainedFrame / KimodoMotionModelProfiles.DefaultFrameRate;
                     Assert.That(
                         KimodoRetargetSamplingUtility.SampleBoneClipToBoneSample(
@@ -247,6 +314,10 @@ namespace KimodoUnityBridge.Command.Tests
                     result = await KimodoEditorGeneratePipeline.ExecuteAsync(request);
                     Assert.That(result, Is.Not.Null);
                     Assert.That(result.GeneratedClip, Is.Not.Null);
+                    KimodoPlayableClipGenerationHostService.FinalizeGeneration(
+                        fixture.Playable,
+                        request,
+                        result);
 
                     JArray constraints = JArray.Parse(request.Constraints.json);
                     JObject exported = constraints
@@ -523,34 +594,44 @@ namespace KimodoUnityBridge.Command.Tests
             private readonly TimelineClip timelineClip;
             private readonly KimodoPlayableClip playable;
             private readonly RetargetSkeleton skeleton;
+            private bool disposed;
 
             internal GenerationFixture(string name)
             {
-                timeline = ScriptableObject.CreateInstance<TimelineAsset>();
-                directorObject = new GameObject(name + "Director");
-                director = directorObject.AddComponent<PlayableDirector>();
-                director.playableAsset = timeline;
-                track = timeline.CreateTrack<AnimationTrack>(null, name + "Track");
-                timelineClip = track.CreateClip<KimodoPlayableClip>();
-                timelineClip.duration = 2.0;
+                try
+                {
+                    timeline = ScriptableObject.CreateInstance<TimelineAsset>();
+                    directorObject = EditorUtility.CreateGameObjectWithHideFlags(
+                        name + "Director", HideFlags.HideAndDontSave);
+                    director = directorObject.AddComponent<PlayableDirector>();
+                    director.playableAsset = timeline;
+                    track = timeline.CreateTrack<AnimationTrack>(null, name + "Track");
+                    timelineClip = track.CreateClip<KimodoPlayableClip>();
+                    timelineClip.duration = 2.0;
 
-                Assert.That(KimodoRuntimeAvatarSkeletonBuilder.TryLoadAvatarByModelName(
-                    KimodoMotionModelProfiles.DefaultModelName,
-                    out Avatar avatar,
-                    out string error), Is.True, error);
-                Assert.That(KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(
-                    avatar,
-                    name + "Skeleton",
-                    out skeleton,
-                    out error), Is.True, error);
-                director.SetGenericBinding(track, skeleton.animator);
-                playable = (KimodoPlayableClip)timelineClip.asset;
-                playable.bridgeModelName = KimodoMotionModelProfiles.DefaultModelName;
-                playable.inOutConstraintMode = KimodoInOutConstraintMode.None;
-                playable.autoBeginAnchor = false;
-                playable.generateLoop = false;
-                director.RebuildGraph();
-                director.Evaluate();
+                    Assert.That(KimodoRuntimeAvatarSkeletonBuilder.TryLoadAvatarByModelName(
+                        KimodoMotionModelProfiles.DefaultModelName,
+                        out Avatar avatar,
+                        out string error), Is.True, error);
+                    Assert.That(KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(
+                        avatar,
+                        name + "Skeleton",
+                        out skeleton,
+                        out error), Is.True, error);
+                    director.SetGenericBinding(track, skeleton.animator);
+                    playable = (KimodoPlayableClip)timelineClip.asset;
+                    playable.bridgeModelName = KimodoMotionModelProfiles.DefaultModelName;
+                    playable.inOutConstraintMode = KimodoInOutConstraintMode.None;
+                    playable.autoBeginAnchor = false;
+                    playable.generateLoop = false;
+                    director.RebuildGraph();
+                    director.Evaluate();
+                }
+                catch
+                {
+                    Dispose();
+                    throw;
+                }
             }
 
             internal KimodoMarkerSampleResult Capture(string mode, double sampleTime)
@@ -592,10 +673,32 @@ namespace KimodoUnityBridge.Command.Tests
                     timelineClipOverride: timelineClip);
             }
 
+            internal KimodoEditorGenerateRequest BuildTimelineComparisonRequest()
+            {
+                var context = new KimodoTimelineInOutConstraintContext
+                {
+                    SourceClip = timelineClip,
+                    Track = track,
+                    Director = director,
+                    Animator = skeleton.animator,
+                    ModelName = KimodoMotionModelProfiles.DefaultModelName
+                };
+                return new KimodoEditorGenerateRequest
+                {
+                    TimelineClipSnapshot = timelineClip,
+                    TimelineDirectorSnapshot = director,
+                    TimelineContextSnapshot = context
+                };
+            }
+
             internal RetargetSkeleton Skeleton => skeleton;
+            internal KimodoPlayableClip Playable => playable;
 
             public void Dispose()
             {
+                if (disposed) return;
+                disposed = true;
+
                 skeleton?.Dispose();
                 Object.DestroyImmediate(directorObject);
                 Object.DestroyImmediate(timeline);

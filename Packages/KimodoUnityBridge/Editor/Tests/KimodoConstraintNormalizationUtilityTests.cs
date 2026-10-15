@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using NUnit.Framework;
 using TimelineInject;
 using UnityEngine;
+using UnityEngine.Playables;
 using UnityEngine.Timeline;
 
 namespace KimodoBridge.Editor.Tests
@@ -76,7 +77,7 @@ namespace KimodoBridge.Editor.Tests
         [Test]
         public void DeferredAutoBegin_RealConstraintBeatsSyntheticConstraint()
         {
-            var synthetic = new KimodoMarkerSampleResult { constraintMode = "root2d", sampleTime = 0.0 };
+            var synthetic = new KimodoMarkerSampleResult { constraintMode = "fullbody", sampleTime = 0.0 };
             var real = new KimodoMarkerSampleResult { constraintMode = "fullbody", sampleTime = 0.5 };
 
             Assert.That(
@@ -96,8 +97,7 @@ namespace KimodoBridge.Editor.Tests
         [Test]
         public void ConstraintAtExactlyOneSecond_GetsFrameZeroAutoBeginConstraint()
         {
-            AnimationTrack track = CreateAutoBeginTrack(new Vector3(4f, 0f, 5f), Quaternion.identity);
-            try
+            using (AutoBeginSceneFixture fixture = CreateAutoBeginSceneFixture())
             {
                 var sample = new KimodoMarkerSampleResult
                 {
@@ -107,38 +107,52 @@ namespace KimodoBridge.Editor.Tests
 
                 Assert.That(
                     KimodoInOutConstraintComposer.TryBuild(
-                        CreateAutoBeginRequest(track, sample),
+                        CreateAutoBeginRequest(fixture, sample),
                         out KimodoInOutConstraintResult result,
                         out _,
                         out _),
                     Is.True);
 
                 Assert.That(result.CombinedSamples, Has.Count.EqualTo(2));
-                Assert.That(result.CombinedSamples[0].constraintMode, Is.EqualTo("root2d"));
+                Assert.That(result.CombinedSamples[0].constraintMode, Is.EqualTo("fullbody"));
                 Assert.That(result.CombinedSamples[0].sampleTime, Is.EqualTo(0.0).Within(1e-6));
+                Assert.That(result.CombinedSamples[0].sampleData.IsValid, Is.True);
+                Transform sceneHips = fixture.Skeleton.animator.GetBoneTransform(HumanBodyBones.Hips);
+                Assert.That(sceneHips, Is.Not.Null);
+                Assert.That(
+                    Vector3.Distance(result.CombinedSamples[0].rootOverride.t, sceneHips.position),
+                    Is.LessThan(0.01f),
+                    "AutoBegin must capture the bound Animator pose even when the Animator is nested under a scene root.");
+                Assert.That(result.ConstraintsJson, Does.Contain("\"type\": \"fullbody\""));
                 Assert.That(result.HasSyntheticAutoBeginConstraint, Is.True);
-            }
-            finally
-            {
-                Object.DestroyImmediate(track);
             }
         }
 
-        [Test]
-        public void RealAnchorInsideFirstSecond_PreventsAutoBeginConstraint()
+        [TestCase("fullbody")]
+        [TestCase("root2d")]
+        public void RealAnchorInsideFirstSecond_PreventsAutoBeginConstraint(string constraintType)
         {
-            AnimationTrack track = CreateAutoBeginTrack(Vector3.zero, Quaternion.identity);
-            try
+            using (AutoBeginSceneFixture fixture = CreateAutoBeginSceneFixture())
             {
+                var realPose = new MuscleSample();
+                realPose.SetRoot(Vector3.zero, Quaternion.identity);
                 var realAnchor = new KimodoMarkerSampleResult
                 {
-                    constraintMode = "fullbody",
+                    sampleData = realPose,
+                    rootOverride = new KimodoUnityBridge.KimodoRigidTransform
+                    {
+                        t = Vector3.zero,
+                        q = Quaternion.identity
+                    },
+                    enableMask = KimodoConstraintMask.ForType(constraintType),
+                    constraintMode = constraintType,
+                    sampleValid = true,
                     sampleTime = 0.75
                 };
 
                 Assert.That(
                     KimodoInOutConstraintComposer.TryBuild(
-                        CreateAutoBeginRequest(track, realAnchor),
+                        CreateAutoBeginRequest(fixture, realAnchor),
                         out KimodoInOutConstraintResult result,
                         out _,
                         out _),
@@ -146,10 +160,6 @@ namespace KimodoBridge.Editor.Tests
 
                 Assert.That(result.CombinedSamples, Has.Count.EqualTo(1));
                 Assert.That(result.HasSyntheticAutoBeginConstraint, Is.False);
-            }
-            finally
-            {
-                Object.DestroyImmediate(track);
             }
         }
 
@@ -170,12 +180,12 @@ namespace KimodoBridge.Editor.Tests
         }
 
         [Test]
-        public void AutoBegin_UsesEffectiveTrackOrSceneOffset()
+        public void TrackOffset_UsesEffectiveTrackOrSceneOffset()
         {
             AnimationTrack track = CreateAutoBeginTrack(
                 new Vector3(4f, 0f, 5f),
                 Quaternion.Euler(0f, 35f, 0f));
-            var animatorObject = new GameObject("AutoBeginOffsetAnimator");
+            var animatorObject = new GameObject("TrackOffsetAnimator");
             Animator animator = animatorObject.AddComponent<Animator>();
             animator.transform.position = new Vector3(9f, 0f, -3f);
             animator.transform.rotation = Quaternion.Euler(0f, -20f, 0f);
@@ -216,18 +226,93 @@ namespace KimodoBridge.Editor.Tests
         }
 
         private static KimodoInOutConstraintRequest CreateAutoBeginRequest(
-            AnimationTrack track,
+            AutoBeginSceneFixture fixture,
             params KimodoMarkerSampleResult[] samples)
         {
             return new KimodoInOutConstraintRequest
             {
                 Mode = KimodoInOutConstraintMode.None,
                 AutoBeginAnchor = true,
-                TimelineContext = new KimodoTimelineInOutConstraintContext { Track = track },
+                TimelineContext = new KimodoTimelineInOutConstraintContext
+                {
+                    Director = fixture.Director,
+                    Track = fixture.Track,
+                    Animator = fixture.Skeleton.animator,
+                    ModelName = KimodoMotionModelProfiles.DefaultModelName
+                },
                 ManualSamples = samples != null
                     ? new List<KimodoMarkerSampleResult>(samples)
                     : new List<KimodoMarkerSampleResult>()
             };
+        }
+
+        private static AutoBeginSceneFixture CreateAutoBeginSceneFixture()
+        {
+            var fixture = new AutoBeginSceneFixture
+            {
+                Timeline = ScriptableObject.CreateInstance<TimelineAsset>(),
+                DirectorObject = new GameObject("AutoBeginScenePoseDirector")
+            };
+            fixture.Director = fixture.DirectorObject.AddComponent<PlayableDirector>();
+            fixture.Director.playableAsset = fixture.Timeline;
+            fixture.Track = fixture.Timeline.CreateTrack<AnimationTrack>();
+            fixture.Track.trackOffset = TrackOffset.ApplyTransformOffsets;
+            fixture.Track.position = new Vector3(4f, 0f, 5f);
+            fixture.Track.rotation = Quaternion.Euler(0f, 35f, 0f);
+
+            fixture.SceneRoot = new GameObject("AutoBeginSceneCharacterRoot");
+            fixture.SceneRoot.transform.SetPositionAndRotation(
+                new Vector3(9f, 0f, -3f),
+                Quaternion.Euler(0f, -20f, 0f));
+
+            Assert.That(
+                KimodoRuntimeAvatarSkeletonBuilder.TryLoadAvatarByModelName(
+                    KimodoMotionModelProfiles.DefaultModelName,
+                    out Avatar avatar,
+                    out string error),
+                Is.True,
+                error);
+            Assert.That(
+                KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(
+                    avatar,
+                    "AutoBeginScenePoseCharacter",
+                    out fixture.Skeleton,
+                    out error),
+                Is.True,
+                error);
+            fixture.Skeleton.root.transform.SetParent(fixture.SceneRoot.transform, false);
+            fixture.Skeleton.root.transform.localPosition = new Vector3(2f, 0f, -1f);
+            fixture.Skeleton.root.transform.localRotation = Quaternion.Euler(0f, 15f, 0f);
+            fixture.Director.SetGenericBinding(fixture.Track, fixture.Skeleton.animator);
+            return fixture;
+        }
+
+        private sealed class AutoBeginSceneFixture : System.IDisposable
+        {
+            public TimelineAsset Timeline;
+            public GameObject DirectorObject;
+            public GameObject SceneRoot;
+            public PlayableDirector Director;
+            public AnimationTrack Track;
+            public RetargetSkeleton Skeleton;
+
+            public void Dispose()
+            {
+                Director?.Stop();
+                Skeleton?.Dispose();
+                if (SceneRoot != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(SceneRoot);
+                }
+                if (DirectorObject != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(DirectorObject);
+                }
+                if (Timeline != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(Timeline);
+                }
+            }
         }
     }
 }

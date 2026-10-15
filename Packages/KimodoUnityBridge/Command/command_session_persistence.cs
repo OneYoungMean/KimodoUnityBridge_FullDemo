@@ -71,6 +71,7 @@ namespace KimodoUnityBridge.Command
     internal sealed class KimodoCommandGenerationMetadata
     {
         public string requestId;
+        public string animationId;
         public string character;
         public string animation;
         public string status;
@@ -410,9 +411,59 @@ namespace KimodoUnityBridge.Command
             return records;
         }
 
+        private static JArray GetAnalysisHistoryIndex(TimelineSessionRecord session)
+        {
+            string folder = Path.Combine(GetSessionGeneratedFolder(session), "Analyses");
+            if (!Directory.Exists(folder)) return new JArray();
+            var records = new JArray();
+            foreach (string path in Directory.GetFiles(folder, "analysis_*.json").OrderBy(item => item, StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    JObject record = JObject.Parse(File.ReadAllText(path));
+                    JArray picturePaths = new JArray();
+                    string imagePath = record["pictures"]?.Value<string>("image_path");
+                    if (!string.IsNullOrWhiteSpace(imagePath)) picturePaths.Add(imagePath);
+                    foreach (string tilePath in (record["pictures"]?["tile_paths"] as JArray ?? new JArray()).Values<string>())
+                    {
+                        if (!string.IsNullOrWhiteSpace(tilePath) && !picturePaths.Values<string>().Contains(tilePath, StringComparer.OrdinalIgnoreCase))
+                            picturePaths.Add(tilePath);
+                    }
+                    foreach (JObject picture in (record["pictures"]?["images"] as JArray ?? new JArray()).OfType<JObject>())
+                    {
+                        string tilePath = picture.Value<string>("image_path");
+                        if (!string.IsNullOrWhiteSpace(tilePath) && !picturePaths.Values<string>().Contains(tilePath, StringComparer.OrdinalIgnoreCase))
+                            picturePaths.Add(tilePath);
+                    }
+                    records.Add(new JObject
+                    {
+                        ["analysis_id"] = record.Value<string>("analysis_id") ?? string.Empty,
+                        ["session_id"] = record.Value<string>("session_id") ?? string.Empty,
+                        ["character"] = record.Value<string>("character") ?? string.Empty,
+                        ["animation_id"] = record.Value<string>("animation_id") ?? string.Empty,
+                        ["animation_name"] = record.Value<string>("animation_name") ?? string.Empty,
+                        ["input_signature"] = record.Value<string>("input_signature") ?? string.Empty,
+                        ["created_at_utc"] = record.Value<string>("created_at_utc") ?? string.Empty,
+                        ["analysis_path"] = ToProjectRelativePath(path),
+                        ["picture_paths"] = picturePaths
+                    });
+                }
+                catch (Exception exception)
+                {
+                    records.Add(new JObject
+                    {
+                        ["analysis_path"] = ToProjectRelativePath(path),
+                        ["error"] = exception.Message
+                    });
+                }
+            }
+            return records;
+        }
+
         private static JObject DescribeGeneration(KimodoCommandGenerationMetadata value) => new JObject
         {
             ["request_id"] = value.requestId ?? string.Empty,
+            ["animation_id"] = value.animationId ?? string.Empty,
             ["character"] = value.character ?? string.Empty,
             ["animation"] = value.animation ?? string.Empty,
             ["status"] = value.status ?? string.Empty,
@@ -530,9 +581,7 @@ namespace KimodoUnityBridge.Command
                 foreach (KimodoCommandCharacterMetadata savedCharacter in metadata.characters ?? new List<KimodoCommandCharacterMetadata>())
                 {
                     GameObject sourceRoot = ResolveObject(savedCharacter.characterRef) as GameObject;
-                    GameObject root = sourceRoot != null
-                        ? CloneCharacterToSession(session, sourceRoot, savedCharacter.trackName)
-                        : null;
+                    GameObject root = sourceRoot;
                     Animator animator = root != null ? root.GetComponentInChildren<Animator>(true) : null;
                     AnimationTrack track = timeline.GetRootTracks().OfType<AnimationTrack>()
                         .FirstOrDefault(item => string.Equals(item.name, savedCharacter.trackName, StringComparison.Ordinal));
@@ -545,7 +594,7 @@ namespace KimodoUnityBridge.Command
                     }
                     KimodoLocalAvatarUtility.AvatarResolveResult avatarResult = KimodoLocalAvatarUtility.ResolveAvatarFromGameObject(root);
                     var character = new TimelineCharacterRecord(savedCharacter.characterRef, root, animator, avatarResult.Avatar, track, poseTrack, avatarResult.Error);
-                    BindGhostCharacter(session, root, sourceRoot, animator, track);
+                    BindTimelineCharacter(session, root, sourceRoot, animator, track);
                     session.Characters.Add(character);
                 }
                 foreach (KimodoCommandAnimationMetadata saved in metadata.animations ?? new List<KimodoCommandAnimationMetadata>())

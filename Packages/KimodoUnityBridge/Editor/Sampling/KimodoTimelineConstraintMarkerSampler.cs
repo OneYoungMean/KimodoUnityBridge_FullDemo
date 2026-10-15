@@ -11,10 +11,8 @@ namespace KimodoBridge.Editor
 {
     internal static class KimodoTimelineTrackOffsetUtility
     {
-        // Capture the track's effective world-space origin without evaluating
-        // Timeline. TimelineInject resolves ApplySceneOffsets from the
-        // AnimationTrack.sceneOffset fields, so Preview cannot overwrite the
-        // source pose while an Auto Begin anchor is being built.
+        // Keep the world-space track offset independent of Timeline preview;
+        // projection later uses this snapshot for world-to-track conversion.
         internal static void CaptureWorldOffset(
             TrackAsset track,
             Animator animator,
@@ -507,6 +505,57 @@ namespace KimodoBridge.Editor
                 out samples,
                 out error,
                 writebackClip);
+        }
+
+        internal bool TryCaptureHipsWorldPositions(
+            IReadOnlyList<double> timelineTimes,
+            out Vector3[] positions,
+            out string error)
+        {
+            positions = null;
+            error = string.Empty;
+            if (timelineTimes == null || timelineTimes.Count == 0)
+            {
+                error = "Timeline sample times are empty.";
+                return false;
+            }
+            if (disposed || context?.Animator == null)
+            {
+                error = "Timeline pose sampler or source Animator is unavailable.";
+                return false;
+            }
+
+            Transform hips = context.Animator.GetBoneTransform(HumanBodyBones.Hips);
+            if (hips == null)
+            {
+                error = "The source Character Humanoid rig has no Hips bone.";
+                return false;
+            }
+
+            try
+            {
+                positions = new Vector3[timelineTimes.Count];
+                for (int i = 0; i < timelineTimes.Count; i++)
+                {
+                    double timelineTime = timelineTimes[i];
+                    if (double.IsNaN(timelineTime) || double.IsInfinity(timelineTime))
+                    {
+                        positions = null;
+                        error = $"Timeline sample time {i} is invalid.";
+                        return false;
+                    }
+
+                    evaluationScope.EvaluateAt(Math.Max(0.0, timelineTime));
+                    positions[i] = hips.position;
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                positions = null;
+                error = ex.Message;
+                return false;
+            }
         }
 
         internal bool TryCaptureTargetBoneSamplesAtFrames(

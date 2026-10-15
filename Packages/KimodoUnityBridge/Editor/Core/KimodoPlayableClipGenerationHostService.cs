@@ -278,6 +278,14 @@ namespace KimodoBridge.Editor
                 }
 
                 ResetTimelineTimeScaleAfterGeneration(request);
+                result.ConstraintLoss = KimodoGenerationConstraintHipsComparer.Compare(
+                    result.GeneratedClip,
+                    timelineClip,
+                    request.ModelName,
+                    request.ConstraintSamples,
+                    request.RuntimeTrimStartFrame,
+                    request.TargetFrameRate,
+                    request.TimelineContextSnapshot);
             }
             finally
             {

@@ -1,166 +1,114 @@
 ---
-name: kimodo-common
-description: Shared execution contract for all Kimodo capability tools.
+name: kimodo-animation-loop-common
+description: Shared execution, evidence, recognition, comparison, revision, and handoff contract for reusable Kimodo animation tasks.
 ---
 
-# Common tool contract / 公共工具契约
+# Common execution contract
 
-所有工具都遵守同一套输入、证据、状态和报告规则。工具只实现自身能力，不重复定义安装流程。
+This file is the active shared contract for the root Skill. It replaces the former four phase manuals with one loop and keeps the useful evidence rules from the historical recognition and comparison procedures. It coordinates Kimodo commands and Unity/project APIs as equal implementation routes for one animation task.
 
-## Command execution / 命令执行
+## Command entry and state
 
-能力文档中的命令写法是协议层伪代码。实际 CLI 或 `exec_editor_script` 调用必须经过 `KimodoUnityBridge.Command.command_dispatcher`：
+The public Editor entry is:
 
 ```csharp
-using Newtonsoft.Json.Linq;
-using KimodoUnityBridge.Command;
-
-string schema = command_dispatcher.GetCommandDefinitionsJson();
-string help = command_dispatcher.Invoke(
-    "kimodo_help",
-    new JObject { ["command"] = "kimodo_generate_animation" }.ToString());
-string response = command_dispatcher.Invoke(
-    "kimodo_generate_animation",
-    argumentsJson);
+string schema = KimodoUnityBridge.Command.command_dispatcher.GetCommandDefinitionsJson();
+string result = KimodoUnityBridge.Command.command_dispatcher.Invoke(commandName, argumentsJson);
 ```
 
-命令发现和调用规则：
+Plan the complete visible Unity result before choosing tools. Kimodo commands, Unity Editor APIs, Timeline APIs, AnimationClip/AnimationCurve APIs, runtime APIs, and project-local tools are peer routes in the same execution loop. Read the live schema or `kimodo_help` before choosing a Kimodo command or parameter. Use protocol command names, not internal C# handler names. With Unity CLI, execute the dispatcher in the connected Editor. Command frames use 60 FPS; use the documented Clip-relative or Timeline-global origin for each field. The command schema describes the Kimodo route; it is not an allowlist of all permitted implementation methods. For each subtask, record `subtask → route → output → acceptance check`. If an operation is better represented by a Unity or project API, use that API directly and record the route.
 
-- 先读实时 schema 或 `kimodo_help`，再选择命令和参数。
-- 只使用 schema 的协议命令名；不要搜索 `GenerateAnimationAsset` 等内部方法名。
-- `command_kimodo` 是可选的包内便利 facade，不是命令目录，也不是 CLI 发现入口。
-- 公开 Bridge API 只覆盖后端生成；需要完整 Editor 资产流程时仍使用对应的协议命令，除非包内已有明确公开 facade。
-- 找不到原生能力工具时，报告工具缺失并改用 `exec_editor_script` + `command_dispatcher.Invoke`；不得猜测不存在的独立 CLI 方法。
+The active Unity scene, Timeline, and Kimodo Session are an editable working pipeline. The agent may switch context and extend an existing Timeline by inserting tracks, clips, bindings, or synchronized prop motion. Preserve existing tracks and clips by default; prefer adding a track or making a derived Timeline over rewriting or rebuilding existing content. Modify existing content only when required by the task, and preserve a recoverable original first. After editing, verify the active scene/session, track bindings, clip ranges, and synchronization in the intended Timeline.
 
-最小错误诊断：
-
-1. `unknown_command`：命令名不在实时 schema 中，重新读取 `GetCommandDefinitionsJson()`。
-2. `invalid_argument`：命令已路由成功，按 `kimodo_help(command=...)` 修正 JSON。
-3. 没有 `request_id`：不要开始轮询；先报告命令未接受或返回结构不符合协议。
-4. 任务已有 `request_id` 但未终态：固定间隔调用 `kimodo_get_generation`，不要重复提交同一请求。
-
-## Input and scene context
-
-### Parameter tiers / 参数分层
-
-- **Core**：只传完成任务所需的明确对象、范围和动作语义。
-- **Advanced**：带有 `x-kimodo-advanced: true` 的参数只在需要覆盖默认值、选择模型/输出或施加路径与 Pose 约束时传入。
-- Commands resolve inputs from the active scene; returned names, paths, and pose references are the public handles. Character handles identify the source scene character (`role: "scene"`). Ghost evaluation clones (`role: "ghost"`) are implementation details and are rejected as command character references.
-- `animation_analyze` 只接受一个 Clip，默认生成固定 16:9 的 20-tile composite（宽度由 resolution 决定）；比较多个候选时分别调用分析。
-- 需要单张图片时传 `picture: {output: "tile", tile_index: N}`；`tile_index` 从 1 开始，`resolution` 在该模式表示高度，默认 720px，宽度按 4:3 自适应。
-- `kimodo_generate_animation` 的普通调用只需要 `character` 与 `prompt`；模型、采样、命名、存储和分析覆盖项均可省略。
-- generation 的 point constraints 允许 `fullbody`、`root2d` 和 `root_effect`，解析后统一转换为内部 `mix`，并遵守
-  [`constraints.md`](constraints.md)；末端目标通过 `root_effect.effect` 表达。
-- 每次接受生成都会带有 Editor 层共享的非阻断 `check`：检查 `root_trajectory`、
-  `constraint_overlap` 和 `effectors`。速度阈值为 7 m/s，加速度阈值为 5 m/s²；warning 不阻止任务。
-
-- 只使用用户明确提供的 source、target、range、pose、path 和 constraint。
-- 只要生成请求指定了动作，先检查当前活动场景中的语义匹配动画；“修复/改进/替换/续作/变体 + 指定动作”绝不能跳过这一步。检查结果要记录为上下文证据，不能把发现的动画自动升级为生成约束。
-- 输入按需绑定当前活动场景中的 `Animator` 或可渲染 Mesh；角色来源不得从保存的 prefab 路径猜测替代。
-- 后续命令只使用运行时返回的安全名称和 `{track,index}` 引用。
-- 场景切换、Editor reload 或进入 Play Mode 可能取消活动生成；报告中必须保留该副作用。
-
-## Evidence
-
-- `animation_analyze` 的图片必须实际打开后才能用于视觉判断。
-- 数值、文件名、标签和选帧数量只能辅助判断，不能替代视觉证据。
-- 静态图片不能证明播放连续性、滑步、跳变、加速度或速度连续性。
-- 必要证据缺失时返回 `not_verified` 或 `insufficient_evidence`，不得猜测为通过。
-
-### Analysis handoff / 分析交接边界
-
-`animation_analyze` 的证据交给下一个环节时，必须分成两类，不能互相替代：
-
-- **图像识别**：`trajectory_shape`、`action_semantics`、
-  `visual_motion_quality`、`contact_pattern`。每项必须实际打开对应 tile，
-  并返回 `value`、`confidence`、`evidence`。
-- **结构化分析**：`loop_endpoint`、`keyframe_heading`、
-  `trajectory_turn`、`trajectory_length`。数值和布尔值只能读取返回的
-  `motion_profile`（`phase_anchor_heading_consistent` 优先），不能从像素估算；字段缺失时返回 `UNKNOWN`。
-
-没有时间序列或播放采样时，`playback_continuity`、`velocity_smoothness`、
-`acceleration_quality` 固定为 `UNKNOWN`。`confidence` 是证据可靠度，不是
-动作质量分数；任何必需项为 `UNKNOWN`、`CONFLICT` 或低置信度时，交接状态不得
-报告为 `verified`。
-
-### Phase track / 连续阶段轨道
-
-Humanoid analysis 使用破坏性的新契约 `analysis_schema_version=3-command-60-phase-track-v2`
-与 `phase_track_version=1-temporal-cluster-v2-command-60`。图片同时返回
-`pictures.render_version=51-unified-picture-space`；识别/比较必须记录并校验这些版本，版本不匹配时返回
-`UNKNOWN` 并要求更新提示词。旧的均分关键帧
-列表不再是阶段证据；`phase_track` 是唯一阶段来源。每项必须覆盖连续帧区间，
-区间首尾相接、无重叠、无空洞，并包含局部数组索引与全局命令帧：
-`start_frame`、`end_frame`、`start_frame_60`、`end_frame_60`、
-`duration_frames`、`duration_seconds`、`anchor_frame`、`anchor_frame_60`、
-`anchor_time_seconds`、`kind` 和 `confidence`。
-`kind` 只能是 `phase` 或 `transition`；聚类器不得直接命名 `walk`、`wave` 等语义。
-Mesh analysis 对该字段返回 `NOT_APPLICABLE`。
-
-比较多个目标语义时，按用户给出的优先级计算时长先验：第 `i` 个语义的权重为
-`w_i = 1/(i*i)`，目标占比为 `p_i = w_i / sum(w_j)`。比较使用实际阶段覆盖
-时长与该先验的偏差；不把权重相加做总质量分数。允许语义覆盖重叠（例如边走边挥手），
-但 `idle`/站立背景阶段的总覆盖不得超过 50%，除非请求明确要求长时间 idle。
-
-Evaluation has two separate outputs:
+At the start of a task, keep a compact loop state:
 
 ```text
-constraint_compliance:
-  loop, heading, path, distance, transition, pose, contact, ending
-semantic_pose_coverage:
-  required semantic poses present, expressed, and non-conflicting
+intent and explicit requirements
+scene character/object references
+planned Clips and dependencies
+subtask-to-route plan and produced assets/tracks
+acceptance criteria and allowed semantic alternatives
+confirmed Pose, root, effector, path, and object evidence
+candidates: request_id, animation_id, seed, prompt, constraints, analysis_id
+criterion results: verified, failed, or unknown
+revision history and no-improvement count
 ```
 
-For ordered semantic requirements, the duration prior remains `w_i = 1/(i*i)`.
-Required semantic Pose coverage is evaluated separately: more verified required
-semantic Poses expressed without conflict receives higher coverage. This is
-evaluation evidence, not confidence, and never converts an analysis candidate
-into a generation Pose. Idle/background is invalid when it contains a
-conflicting action, such as sitting while the requested semantic is standing.
+Do not create another public state protocol or copy complete scene/analysis payloads. Use the persisted Session history and returned IDs to navigate candidates.
 
-交接结果的最小外壳为：
+## Response and asynchronous rules
 
-```json
-{
-  "status": "verified|needs_review|not_verified",
-  "analysis_handoff": {
-    "<task>": {
-      "value": "<fixed enum or number>",
-      "confidence": "high|medium|low",
-      "evidence": ["<tile id or structured field>"]
-    }
-  }
-}
-```
+- Check top-level `ok` before reading domain fields.
+- Command errors use `ok=false` and `error={code,message,details?}`.
+- A successful poll can still have task `status` `failed` or `canceled`; report that terminal state and its error.
+- Save the exact `request_id`; poll at a fixed interval until a terminal state or bounded timeout.
+- Never duplicate a request that is still running. Cancel only when the task should stop.
+- Treat warnings and non-blocking checks as evidence to inspect.
+- Preserve completed Clips and use derived outputs for revisions.
 
-## Async tasks
+## Intent-to-criteria loop
 
-- `kimodo_install_server` 与 `kimodo_generate_animation` 都返回 `request_id`；保存它并按固定间隔轮询 `kimodo_get_generation`。
-- 安装终态为 `done`、`error`；生成终态为 `completed`、`failed`、`canceled`。安装任务当前不能取消，生成任务可用 `kimodo_cancel_generation` 取消。
-- 每次状态查询以 `progress`、`eta_seconds` 和 `message` 为进度依据；不自行重新估算剩余时间。
-- 超时、过期 request 或未知状态按未验证/失败报告，不无限重试。
-- assembly reload、Editor 退出、切换场景和进入 Play Mode 导致的取消必须如实保留。
-- 自动修正最多一次；修正结果是新的派生 Clip，原完成结果必须保留。
+For each request:
 
-## Handles and paths
+1. Resolve participating characters and objects from the current scene. Identify the visible result, action order, contact points, duration, and ending state. State assumptions.
+2. Split independent goals or target interactions into Clips. Keep one continuous semantic action together. Record dependencies between Clips.
+3. Select only criteria relevant to the request. Criteria may be semantic, spatial, temporal, contact-related, structural, visual, or playback-related.
+4. Gather the smallest evidence needed: `scene.context`, `pose_get`, `pose_test`, `transform_capture`, an existing Clip analysis, or a confirmed object Transform. Use `pose_test` to measure actual Humanoid joint positions in any sampled Pose and compare them with contact targets, including after effect-only generation. Generation-time pose/effect safety preflight runs only when one point constraint explicitly contains both `pose` and `effect`; effect-only constraints skip this check. Such preflight warnings remain non-blocking and do not replace measured pose results. Do not turn every observation into a constraint.
+5. Construct a short semantic prompt and structured constraints. Exact root position, heading, Pose, hand/foot target, loop, duration, and continuation belong in Kimodo fields when supported; object curves, Timeline tracks, bindings, and other asset edits belong in the appropriate Unity or project API.
+6. Generate candidates, poll each request, and retain the IDs and submitted settings.
+7. Analyze each candidate under the criteria. Open returned images before visual claims and map each claim to its tile or structured field.
+8. Compare candidates only when there are multiple candidates or the user requests a comparison. Use identical conditions and decide each criterion independently.
+9. If a criterion fails with evidence, change only the relevant input and create a derived candidate. If evidence is missing, gather it or report unknown; do not retry blindly.
+10. Finish when criteria pass, further candidates do not improve the target, or the remaining work is unavailable through both the relevant command and API routes, or requires human artistic judgment.
 
-- 安全角色名和动画名是当前场景上下文的引用。
-- `animation_analyze` 返回的 `{track,index}` 可作为 Root Path 或 Pose 引用。
-- 生成结果的 `path` 是 Unity 资产元数据，不是场景 Clip handle；若返回中没有派生资产路径，不自行推断。
+## Recognition contract
 
-## Report envelope
+Recognition is a constrained evidence operation, not a source of new intent. The caller supplies semantic alternatives when action semantics must be distinguished. Never infer from a filename, Clip name, candidate order, ID, or saliency.
 
-每个工具返回统一外壳：
+Use only relevant tasks from this set:
 
 ```text
-{
-  result,
-  output,
-  criteria,
-  evidence,
-  unverified,
-  runtime_warnings
-}
+visual: trajectory_shape, action_semantics, visual_motion_quality, contact_pattern
+structured: loop_endpoint, keyframe_heading, trajectory_turn,
+            trajectory_length, phase_track, endpoint_pose, motion_profile
 ```
 
-工具可以附加专属字段，例如 comparison 的候选胜负、generation 的 request_id，或 pose 的 `{track,index}`。
+Allowed visual values remain deliberately small:
+
+```text
+trajectory_shape: closed_loop | open_path | near_static | unclear
+visual_motion_quality: smooth_appearance | visible_break | unclear
+contact_pattern: alternating | left_dominant | right_dominant | unclear
+```
+
+For every task, return a value, confidence, and evidence. Return `unknown` or `unclear` when the image is unreadable, fields are absent, evidence conflicts, or the claim requires playback that was not observed. `smooth_appearance` describes an unbroken static drawing; it does not mean playback smoothness. Structured trajectory values come from named returned fields, never from pixel estimates.
+
+When comparing action semantics, use only caller-provided alternatives and phase/pose/contact evidence. A single accidental contact or anchor frame does not prove a required phase. If alternatives cannot be separated, preserve `unknown`.
+
+## Comparison contract
+
+Analyze and render each candidate separately with the same picture request, resolution, and evidence procedure. Validate the candidate-to-image mapping before comparing. Compare only criteria declared for the task, such as semantic correctness, trajectory coherence, foot contacts, required phase coverage, required Pose coverage, expression strength, endpoint continuity, or a declared neighboring-Clip transition.
+
+For each criterion, report `candidate_1`, `candidate_2`, `tie`, or `unknown`, with a short reason and evidence. Do not calculate an overall winner by summing scores, votes, magnitudes, displacement, contact counts, or selected frames. Prefer one candidate only when the target criterion and evidence make the difference decisive; otherwise report no reliable difference or insufficient evidence.
+
+## Evidence boundaries
+
+Report these separately:
+
+- **Visual**: what the opened image visibly shows.
+- **Structured**: what the command returned as a measured field.
+- **Playback**: what was observed during actual playback or a supported runtime check.
+
+Static pictures cannot establish velocity or acceleration smoothness, foot sliding, popping, or playback continuity. A missing criterion is `unknown`, not a failure. A failed command is different from an animation that generated but failed its acceptance criteria.
+
+## Revision and human handoff
+
+Use a targeted revision table internally:
+
+```text
+failed criterion → supporting evidence → changed input → new candidate → result
+```
+
+Do not regenerate passing dependencies. Stop automatic revision when the same criterion fails without improvement across the configured attempts, when the remaining defect is artistic frame-by-frame polish, or when it needs complex rigging or physics. A missing command alone is not a stop condition: first inspect the project/package and relevant Unity APIs and attempt an appropriate API-based route. Report the successful criteria, failed/unknown criteria, candidates tried, evidence paths, and the precise animator handoff.
+
+For simple props, use Kimodo commands where exposed and Unity APIs where needed to author Transform curves, Timeline tracks, or hand attachment. Keep them tied to the character candidate through shared contact frames, offsets, Timeline range, and evidence IDs. Verify both character pose and object motion; if an API route is genuinely unavailable, mark that criterion unknown and explain the limitation.

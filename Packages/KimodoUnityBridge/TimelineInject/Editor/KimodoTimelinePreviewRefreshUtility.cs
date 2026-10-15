@@ -1,6 +1,7 @@
 using UnityEditor;
 using UnityEditor.Timeline;
 using UnityEngine;
+using UnityEngine.Playables;
 using UnityEngine.Timeline;
 
 namespace TimelineInject
@@ -77,6 +78,23 @@ namespace TimelineInject
 
             state.previewMode = false;
             TimelineEditor.Refresh(RefreshReason.SceneNeedsUpdate | RefreshReason.WindowNeedsRedraw);
+        }
+
+        public static void DisablePreview(PlayableDirector director)
+        {
+            TryDisablePreview(director);
+        }
+
+        public static bool TryDisablePreview(PlayableDirector director)
+        {
+            var state = TimelineEditor.state;
+            if (director == null || TimelineEditor.inspectedDirector != director || state == null || !state.previewMode)
+            {
+                return false;
+            }
+
+            DisablePreview();
+            return true;
         }
 
         public static GameObject InstantiateForAnimatorPreview(Object original)
