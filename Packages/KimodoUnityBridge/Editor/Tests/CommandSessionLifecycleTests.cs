@@ -1,9 +1,13 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Reflection;
+using KimodoBridge;
+using KimodoBridge.Editor;
 using KimodoUnityBridge.Command;
 using NUnit.Framework;
 using UnityEditor.SceneManagement;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.Playables;
 using UnityEngine.SceneManagement;
@@ -13,6 +17,181 @@ namespace KimodoUnityBridge.Command.Tests
 {
     public sealed class CommandSessionLifecycleTests
     {
+        [TestCase("mesh")]
+        [TestCase("missing_avatar")]
+        [TestCase("generic_avatar")]
+        [TestCase("mismatched_skeleton")]
+        public void SceneCharacterIndex_SkipsObjectsWhoseAvatarCannotBeResolvedOrGenerated(string kind)
+        {
+            var root = new GameObject("CharacterIndex_" + Guid.NewGuid().ToString("N"));
+            var timeline = ScriptableObject.CreateInstance<TimelineAsset>();
+            Avatar genericAvatar = null;
+            UnityEngine.Object previousSelection = Selection.activeObject;
+            try
+            {
+                root.AddComponent<MeshRenderer>();
+                Animator animator = kind == "mesh" ? null : root.AddComponent<Animator>();
+                if (kind == "generic_avatar")
+                    animator.avatar = genericAvatar = AvatarBuilder.BuildGenericAvatar(root, string.Empty);
+                if (kind == "mismatched_skeleton")
+                {
+                    Assert.That(KimodoRuntimeAvatarSkeletonBuilder.TryLoadAvatarByModelName(
+                        "smplx", out Avatar humanoid, out string error), Is.True, error);
+                    animator.avatar = humanoid;
+                }
+
+                var resolved = KimodoLocalAvatarUtility.ResolveAvatarFromGameObject(root);
+                Assert.That(resolved.IsHumanoid, Is.False);
+                Assert.That(resolved.Avatar, Is.Null);
+                Assert.That(resolved.Error, Does.Contain("Cannot resolve ModelImporter"));
+
+                Type context = typeof(command_context);
+                MethodInfo find = context.GetMethod("ResolveRequestedSceneCharacters", BindingFlags.Static | BindingFlags.NonPublic);
+                Assert.That((GameObject[])find.Invoke(null, new object[] { root.name }), Is.Empty);
+                Selection.activeGameObject = root;
+                Assert.That((GameObject[])find.Invoke(null, new object[] { "@active_animator" }), Is.Empty);
+
+                Type sessionType = context.GetNestedType("TimelineSessionRecord", BindingFlags.NonPublic);
+                object session = CreateSessionRecord(sessionType, timeline, null, null, null);
+                MethodInfo add = context.GetMethod("AddCharacterTrack", BindingFlags.Static | BindingFlags.NonPublic);
+                object[] arguments = { session, root, animator, true, null, true };
+                Assert.That((bool)add.Invoke(null, arguments), Is.False);
+                Assert.That(arguments[4] as string, Does.StartWith("avatar_required:"));
+                Assert.That(timeline.GetRootTracks(), Is.Empty, "Rejected objects must not create Timeline tracks.");
+
+                var legacy = new command_context.TimelineCharacterRecord("legacy", root, animator,
+                    animator != null ? animator.avatar : null, null, null, string.Empty);
+                MethodInfo indexed = context.GetMethod("IsIndexableSessionCharacter", BindingFlags.Static | BindingFlags.NonPublic);
+                Assert.That((bool)indexed.Invoke(null, new object[] { legacy }), Is.False);
+            }
+            finally
+            {
+                Selection.activeObject = previousSelection;
+                UnityEngine.Object.DestroyImmediate(root);
+                UnityEngine.Object.DestroyImmediate(timeline);
+                if (genericAvatar != null) UnityEngine.Object.DestroyImmediate(genericAvatar);
+            }
+        }
+
+        [Test]
+        public void SceneCharacterIndex_UsesExistingHumanoidAvatarAndSkipsSelectedProp()
+        {
+            Assert.That(KimodoRuntimeAvatarSkeletonBuilder.TryLoadAvatarByModelName(
+                "smplx", out Avatar avatar, out string error), Is.True, error);
+            var root = new GameObject("CharacterIndex_" + Guid.NewGuid().ToString("N"));
+            var prop = new GameObject("CharacterIndexProp");
+            UnityEngine.Object previousSelection = Selection.activeObject;
+            try
+            {
+                prop.AddComponent<Animator>();
+                Assert.That(KimodoRuntimeAvatarSkeletonBuilder.TryBuildHierarchyFromAvatarSkeleton(
+                    avatar, root.transform, out error), Is.True, error);
+                Animator animator = root.AddComponent<Animator>();
+                animator.avatar = avatar;
+                var resolved = KimodoLocalAvatarUtility.ResolveAvatarFromGameObject(root);
+                Assert.That(resolved.Avatar, Is.SameAs(avatar));
+                Assert.That(resolved.Source, Is.EqualTo("Animator"));
+                Assert.That(resolved.Error, Is.Empty);
+                Type context = typeof(command_context);
+                MethodInfo find = context.GetMethod("ResolveRequestedSceneCharacters", BindingFlags.Static | BindingFlags.NonPublic);
+                CollectionAssert.AreEqual(new[] { root },
+                    (GameObject[])find.Invoke(null, new object[] { root.name }));
+
+                Selection.activeGameObject = root;
+                MethodInfo automatic = context.GetMethod("ResolveAutomaticSceneCharacter", BindingFlags.Static | BindingFlags.NonPublic);
+                Assert.That(automatic.Invoke(null, null), Is.SameAs(animator));
+                Selection.activeGameObject = prop;
+                var fallback = (Animator)automatic.Invoke(null, null);
+                Assert.That(fallback, Is.Not.Null);
+                Assert.That(fallback, Is.Not.SameAs(prop.GetComponent<Animator>()));
+                Assert.That(KimodoLocalAvatarUtility.ResolveAvatarFromGameObject(
+                    fallback.transform.root.gameObject).IsHumanoid, Is.True);
+
+                var character = new command_context.TimelineCharacterRecord("humanoid", root,
+                    animator, avatar, null, null, string.Empty);
+                MethodInfo indexed = context.GetMethod("IsIndexableSessionCharacter", BindingFlags.Static | BindingFlags.NonPublic);
+                Assert.That((bool)indexed.Invoke(null, new object[] { character }), Is.True);
+            }
+            finally
+            {
+                Selection.activeObject = previousSelection;
+                UnityEngine.Object.DestroyImmediate(prop);
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void SceneCharacterIndex_GeneratesMissingAvatarBeforeIndexing(bool useSelection)
+        {
+            string folderName = "SceneCharacterIndex_" + Guid.NewGuid().ToString("N");
+            string folder = "Assets/" + folderName;
+            string modelPath = folder + "/Humanoid.fbx";
+            GameObject root = null;
+            TimelineAsset timeline = null;
+            UnityEngine.Object[] previousSelection = Selection.objects;
+            try
+            {
+                AssetDatabase.CreateFolder("Assets", folderName);
+                Assert.That(AssetDatabase.CopyAsset(
+                    "Packages/com.unity.kimodo_unity_motion_tools/Editor/Model/SOMA30.fbx", modelPath), Is.True);
+                var importer = (ModelImporter)AssetImporter.GetAtPath(modelPath);
+                importer.animationType = ModelImporterAnimationType.Generic;
+                importer.SaveAndReimport();
+                root = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(modelPath));
+                root.name = folderName;
+                Animator animator = root.GetComponent<Animator>() ?? root.AddComponent<Animator>();
+                animator.avatar = null;
+                Assert.That(AssetDatabase.LoadAllAssetsAtPath(modelPath).OfType<Avatar>()
+                    .Any(avatar => avatar.isValid && avatar.isHuman), Is.False,
+                    "The fixture must start without a valid Humanoid Avatar.");
+
+                Type context = typeof(command_context);
+                if (useSelection)
+                {
+                    Selection.activeGameObject = root;
+                    MethodInfo automatic = context.GetMethod("ResolveAutomaticSceneCharacter", BindingFlags.Static | BindingFlags.NonPublic);
+                    Assert.That(automatic.Invoke(null, null), Is.SameAs(animator));
+                }
+                else
+                {
+                    MethodInfo find = context.GetMethod("ResolveRequestedSceneCharacters", BindingFlags.Static | BindingFlags.NonPublic);
+                    CollectionAssert.AreEqual(new[] { root },
+                        (GameObject[])find.Invoke(null, new object[] { root.name }));
+                }
+
+                var resolved = KimodoLocalAvatarUtility.ResolveAvatarFromGameObject(root);
+                Assert.That(resolved.IsHumanoid, Is.True, resolved.Error);
+                Assert.That(KimodoLocalAvatarUtility.CheckAvatarValid(resolved.Avatar, root), Is.True);
+                Assert.That(((ModelImporter)AssetImporter.GetAtPath(modelPath)).animationType,
+                    Is.EqualTo(ModelImporterAnimationType.Human));
+                timeline = ScriptableObject.CreateInstance<TimelineAsset>();
+                object session = CreateSessionRecord(
+                    context.GetNestedType("TimelineSessionRecord", BindingFlags.NonPublic), timeline, null, null, null);
+                MethodInfo add = context.GetMethod("AddCharacterTrack", BindingFlags.Static | BindingFlags.NonPublic);
+                object[] arguments = { session, root, animator, true, null, true };
+                Assert.That((bool)add.Invoke(null, arguments), Is.True, arguments[4] as string);
+                Assert.That(timeline.GetRootTracks().Count(), Is.EqualTo(1));
+            }
+            finally
+            {
+                Selection.objects = previousSelection;
+                if (root != null) UnityEngine.Object.DestroyImmediate(root);
+                if (timeline != null) UnityEngine.Object.DestroyImmediate(timeline);
+                // Preserve generated fixture assets outside Assets so discovery cannot index them later.
+                string project = Path.GetFullPath(Directory.GetCurrentDirectory()) + Path.DirectorySeparatorChar;
+                string source = Path.GetFullPath(folder);
+                string archive = Path.GetFullPath(Path.Combine("archive", folderName));
+                if (!source.StartsWith(project, StringComparison.OrdinalIgnoreCase) ||
+                    !archive.StartsWith(project, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Fixture archive paths must remain inside the project.");
+                Directory.CreateDirectory(Path.GetDirectoryName(archive));
+                if (Directory.Exists(source)) Directory.Move(source, archive);
+                if (File.Exists(source + ".meta")) File.Move(source + ".meta", archive + ".meta");
+                AssetDatabase.Refresh();
+            }
+        }
+
         [TestCase(false, false)]
         [TestCase(true, true)]
         public void AutomaticSessionRestore_RequiresLiveWorkspaceInCurrentScene(

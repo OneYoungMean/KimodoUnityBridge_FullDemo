@@ -11,7 +11,7 @@ namespace KimodoBridge
     /// server receives one root-context row per frame, so same-frame Root2D
     /// data is folded into the matching FullBody/EndEffector row here. This
     /// is intentionally later than command validation and is not a duplicate
-    /// rejection gate for Editor-authored pass composition.
+    /// rejection gate for Editor-authored samples.
     /// </summary>
     public static class KimodoConstraintProtocolNormalizer
     {

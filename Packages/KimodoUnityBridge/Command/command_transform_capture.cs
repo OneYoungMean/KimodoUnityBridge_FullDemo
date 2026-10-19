@@ -5,6 +5,8 @@ using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Playables;
+using UnityEngine.SceneManagement;
 
 namespace KimodoUnityBridge.Command
 {
@@ -13,14 +15,48 @@ namespace KimodoUnityBridge.Command
         public static string TransformCapture(string argumentsJson) => Execute(argumentsJson, arguments =>
         {
             if (arguments["frames"] != null)
-                throw new InvalidOperationException("frames is not a sampling input. Use pose_get for the desired clip frame, then pass its pose reference.");
+                throw new InvalidOperationException("frames is not a sampling input. Use timeline_frame_60 for one frame, or pose.get for an explicit Pose reference.");
+            bool hasTimelineFrame = arguments["timeline_frame_60"] != null;
+            if (hasTimelineFrame && arguments["pose"] != null)
+                throw new InvalidOperationException("timeline_frame_60 and pose are mutually exclusive.");
             EvaluatedPosePreview preview = null;
             var visibility = new Dictionary<Renderer, bool>();
+            List<LightCaptureState> lightStates = null;
+            PlayableDirector sampledDirector = null;
+            double originalTime = 0.0;
+            bool restorePlaying = false;
             try
             {
                 JObject source;
                 GameObject character;
-                if (arguments["pose"] is JObject pose)
+                JObject pose = arguments["pose"] as JObject;
+                if (hasTimelineFrame)
+                {
+                    string characterPath = RequiredStringValue(arguments, "character_path");
+                    int timelineFrame = RequiredNonNegativeFrame(arguments, "timeline_frame_60");
+                    character = FindSceneObjectByPath(characterPath);
+                    if (character == null)
+                        throw new InvalidOperationException($"Scene character path '{characterPath}' was not found.");
+                    Scene activeScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+                    sampledDirector = Resources.FindObjectsOfTypeAll<PlayableDirector>()
+                        .Where(item => item != null && item.gameObject != null && item.gameObject.scene == activeScene && !IsSessionObject(item.gameObject))
+                        .FirstOrDefault(item => item.enabled)
+                        ?? RequireCurrentTimelineSession().Director;
+                    if (sampledDirector == null)
+                        throw new InvalidOperationException("timeline_frame_60 requires an active Timeline director.");
+                    originalTime = sampledDirector.time;
+                    restorePlaying = sampledDirector.state == PlayState.Playing;
+                    if (restorePlaying) sampledDirector.Pause();
+                    sampledDirector.time = timelineFrame / SessionFrameRate;
+                    sampledDirector.Evaluate();
+                    source = new JObject
+                    {
+                        ["type"] = "scene",
+                        ["character_path"] = characterPath,
+                        ["timeline_frame_60"] = timelineFrame
+                    };
+                }
+                else if (pose != null)
                 {
                     PoseReference reference = RequirePoseReference(pose);
                     KimodoConstraintMarker marker = RequirePoseMarker(reference, out TimelineCharacterRecord owner);
@@ -31,7 +67,10 @@ namespace KimodoUnityBridge.Command
                         ["type"] = "external_pose", ["character"] = owner.Name,
                         ["pose"] = PoseReferenceJson(reference.Track, reference.Index),
                         ["clip"] = marker.sourceRole == "pose_get" ? (JToken)marker.sourceClipKey : JValue.CreateNull(),
-                        ["frame"] = marker.sourceRole == "pose_get" ? (JToken)marker.frame : JValue.CreateNull()
+                        ["frame"] = marker.sourceRole == "pose_get" ? (JToken)marker.frame : JValue.CreateNull(),
+                        ["timeline_frame_60"] = hasTimelineFrame
+                            ? (JToken)new JValue(arguments.Value<int>("timeline_frame_60"))
+                            : JValue.CreateNull()
                     };
                 }
                 else
@@ -41,28 +80,41 @@ namespace KimodoUnityBridge.Command
                     if (character == null) throw new InvalidOperationException($"Scene character path '{characterPath}' was not found.");
                     source = new JObject { ["type"] = "scene", ["character_path"] = characterPath };
                 }
-                return RenderTransformCapture(arguments, character, source, preview?.Animator, visibility);
+                Animator captureAnimator = preview?.Animator ?? (hasTimelineFrame ? character.GetComponentInChildren<Animator>(true) : null);
+                return RenderTransformCapture(arguments, character, source, captureAnimator, visibility, ref lightStates);
             }
             finally
             {
+                if (sampledDirector != null)
+                {
+                    sampledDirector.time = originalTime;
+                    sampledDirector.Evaluate();
+                    if (restorePlaying) sampledDirector.Play();
+                }
                 foreach (var entry in visibility)
                     if (entry.Key != null) entry.Key.forceRenderingOff = entry.Value;
+                RestoreLightingAfterCapture(lightStates);
                 preview?.Dispose();
             }
         });
 
         private static string RenderTransformCapture(JObject arguments, GameObject character, JObject source,
-            Animator poseAnimator, Dictionary<Renderer, bool> visibility)
+            Animator poseAnimator, Dictionary<Renderer, bool> visibility, ref List<LightCaptureState> lightStates)
         {
             JArray transformValues = arguments["transforms"] as JArray
                 ?? throw new InvalidOperationException("transforms must be an array.");
             if (transformValues.Count < 1)
                 throw new InvalidOperationException("transforms must contain at least one path.");
             int size = Mathf.Clamp(arguments.Value<int?>("resolution") ?? 1024, 64, 4096);
+            JObject cameraOptions = arguments["camera"] as JObject;
+            string cameraMode = cameraOptions?.Value<string>("mode") ?? "auto";
+            if (!string.Equals(cameraMode, "auto", StringComparison.Ordinal) &&
+                !string.Equals(cameraMode, "scene", StringComparison.Ordinal))
+                throw new InvalidOperationException("camera.mode must be 'auto' or 'scene'.");
             var targets = transformValues.Values<string>().Select(path =>
             {
                 bool isPose = path == "@pose" || (path?.StartsWith("@pose/", StringComparison.Ordinal) ?? false);
-                if (isPose && poseAnimator == null) throw new InvalidOperationException("@pose requires a pose reference returned by pose_get.");
+                if (isPose && poseAnimator == null) throw new InvalidOperationException("@pose requires a pose reference returned by pose.get.");
                 Transform transform = isPose
                     ? (path == "@pose" ? character.transform : character.transform.Find(path.Substring(6)))
                     : FindRelativeTransform(character.transform, path) ?? FindSceneTransform(path);
@@ -90,6 +142,7 @@ namespace KimodoUnityBridge.Command
                 visibility[renderer] = renderer.forceRenderingOff;
                 renderer.forceRenderingOff = !targets.Any(target => IsRelevantRenderer(renderer, target.Transform));
             }
+            lightStates = SuppressLightingForCapture();
 
             string folder = Path.Combine(Application.dataPath, "KimodoGeneratedClips", "TransformCaptures");
             Directory.CreateDirectory(folder);
@@ -97,30 +150,43 @@ namespace KimodoUnityBridge.Command
             string fileName = "transform_capture_" + Guid.NewGuid().ToString("N");
             string file = Path.Combine(folder, fileName + ".png");
             var descriptions = new JArray();
-            var directions = new[] { Vector3.back, Vector3.right, Vector3.up, new Vector3(1f, .75f, -1f) };
-            var views = new[] { "front", "right", "top", "3d" };
-            var sheet = new Texture2D(size * 2, size * 2, TextureFormat.RGBA32, false);
-            try
+            bool sceneCameraMode = string.Equals(cameraMode, "scene", StringComparison.Ordinal);
+            int outputWidth = size * (sceneCameraMode ? 1 : 2);
+            int outputHeight = size * (sceneCameraMode ? 1 : 2);
+            if (sceneCameraMode)
             {
-                for (int index = 0; index < views.Length; index++)
+                JObject sceneCameraOptions = cameraOptions ?? new JObject();
+                string cameraPath = sceneCameraOptions.Value<string>("path") ?? "Main Camera";
+                Transform sceneCameraTransform = FindSceneTransform(cameraPath);
+                Camera sourceCamera = sceneCameraTransform != null ? sceneCameraTransform.GetComponent<Camera>() : null;
+                if (sourceCamera == null)
+                    throw new InvalidOperationException($"Scene camera '{cameraPath}' was not found.");
+                int[] cameraResolution = ReadCameraResolution(sceneCameraOptions, size);
+                outputWidth = cameraResolution[0];
+                outputHeight = cameraResolution[1];
+                Camera camera = null;
+                Texture2D image = null;
+                List<MaterialCaptureState> materialStates = null;
+                try
                 {
-                    Camera camera = CreateTransformCaptureCamera(bounds, directions[index], index != 3);
-                    Texture2D image = null;
-                    try
-                    {
-                        image = RenderCamera(camera, size, size, new Color(.12f, .12f, .12f, 1f));
-                        sheet.SetPixels(index % 2 * size, (1 - index / 2) * size, size, size, image.GetPixels());
-                    }
-                    finally
-                    {
-                        if (image != null) UnityEngine.Object.DestroyImmediate(image);
-                        UnityEngine.Object.DestroyImmediate(camera.gameObject);
-                    }
+                    GameObject cameraObject = UnityEngine.Object.Instantiate(sourceCamera.gameObject);
+                    cameraObject.name = "Kimodo Scene Camera Capture";
+                    cameraObject.hideFlags = HideFlags.HideAndDontSave;
+                    camera = cameraObject.GetComponent<Camera>();
+                    ConfigureAnalysisCamera(camera);
+                    camera.allowHDR = false;
+                    camera.aspect = outputWidth / (float)Mathf.Max(1, outputHeight);
+                    ApplySceneCameraOptions(camera, sceneCameraOptions, bounds, outputWidth / (float)Mathf.Max(1, outputHeight));
+                    materialStates = SuppressEmissionForCapture();
+                    image = RenderCamera(camera, outputWidth, outputHeight, ReadCameraBackground(sceneCameraOptions));
+                    image.Apply(false, false);
+                    File.WriteAllBytes(file, image.EncodeToPNG());
                     descriptions.Add(new JObject
                     {
-                        ["tile"] = $"{index / 2 + 1}-{index % 2 + 1}",
-                        ["view"] = views[index],
-                        ["projection"] = index == 3 ? "perspective" : "orthographic",
+                        ["tile"] = "1-1",
+                        ["view"] = "scene_camera",
+                        ["projection"] = camera.orthographic ? "orthographic" : "perspective",
+                        ["camera_path"] = cameraPath,
                         ["transforms"] = new JArray(targets.Select(target => target.Path)),
                         ["bounds"] = new JObject
                         {
@@ -129,17 +195,62 @@ namespace KimodoUnityBridge.Command
                         }
                     });
                 }
-                sheet.Apply(false, false);
-                File.WriteAllBytes(file, sheet.EncodeToPNG());
+                finally
+                {
+                    if (image != null) UnityEngine.Object.DestroyImmediate(image);
+                    if (camera != null) UnityEngine.Object.DestroyImmediate(camera.gameObject);
+                    RestoreEmissionAfterCapture(materialStates);
+                }
             }
-            finally { UnityEngine.Object.DestroyImmediate(sheet); }
+            else
+            {
+                var directions = new[] { Vector3.back, Vector3.right, Vector3.up, new Vector3(1f, .75f, -1f) };
+                var views = new[] { "front", "right", "top", "3d" };
+                var sheet = new Texture2D(size * 2, size * 2, TextureFormat.RGBA32, false);
+                try
+                {
+                    for (int index = 0; index < views.Length; index++)
+                    {
+                        Camera camera = CreateTransformCaptureCamera(bounds, directions[index], index != 3);
+                        Texture2D image = null;
+                        try
+                        {
+                            image = RenderCamera(camera, size, size, new Color(.12f, .12f, .12f, 1f));
+                            sheet.SetPixels(index % 2 * size, (1 - index / 2) * size, size, size, image.GetPixels());
+                        }
+                        finally
+                        {
+                            if (image != null) UnityEngine.Object.DestroyImmediate(image);
+                            UnityEngine.Object.DestroyImmediate(camera.gameObject);
+                        }
+                        descriptions.Add(new JObject
+                        {
+                            ["tile"] = $"{index / 2 + 1}-{index % 2 + 1}",
+                            ["view"] = views[index],
+                            ["projection"] = index == 3 ? "perspective" : "orthographic",
+                            ["transforms"] = new JArray(targets.Select(target => target.Path)),
+                            ["bounds"] = new JObject
+                            {
+                                ["min"] = new JArray(bounds.min.x, bounds.min.y, bounds.min.z),
+                                ["max"] = new JArray(bounds.max.x, bounds.max.y, bounds.max.z)
+                            }
+                        });
+                    }
+                    DrawTransformCaptureTileBorders(sheet, size, 3, new Color(.72f, .72f, .72f, 1f));
+                    sheet.Apply(false, false);
+                    File.WriteAllBytes(file, sheet.EncodeToPNG());
+                }
+                finally { UnityEngine.Object.DestroyImmediate(sheet); }
+            }
             AssetDatabase.Refresh();
             JObject response = new JObject
             {
                 ["image_path"] = "Assets/KimodoGeneratedClips/TransformCaptures/" + Path.GetFileName(file),
-                ["width"] = size * 2,
-                ["height"] = size * 2,
-                ["tile_size"] = size,
+                ["width"] = outputWidth,
+                ["height"] = outputHeight,
+                ["tile_size"] = sceneCameraMode ? JValue.CreateNull() : new JValue(size),
+                ["tile_border_px"] = sceneCameraMode ? JValue.CreateNull() : new JValue(3),
+                ["camera_mode"] = cameraMode,
                 ["tiles"] = descriptions,
                 ["source"] = source,
                 ["targets"] = new JArray(targets.Select(target => new JObject
@@ -178,7 +289,10 @@ namespace KimodoUnityBridge.Command
             Vector3 normalizedDirection = direction.sqrMagnitude > .0001f
                 ? direction.normalized
                 : new Vector3(1f, .75f, -1f).normalized;
-            CalculateTransformViewExtents(
+            // Use the same camera-space AABB calculation as analysis pictures.
+            // This keeps the perspective tile fitted to the actual projected
+            // extents instead of the much looser world-axis bounds.
+            CalculateTestViewExtents(
                 bounds,
                 normalizedDirection,
                 out Vector3 viewCenter,
@@ -189,10 +303,10 @@ namespace KimodoUnityBridge.Command
                 ? Vector3.forward
                 : Vector3.up;
             float fitDistance = orthographic
-                ? Mathf.Max(7f, depthHalf * 3.2f)
-                : Mathf.Max(7f, depthHalf +
+                ? Mathf.Max(.5f, depthHalf * 3.2f)
+                : Mathf.Max(.5f, depthHalf +
                     Mathf.Max(horizontalHalf / Mathf.Max(.01f, camera.aspect), verticalHalf) /
-                    Mathf.Tan(camera.fieldOfView * Mathf.Deg2Rad * .5f) * 1.1f);
+                    Mathf.Tan(camera.fieldOfView * Mathf.Deg2Rad * .5f) * 1.08f);
             camera.transform.position = viewCenter + normalizedDirection * fitDistance;
             camera.transform.LookAt(viewCenter, up);
             if (orthographic)
@@ -203,6 +317,162 @@ namespace KimodoUnityBridge.Command
                     horizontalHalf * 1.1f / Mathf.Max(.01f, camera.aspect));
             }
             return camera;
+        }
+
+        private static void DrawTransformCaptureTileBorders(Texture2D sheet, int tileSize, int thickness, Color color)
+        {
+            if (sheet == null || tileSize <= 0 || thickness <= 0) return;
+            int width = sheet.width;
+            int height = sheet.height;
+            Color[] pixels = sheet.GetPixels();
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    bool vertical = x < thickness || x >= width - thickness ||
+                        (x >= tileSize - thickness / 2 && x < tileSize + (thickness + 1) / 2);
+                    bool horizontal = y < thickness || y >= height - thickness ||
+                        (y >= tileSize - thickness / 2 && y < tileSize + (thickness + 1) / 2);
+                    if (vertical || horizontal) pixels[y * width + x] = color;
+                }
+            }
+            sheet.SetPixels(pixels);
+        }
+
+        private static int[] ReadCameraResolution(JObject options, int fallback)
+        {
+            JArray value = options?["resolution"] as JArray;
+            if (value == null || value.Count != 2)
+                return new[] { fallback, fallback };
+            return new[]
+            {
+                Mathf.Clamp(value[0].Value<int>(), 64, 4096),
+                Mathf.Clamp(value[1].Value<int>(), 64, 4096)
+            };
+        }
+
+        private static Color ReadCameraBackground(JObject options)
+        {
+            JArray value = options?["background"] as JArray;
+            if (value == null || value.Count < 3)
+                return new Color(.12f, .12f, .12f, 1f);
+            return new Color(
+                Mathf.Clamp01(value[0].Value<float>()),
+                Mathf.Clamp01(value[1].Value<float>()),
+                Mathf.Clamp01(value[2].Value<float>()),
+                value.Count > 3 ? Mathf.Clamp01(value[3].Value<float>()) : 1f);
+        }
+
+        private static List<MaterialCaptureState> SuppressEmissionForCapture()
+        {
+            var states = new List<MaterialCaptureState>();
+            var seen = new HashSet<Material>();
+            foreach (Renderer renderer in Resources.FindObjectsOfTypeAll<Renderer>())
+            {
+                if (renderer == null || !renderer.gameObject.scene.IsValid()) continue;
+                foreach (Material material in renderer.sharedMaterials.Where(item => item != null).Distinct())
+                {
+                    if (!seen.Add(material)) continue;
+                    bool changed = false;
+                    var state = new MaterialCaptureState { Material = material };
+                    if (material.HasProperty("_EmissiveColor"))
+                    {
+                        state.HasEmissiveColor = true;
+                        state.EmissiveColor = material.GetColor("_EmissiveColor");
+                        material.SetColor("_EmissiveColor", Color.black);
+                        changed = true;
+                    }
+                    if (material.HasProperty("_EmissionColor"))
+                    {
+                        state.HasEmissionColor = true;
+                        state.EmissionColor = material.GetColor("_EmissionColor");
+                        material.SetColor("_EmissionColor", Color.black);
+                        changed = true;
+                    }
+                    if (material.HasProperty("_EmissiveIntensity"))
+                    {
+                        state.HasEmissiveIntensity = true;
+                        state.EmissiveIntensity = material.GetFloat("_EmissiveIntensity");
+                        material.SetFloat("_EmissiveIntensity", 0f);
+                        changed = true;
+                    }
+                    if (material.HasProperty("_EmissionIntensity"))
+                    {
+                        state.HasEmissionIntensity = true;
+                        state.EmissionIntensity = material.GetFloat("_EmissionIntensity");
+                        material.SetFloat("_EmissionIntensity", 0f);
+                        changed = true;
+                    }
+                    if (changed) states.Add(state);
+                }
+            }
+            return states;
+        }
+
+        private static void RestoreEmissionAfterCapture(List<MaterialCaptureState> states)
+        {
+            if (states == null) return;
+            foreach (MaterialCaptureState state in states)
+            {
+                if (state.Material == null) continue;
+                if (state.HasEmissiveColor) state.Material.SetColor("_EmissiveColor", state.EmissiveColor);
+                if (state.HasEmissionColor) state.Material.SetColor("_EmissionColor", state.EmissionColor);
+                if (state.HasEmissiveIntensity) state.Material.SetFloat("_EmissiveIntensity", state.EmissiveIntensity);
+                if (state.HasEmissionIntensity) state.Material.SetFloat("_EmissionIntensity", state.EmissionIntensity);
+            }
+        }
+
+        private static List<LightCaptureState> SuppressLightingForCapture()
+        {
+            var states = new List<LightCaptureState>();
+            foreach (Light light in Resources.FindObjectsOfTypeAll<Light>())
+            {
+                if (light == null || !light.gameObject.scene.IsValid() || !light.enabled) continue;
+                states.Add(new LightCaptureState { Light = light, Intensity = light.intensity });
+                // The demo scene's Sun is authored at 130000 lux. With HDRP
+                // exposure disabled for evidence, that saturates white surfaces.
+                light.intensity = Mathf.Min(light.intensity, 1f);
+            }
+            return states;
+        }
+
+        private static void RestoreLightingAfterCapture(List<LightCaptureState> states)
+        {
+            if (states == null) return;
+            foreach (LightCaptureState state in states)
+                if (state.Light != null) state.Light.intensity = state.Intensity;
+        }
+
+        private static void ApplySceneCameraOptions(Camera camera, JObject options, Bounds bounds, float aspect)
+        {
+            if (camera == null || options == null) return;
+            if (options["field_of_view"] != null)
+                camera.fieldOfView = Mathf.Clamp(options.Value<float>("field_of_view"), 1f, 179f);
+            if (options["near_clip"] != null)
+                camera.nearClipPlane = Mathf.Max(.001f, options.Value<float>("near_clip"));
+            if (options["far_clip"] != null)
+                camera.farClipPlane = Mathf.Max(camera.nearClipPlane + .01f, options.Value<float>("far_clip"));
+            if (options["orthographic"] != null)
+                camera.orthographic = options.Value<bool>("orthographic");
+            if (options["orthographic_size"] != null)
+                camera.orthographicSize = Mathf.Max(.01f, options.Value<float>("orthographic_size"));
+            if (options["position"] is JArray position && position.Count == 3)
+                camera.transform.position = new Vector3(position[0].Value<float>(), position[1].Value<float>(), position[2].Value<float>());
+            if (options["rotation"] is JArray rotation && rotation.Count == 4)
+                camera.transform.rotation = new Quaternion(rotation[0].Value<float>(), rotation[1].Value<float>(), rotation[2].Value<float>(), rotation[3].Value<float>());
+            if (options.Value<bool?>("auto_frame") ?? true)
+            {
+                Vector3 direction = camera.transform.forward.sqrMagnitude > .0001f ? camera.transform.forward.normalized : Vector3.forward;
+                CalculateTransformViewExtents(bounds, -direction, out Vector3 center, out float horizontalHalf, out float verticalHalf, out float depthHalf);
+                float distance = camera.orthographic
+                    ? Mathf.Max(.5f, depthHalf * 3f)
+                    : Mathf.Max(.5f, depthHalf + Mathf.Max(horizontalHalf / Mathf.Max(.01f, aspect), verticalHalf) /
+                        Mathf.Tan(camera.fieldOfView * Mathf.Deg2Rad * .5f) * 1.15f);
+                camera.transform.position = center - direction * distance;
+                camera.transform.LookAt(center, Vector3.up);
+                if (camera.orthographic)
+                    camera.orthographicSize = Mathf.Max(.05f, verticalHalf * 1.15f, horizontalHalf * 1.15f / Mathf.Max(.01f, aspect));
+            }
         }
 
         private static void CalculateTransformViewExtents(
@@ -290,9 +560,17 @@ namespace KimodoUnityBridge.Command
             return bounds;
         }
 
-        private static bool IsRelevantRenderer(Renderer renderer, Transform target) => renderer != null &&
-            (renderer.transform == target || renderer.transform.IsChildOf(target) ||
-             (renderer is SkinnedMeshRenderer skinned && skinned.bones.Any(bone => bone != null && (bone == target || bone.IsChildOf(target)))));
+        private static bool IsRelevantRenderer(Renderer renderer, Transform target)
+        {
+            if (renderer == null || target == null) return false;
+            if (renderer.transform == target || renderer.transform.IsChildOf(target)) return true;
+            // A scene may contain a white mannequin or capture duplicate that shares the
+            // character's bones. It is not part of the requested character hierarchy.
+            // Only use the bone fallback when the requested target is itself a bone/prop.
+            bool targetIsCharacterRoot = target.GetComponent<Animator>() != null || target.GetComponentInChildren<Animator>(true) != null;
+            return !targetIsCharacterRoot && renderer is SkinnedMeshRenderer skinned &&
+                skinned.bones.Any(bone => bone != null && (bone == target || bone.IsChildOf(target)));
+        }
 
         private static bool BoneMatches(SkinnedMeshRenderer renderer, int index, Transform target) =>
             index >= 0 && index < renderer.bones.Length && renderer.bones[index] != null && (renderer.bones[index] == target || renderer.bones[index].IsChildOf(target));
@@ -318,5 +596,24 @@ namespace KimodoUnityBridge.Command
             transform.parent == null ? transform.name : GetSceneHierarchyPath(transform.parent) + "/" + transform.name;
 
         private readonly struct CaptureTarget { public CaptureTarget(string path, Transform transform) { Path = path; Transform = transform; } public string Path { get; } public Transform Transform { get; } }
+
+        private sealed class MaterialCaptureState
+        {
+            public Material Material;
+            public bool HasEmissiveColor;
+            public Color EmissiveColor;
+            public bool HasEmissionColor;
+            public Color EmissionColor;
+            public bool HasEmissiveIntensity;
+            public float EmissiveIntensity;
+            public bool HasEmissionIntensity;
+            public float EmissionIntensity;
+        }
+
+        private sealed class LightCaptureState
+        {
+            public Light Light;
+            public float Intensity;
+        }
     }
 }

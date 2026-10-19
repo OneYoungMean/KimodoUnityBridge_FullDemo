@@ -33,9 +33,21 @@ namespace KimodoBridge.Editor
             }
             if (mode == null) return;
 
-            EditorGUILayout.PropertyField(
-                mode,
-                new GUIContent("Constraint Mode", "Only the selected mode is sampled, displayed, and exported."));
+            int selected = EditorGUILayout.Popup(
+                new GUIContent("Constraint Mode", "Only the selected mode is sampled, displayed, and exported."),
+                mode.intValue >= 0 && mode.intValue <= 2 ? mode.intValue : -1,
+                new[] { "Root2D", "FullBody", "Effector" });
+            if (selected >= 0 && selected != mode.intValue)
+            {
+                mode.intValue = selected;
+                so.FindProperty("sampleData.constraintMode").stringValue =
+                    selected == 0 ? "root2d" : selected == 1 ? "fullbody" : "effector";
+            }
+            if (mode.intValue < 0 || mode.intValue > 2)
+            {
+                EditorGUILayout.HelpBox("Unsupported legacy constraint mode. Select Root2D, FullBody, or Effector explicitly.", MessageType.Error);
+                return;
+            }
 
             if (marker != null)
             {

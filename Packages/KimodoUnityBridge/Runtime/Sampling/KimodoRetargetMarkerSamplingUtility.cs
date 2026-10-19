@@ -168,14 +168,14 @@ namespace KimodoBridge
             string markerType,
             double sampleTime)
         {
+            string mode = (markerType ?? string.Empty).Trim().ToLowerInvariant().Replace('_', '-');
+            if (mode == "left-hand" || mode == "right-hand" || mode == "left-foot" || mode == "right-foot")
+                mode = "effector";
+            mode = KimodoConstraintInternal.NormalizeMode(mode);
             return new KimodoMarkerSampleResult
             {
                 sampleData = new MuscleSample(),
-                constraintMode = string.Equals(markerType, "fullbody", StringComparison.OrdinalIgnoreCase)
-                    ? "fullbody"
-                    : string.Equals(markerType, "root2d", StringComparison.OrdinalIgnoreCase)
-                        ? "root2d"
-                        : "effector",
+                constraintMode = mode,
                 sampleTime = sampleTime,
                 enableMask = new KimodoConstraintMask(),
                 effectors = new KimodoConstraintEffectors(),

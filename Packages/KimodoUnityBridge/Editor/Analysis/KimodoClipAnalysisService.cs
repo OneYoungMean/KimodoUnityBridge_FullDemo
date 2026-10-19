@@ -136,7 +136,7 @@ namespace KimodoBridge.Editor
             {
                 TrackAsset parentTrack = timelineClip.GetParentTrack();
                 // Inspector analysis follows the same fixed command time base
-                // as animation_analyze; native clip FPS is handled by sampling.
+                // as animation.analyze; native clip FPS is handled by sampling.
                 float frameRate = (float)KimodoFrameTimeUtility.CommandFrameRate;
                 int frameCount = Mathf.Max(1, Mathf.RoundToInt((float)(timelineClip.duration * frameRate)));
                 string modelName = KimodoMotionModelProfiles.NormalizeName(clip.bridgeModelName);

@@ -26,7 +26,7 @@ public class KimodoConstraintMarker : Marker, IKimodoConstraintPreviewSelectable
 
     [SerializeField] private KimodoConstraintMode constraintMode = KimodoConstraintMode.FullBody;
     [SerializeField] private KimodoConstraintMarkerType markerType = KimodoConstraintMarkerType.Constraint;
-    [SerializeField] private KimodoMarkerSampleResult sampleData = new KimodoMarkerSampleResult();
+    [SerializeField] private KimodoMarkerSampleResult sampleData;
     [SerializeField] private KimodoRootPathData pathData;
 
     public string ConstraintType => markerType switch
@@ -69,9 +69,11 @@ public class KimodoConstraintMarker : Marker, IKimodoConstraintPreviewSelectable
         get => constraintMode;
         set
         {
-            EnsureSampleData();
+            string protocolName = ModeProtocolName(value);
             constraintMode = value;
-            sampleData.constraintMode = ModeProtocolName(value);
+            sampleData ??= new KimodoMarkerSampleResult();
+            sampleData.constraintMode = protocolName;
+            EnsureSampleData();
         }
     }
 
@@ -82,8 +84,10 @@ public class KimodoConstraintMarker : Marker, IKimodoConstraintPreviewSelectable
         get { EnsureSampleData(); return sampleData; }
         set
         {
-            sampleData = value?.Clone() ?? new KimodoMarkerSampleResult();
-            constraintMode = ResolveMode(sampleData.constraintMode, constraintMode);
+            KimodoMarkerSampleResult incoming = value?.Clone() ?? new KimodoMarkerSampleResult();
+            KimodoConstraintMode mode = ResolveMode(incoming.constraintMode);
+            sampleData = incoming;
+            constraintMode = mode;
             EnsureSampleData();
         }
     }
@@ -106,10 +110,9 @@ public class KimodoConstraintMarker : Marker, IKimodoConstraintPreviewSelectable
 
     private void EnsureSampleData()
     {
+        bool initializeDefaults = sampleData == null;
         sampleData ??= new KimodoMarkerSampleResult();
-        bool initializeDefaults = string.IsNullOrWhiteSpace(sampleData.constraintMode) ||
-            string.Equals(sampleData.constraintMode, "constraint", StringComparison.OrdinalIgnoreCase) &&
-            (sampleData.enableMask == null || sampleData.enableMask.IsEmpty);
+        KimodoConstraintInternal.NormalizeMode(sampleData.constraintMode);
         sampleData.sampleData ??= new KimodoBridge.MuscleSample();
         if (!KimodoSampleDataLayout.IsValid(sampleData.sampleData))
         {
@@ -144,25 +147,30 @@ public class KimodoConstraintMarker : Marker, IKimodoConstraintPreviewSelectable
         }
     }
 
-    private static KimodoConstraintMode ResolveMode(string value, KimodoConstraintMode fallback)
+    private static KimodoConstraintMode ResolveMode(string value)
     {
-        if (string.Equals(value, "root2d", StringComparison.OrdinalIgnoreCase)) return KimodoConstraintMode.Root2D;
-        if (string.Equals(value, "effector", StringComparison.OrdinalIgnoreCase)) return KimodoConstraintMode.Effector;
-        if (string.Equals(value, "fullbody", StringComparison.OrdinalIgnoreCase)) return KimodoConstraintMode.FullBody;
-        return fallback;
+        return KimodoConstraintInternal.NormalizeMode(value) switch
+        {
+            "root2d" => KimodoConstraintMode.Root2D,
+            "effector" => KimodoConstraintMode.Effector,
+            "fullbody" => KimodoConstraintMode.FullBody,
+            _ => throw new InvalidOperationException($"Unsupported constraint mode '{value}'.")
+        };
     }
 
     private static string ModeProtocolName(KimodoConstraintMode mode) => mode switch
     {
         KimodoConstraintMode.Root2D => "root2d",
         KimodoConstraintMode.Effector => "effector",
-        _ => "fullbody"
+        KimodoConstraintMode.FullBody => "fullbody",
+        _ => throw new InvalidOperationException("Unsupported constraint mode. Select Root2D, FullBody, or Effector.")
     };
 
     private static string ModeLabel(KimodoConstraintMode mode) => mode switch
     {
         KimodoConstraintMode.Root2D => "Root2D Constraint",
         KimodoConstraintMode.Effector => "Effector Constraint",
-        _ => "FullBody Constraint"
+        KimodoConstraintMode.FullBody => "FullBody Constraint",
+        _ => "Invalid Constraint Mode"
     };
 }

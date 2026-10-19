@@ -148,7 +148,7 @@ namespace KimodoBridge
             KimodoConstraintExportContext exportContext)
         {
             return BuildConstraints(
-                KimodoConstraintSampleComposer.ComposeCanonicalSamples(samples, DefaultExportFps),
+                samples,
                 exportContext ?? throw new ArgumentNullException(nameof(exportContext)),
                 0.0,
                 null,
@@ -216,7 +216,7 @@ namespace KimodoBridge
             double exportFps = DefaultExportFps)
         {
             List<KimodoConstraintJson> constraints = BuildConstraints(
-                KimodoConstraintSampleComposer.ComposeCanonicalSamples(samples, exportFps),
+                samples,
                 exportContext,
                 clipStartSeconds,
                 clipDurationSeconds,

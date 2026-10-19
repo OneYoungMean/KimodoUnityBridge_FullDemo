@@ -312,7 +312,57 @@ namespace KimodoUnityBridge.Command
                     additionalCameraDataType.GetField("clearColorMode")?.SetValue(additionalCameraData, colorMode);
                     additionalCameraDataType.GetProperty("clearColorMode")?.SetValue(additionalCameraData, colorMode);
                 }
+                // HDRP keeps a separate linear/HDR clear color on the additional
+                // camera data. Reset it as well; otherwise a cloned scene camera
+                // can carry an authored red/white background into evidence renders.
+                var backgroundField = additionalCameraDataType.GetField("backgroundColorHDR");
+                if (backgroundField != null) backgroundField.SetValue(additionalCameraData, Color.black);
+                else additionalCameraDataType.GetProperty("backgroundColorHDR")?.SetValue(additionalCameraData, Color.black);
+                var fixedExposureField = additionalCameraDataType.GetField("probeCustomFixedExposure");
+                fixedExposureField?.SetValue(additionalCameraData, true);
+                var exposureMultiplierField = additionalCameraDataType.GetField("deExposureMultiplier");
+                exposureMultiplierField?.SetValue(additionalCameraData, 0.1f);
+                // Use a deterministic evidence render: disable HDRP post effects
+                // (especially exposure and color grading) on the temporary camera.
+                var customSettingsField = additionalCameraDataType.GetField("customRenderingSettings");
+                customSettingsField?.SetValue(additionalCameraData, true);
+                var frameSettingsField = additionalCameraDataType.GetField("m_RenderingPathCustomFrameSettings");
+                if (frameSettingsField != null)
+                {
+                    object frameSettings = frameSettingsField.GetValue(additionalCameraData);
+                    Type frameSettingsType = frameSettingsField.FieldType;
+                    Type fieldType = AppDomain.CurrentDomain.GetAssemblies()
+                        .Select(assembly => assembly.GetType("UnityEngine.Rendering.HighDefinition.FrameSettingsField", false))
+                        .FirstOrDefault(type => type != null);
+                    MethodInfo setEnabled = frameSettingsType.GetMethod("SetEnabled", new[] { fieldType, typeof(bool) });
+                    if (setEnabled != null && fieldType != null)
+                    {
+                        foreach (string name in new[] { "Postprocess", "ExposureControl", "ColorGrading", "Tonemapping", "Bloom", "LensDistortion", "ChromaticAberration", "Vignette", "FilmGrain" })
+                        {
+                            object field = System.Enum.Parse(fieldType, name);
+                            setEnabled.Invoke(frameSettings, new[] { field, (object)false });
+                        }
+                        frameSettingsField.SetValue(additionalCameraData, frameSettings);
+                    }
+                }
             }
+        }
+
+        private static void SetCaptureCameraBackground(Camera camera, Color background)
+        {
+            if (camera == null) return;
+            camera.backgroundColor = background;
+            if (GetCapturePipeline() != CapturePipeline.Hdrp) return;
+            Type additionalCameraDataType = AppDomain.CurrentDomain.GetAssemblies()
+                .Select(assembly => assembly.GetType("UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData", false))
+                .FirstOrDefault(type => type != null);
+            Component additionalCameraData = additionalCameraDataType != null
+                ? camera.GetComponent(additionalCameraDataType)
+                : null;
+            if (additionalCameraData == null || additionalCameraDataType == null) return;
+            var backgroundField = additionalCameraDataType.GetField("backgroundColorHDR");
+            if (backgroundField != null) backgroundField.SetValue(additionalCameraData, background);
+            else additionalCameraDataType.GetProperty("backgroundColorHDR")?.SetValue(additionalCameraData, background);
         }
 
         private static TrajectoryScale BuildTrajectoryScale(IReadOnlyList<SubjectPictureData> subjects, bool includeEndEffectors = false)
@@ -820,7 +870,7 @@ namespace KimodoUnityBridge.Command
             RenderTexture previous = RenderTexture.active;
             try
             {
-                camera.backgroundColor = background;
+                SetCaptureCameraBackground(camera, background);
                 camera.targetTexture = renderTexture;
                 camera.Render();
                 RenderTexture.active = renderTexture;

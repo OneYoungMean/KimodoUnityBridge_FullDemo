@@ -68,7 +68,7 @@ namespace KimodoUnityBridge.Command.Tests
                 animator.Rebind();
 
                 testSession = CreateCurrentTestContext(character, animator);
-                JObject analysis = Require("animation_analyze", new JObject
+                JObject analysis = Require("animation.analyze", new JObject
                 {
                     ["clips"] = new JArray(new JObject
                     {
@@ -124,6 +124,7 @@ namespace KimodoUnityBridge.Command.Tests
                 Assert.That(phases.First()["duration_seconds"], Is.Null);
                 int analyzedFrameCount = clipAnalysis["root_trajectory"]?.Value<int>("frame_count") ?? 0;
                 Assert.That(analyzedFrameCount, Is.GreaterThan(1));
+                Assert.That(clipAnalysis["root_trajectory"]?.Value<string>("coordinate_space"), Is.EqualTo("world"));
                 Assert.That(phases.Last().Value<int>("end_timeline_frame_60_exclusive"), Is.EqualTo(analyzedFrameCount));
                 Assert.That(clipAnalysis["foot_contacts"]?.Count(), Is.GreaterThan(0));
                 Assert.That(clipAnalysis["foot_contacts"]?.FirstOrDefault()?["timeline_frame_60"], Is.Not.Null);
@@ -143,7 +144,7 @@ namespace KimodoUnityBridge.Command.Tests
                     : Path.GetFullPath(Path.Combine(Application.dataPath, "..", relativePng));
                 Assert.That(relativePng, Is.Not.Null.And.EndsWith(".png"));
                 Assert.That(relativePng.Replace('\\', '/'), Does.StartWith("Library/KimodoData/"));
-                Assert.That(File.Exists(absolutePng), Is.True, "animation_analyze did not write its composite PNG.");
+                Assert.That(File.Exists(absolutePng), Is.True, "animation.analyze did not write its composite PNG.");
                 Assert.That(new FileInfo(absolutePng).Length, Is.GreaterThan(0));
             }
             finally
@@ -181,6 +182,51 @@ namespace KimodoUnityBridge.Command.Tests
 
             Assert.That(samples.Select(sample => sample.sampleTime * 60d).ToArray(),
                 Is.EqualTo(new[] { 12d, 72d }));
+        }
+
+        [Test]
+        public void RootPathSamples_ConvertClipLocalPathIntoWorldAnchor()
+        {
+            Type contextType = typeof(command_dispatcher).Assembly
+                .GetType("KimodoUnityBridge.Command.command_context");
+            MethodInfo buildPath = contextType.GetMethod(
+                "BuildRootPathConstraintsWorld",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(buildPath, Is.Not.Null);
+
+            var path = new KimodoRootPathData
+            {
+                length = 1f,
+                sourceHumanScale = 1f,
+                knots = new List<KimodoRootPathKnot>
+                {
+                    new KimodoRootPathKnot
+                    {
+                        position = Vector2.zero,
+                        hasHeading = true,
+                        heading = Vector2.right
+                    },
+                    new KimodoRootPathKnot
+                    {
+                        position = Vector2.right,
+                        hasHeading = true,
+                        heading = Vector2.right
+                    }
+                }
+            };
+            var samples = ((IEnumerable<KimodoMarkerSampleResult>)buildPath.Invoke(null, new object[]
+            {
+                path, 0, 0, 60, 1f,
+                new Vector3(10f, 2f, 20f),
+                Quaternion.Euler(0f, 90f, 0f),
+                new HashSet<int>(), new HashSet<int>()
+            })).ToArray();
+
+            Assert.That(samples, Has.Length.EqualTo(2));
+            Assert.That(Vector3.Distance(samples[0].rootOverride.t, new Vector3(10f, 2f, 20f)), Is.LessThan(1e-4f));
+            Assert.That(Vector3.Distance(samples[1].rootOverride.t, new Vector3(10f, 2f, 19f)), Is.LessThan(1e-4f));
+            Assert.That(Vector3.Distance(samples[0].rootOverride.q * Vector3.forward, Vector3.back), Is.LessThan(1e-4f));
+            Assert.That(Vector3.Distance(samples[1].rootOverride.q * Vector3.forward, Vector3.back), Is.LessThan(1e-4f));
         }
 
         private static object CreateCurrentTestContext(GameObject character, Animator animator)

@@ -38,7 +38,8 @@ namespace KimodoBridge
             KimodoMarkerSampleResult canonical;
             try
             {
-                canonical = KimodoConstraintSampleComposer.ResolveUnifiedSample(sample);
+                KimodoConstraintInternal.ValidateSample(sample);
+                canonical = sample.Clone();
             }
             catch (Exception ex)
             {
@@ -52,8 +53,7 @@ namespace KimodoBridge
                 return false;
             }
 
-            // Root2D remains planar for normal callers. Preview callers may
-            // promote its root channels to FullBody semantics after composition.
+            // Preview callers may apply the complete Root2D root transform.
 
             return TryApply(
                 canonical,
@@ -111,7 +111,7 @@ namespace KimodoBridge
 
             // Every command constraint is evaluated from its authored support
             // pose. The concrete family decides which authored channels the
-            // solver applies; no Mix execution branch remains here.
+            // solver applies.
             if (!KimodoConstraintIkSolver.TryApply(sample, frameRate, cache, out error, fullBodyRootSemantics))
             {
                 return false;
@@ -459,8 +459,7 @@ namespace KimodoBridge
                 job.applyRoot = true;
                 job.applyRootPosition = applyRootPosition;
                 job.rootPlanar = !fullBodyRootSemantics &&
-                    (sample.composedRoot2D ||
-                     KimodoConstraintInternal.ResolveExecutionMode(sample) == "root2d");
+                    KimodoConstraintInternal.ResolveExecutionMode(sample) == "root2d";
                 job.rootHeading = KimodoConstraintMask.IsActive(sample, "rootheading");
                 job.rootPosition = sample.rootOverride.t;
                 job.rootRotation = sample.rootOverride.q.normalized;

@@ -316,28 +316,6 @@ namespace KimodoBridge.Editor
             Handles.Label(position + Vector3.up * size, label);
         }
 
-        internal static void CarryEffectorsWithRoot(
-            ConstraintPreviewInstance entry,
-            Vector3 previousRootPosition,
-            Quaternion previousRootRotation,
-            Vector3 currentRootPosition,
-            Quaternion currentRootRotation)
-        {
-            if (entry == null) return;
-            // Kept as a source-compatible no-op for archived editor callers.
-        }
-
-        internal static void CarryEffectorsWithRoot(
-            KimodoMarkerSampleResult sample,
-            KimodoConstraintMode constraintMode,
-            Vector3 previousRootPosition,
-            Quaternion previousRootRotation,
-            Vector3 currentRootPosition,
-            Quaternion currentRootRotation)
-        {
-            // Carry-with-root was removed. Root edits only update rootOverride.
-        }
-
         private static void PromoteHandleChannel(
             KimodoMarkerSampleResult sample,
             HumanBodyBones bone,

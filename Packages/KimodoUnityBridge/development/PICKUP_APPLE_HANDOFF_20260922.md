@@ -26,10 +26,10 @@ Copy the following context to the next GPT:
 - 不要假设之前实验留下的 Director/Scene/Timeline 状态是干净的。
 
 本阶段明确暂停：
-- 不要继续修改 animation_analyze 的协议大修。
-- 不要处理 clips[].role、pose_get.timeline_time_seconds、旧 keyframe 参数兼容等问题。
+- 不要继续修改 animation.analyze 的协议大修。
+- 不要处理 clips[].role、pose.get.timeline_time_seconds、旧 keyframe 参数兼容等问题。
 - 这些事项已经记录在 C:\nvlab\KimodoUnityBridge\development\plan.md 的“暂缓 TODO：Analysis / Pose 协议整理”中。
-- 本任务只使用现有稳定 generation 链；如必须调用当前 animation_analyze，只读取结果，不修改其协议实现。
+- 本任务只使用现有稳定 generation 链；如必须调用当前 animation.analyze，只读取结果，不修改其协议实现。
 
 任务语义：
 1. 角色从当前场景位置走到苹果桌前锚点。
@@ -70,7 +70,7 @@ A 的已知 Root2D 约束（60 FPS command frame）：
 - RightFoot (-3.14291286, 0.09808248, 12.2242908)
 
 当前最重要的技术问题是采样坐标一致性：
-- pose_get 的 Clip-local frame/time
+- pose.get 的 Clip-local frame/time
 - Timeline absolute time
 - Character world pose
 - Track/scene offset
@@ -79,16 +79,16 @@ A 的已知 Root2D 约束（60 FPS command frame）：
 
 不要只看 .anim 的局部 RootT。必须同时比较：
 - 直接 PlayableDirector.Evaluate() 后 Animator.GetBoneTransform() 的世界位置
-- pose_get 返回的 pose
-- transform_capture 的世界位置
+- pose.get 返回的 pose
+- transform.capture 的世界位置
 - 生成 Clip 在 Timeline 上播放时的世界位置
 - TrackOffset、Animator.applyRootMotion 和 root 曲线
 
 验证顺序：
 1. 检查当前 git diff，确认没有隐式 PathAngle 推断重新出现。
 2. 重新编译 Unity 项目。
-3. 优先验证 A_Root2D_Stand/A_Root2D_Stop 的多个本地采样点：0、480、510、545、575（按当前命令协议换算为 Clip-local 秒，不要擅自使用 Timeline-global pose_get 协议）。
-4. 将 pose_get、transform_capture、直接 Timeline Evaluate 的 hips/right hand/left foot/right foot 世界坐标比较。
+3. 优先验证 A_Root2D_Stand/A_Root2D_Stop 的多个本地采样点：0、480、510、545、575（按当前命令协议换算为 Clip-local 秒，不要擅自使用 Timeline-global pose.get 协议）。
+4. 将 pose.get、transform.capture、直接 Timeline Evaluate 的 hips/right hand/left foot/right foot 世界坐标比较。
 5. A 的 generation completed、asset connected、static analysis、pose/capture、Play Mode、visual accepted 必须分别报告。
 6. A 通过后，再生成 B：使用 A 末尾作为 In 约束，右手位置约束指向苹果世界坐标，不传右手 rotation。
 7. B 通过后，再设置苹果 ParentConstraint：抓取前苹果在桌上，抓取时切换到右手，确保桌上和手上不会同时出现；验证停止、拖动、重播和重新打开场景。

@@ -2,7 +2,7 @@
 
 ## Scope
 
-These rules apply to repository maintenance. Animation task execution is defined by [SKILL.md](../SKILL.md) and its linked tools; command details are defined by [Command/help.json](../Command/help.json).
+These rules apply to repository maintenance. Animation task execution is defined by [tools/common.md](../tools/common.md); command details are defined by [Command/help.json](../Command/help.json).
 
 ## Repository rules
 
@@ -14,8 +14,8 @@ These rules apply to repository maintenance. Animation task execution is defined
 ## Documentation ownership
 
 - `../README.md` / `../README.zh-CN.md`: human-facing package entry and installation overview.
-- `../SKILL.md`: installation gate, task entry, capability-tool orchestration, and shared execution rules.
-- `../tools/common.md`: the active reusable animation loop, shared command/evidence contract, and recognition/comparison rules. Superseded execution guides are retained under `../archive/` and are not active instructions.
+- `../SKILL.md`: purpose, installation, and documentation navigation.
+- `../tools/common.md`: scope, task routing, tool coordination, the active reusable animation loop, shared command/evidence contract, and recognition/comparison rules. Superseded execution guides are retained under `../archive/` and are not active instructions.
 - `../Command/help.json`: generated command and parameter schema; keep it aligned with the dispatcher.
 - `DEVELOPMENT.md`: temporary development snapshot, not an execution contract.
 - `README.md`: development and handoff navigation page.
@@ -23,6 +23,6 @@ These rules apply to repository maintenance. Animation task execution is defined
 
 ## Maintenance checks
 
-- For command changes, verify the live schema, `kimodo_help`, and the smallest relevant Unity/editor check.
+- For command changes, verify the live schema, `kimodo.help`, and the smallest relevant Unity/editor check.
 - For documentation changes, run a static terminology/command audit and `git diff --check`.
 - Report static, build, runtime, image, scene, and playback evidence separately.

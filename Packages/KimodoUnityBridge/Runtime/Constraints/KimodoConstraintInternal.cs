@@ -51,7 +51,6 @@ namespace KimodoBridge
         }
 
         /// <summary>
-        /// Selects one concrete protocol family for one canonical sample.
         /// Selects the concrete execution family for a canonical sample.
         /// </summary>
         internal static KimodoConstraintInternal[] GetConstraintInternal(
@@ -63,12 +62,7 @@ namespace KimodoBridge
             {
                 return Array.Empty<KimodoConstraintInternal>();
             }
-            if (!sample.sampleValid)
-            {
-                throw new InvalidOperationException("Constraint sample is invalid.");
-            }
-
-            string mode = ResolveExecutionMode(sample);
+            string mode = ValidateSample(sample);
             var result = new List<KimodoConstraintInternal>(4);
             if (string.Equals(mode, "root2d", StringComparison.OrdinalIgnoreCase))
             {
@@ -84,58 +78,35 @@ namespace KimodoBridge
                     result.Add(new KimodoFullBodyConstraintInternal(sample, modelType, exportContext));
                 }
             }
-            else if (string.Equals(mode, "mix", StringComparison.OrdinalIgnoreCase))
+            else if (mode == "effector")
             {
-                // "mix" is a transient canonical-sample mode produced by
-                // Editor pass composition. It is never a public command
-                // family: emit typed rows here, then let the raw protocol
-                // normalizer fold same-frame Root2D into the root-context row.
-                bool hasFamilies = sample.composedFullBody || sample.composedRoot2D || sample.composedEffector;
-                bool hasFullBody = sample.composedFullBody ||
-                    (!hasFamilies && sample.sampleData?.IsValid == true &&
-                     (sample.enableMask?.muscle == true || sample.enableMask?.rootTQ == true ||
-                      sample.enableMask?.leftFootTQ == true || sample.enableMask?.rightFootTQ == true));
-                bool hasRoot2D = sample.composedRoot2D ||
-                    (!hasFamilies && sample.rootOverride != null &&
-                     (sample.enableMask?.rootPosition == true || sample.enableMask?.rootHeading == true));
-                bool hasEffector = sample.composedEffector || !hasFamilies;
-
-                if (hasFullBody && sample.sampleData?.IsValid == true)
-                    result.Add(new KimodoFullBodyConstraintInternal(sample, modelType, exportContext));
-                if (hasRoot2D && sample.rootOverride != null)
-                    result.Add(new KimodoRoot2DConstraintInternal(sample, modelType, exportContext));
-                if (hasEffector)
-                    AddEffectors(result, sample, modelType, exportContext);
-            }
-            else
-            {
-                if (string.Equals(mode, "left-hand", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(mode, "right-hand", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(mode, "left-foot", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(mode, "right-foot", StringComparison.OrdinalIgnoreCase))
-                {
-                    AddEffector(result, sample, modelType, exportContext, mode);
-                }
-                else if (string.Equals(mode, "effector", StringComparison.OrdinalIgnoreCase))
-                {
-                    AddEffectors(result, sample, modelType, exportContext);
-                }
+                AddEffectors(result, sample, modelType, exportContext);
             }
             return result.ToArray();
+        }
+
+        internal static string ValidateSample(KimodoMarkerSampleResult sample)
+        {
+            if (sample == null) throw new InvalidOperationException("Constraint sample is null.");
+            if (!sample.sampleValid)
+            {
+                throw new InvalidOperationException("Constraint sample is invalid.");
+            }
+
+            string mode = NormalizeMode(sample.constraintMode);
+            if (sample.rootOverride == null)
+                throw new InvalidOperationException("Constraint sample requires an explicit root override.");
+            if (mode == "fullbody" && sample.sampleData?.IsValid != true)
+                throw new InvalidOperationException("FullBody constraint requires a valid pose payload.");
+            if (mode == "effector" && sample.enableMask?.AnyEndEffector != true)
+                throw new InvalidOperationException("Effector constraint requires at least one enabled end effector.");
+            return mode;
         }
 
         internal static string ResolveExecutionMode(KimodoMarkerSampleResult sample)
         {
             string mode = NormalizeMode(sample?.constraintMode);
             return mode;
-        }
-
-        internal static KimodoConstraintInternal[] Build(
-            KimodoMarkerSampleResult sample,
-            KimodoConstraintRigType modelType,
-            KimodoConstraintExportContext exportContext)
-        {
-            return GetConstraintInternal(sample, modelType, exportContext);
         }
 
         private static void AddEffectors(
@@ -154,30 +125,18 @@ namespace KimodoBridge
                 result.Add(new KimodoEndEffectorConstraintInternal(sample, modelType, exportContext, "right-foot"));
         }
 
-        private static void AddEffector(
-            List<KimodoConstraintInternal> result,
-            KimodoMarkerSampleResult sample,
-            KimodoConstraintRigType modelType,
-            KimodoConstraintExportContext exportContext,
-            string type)
-        {
-            string channel = type.Replace("-", string.Empty);
-            if (KimodoConstraintMask.IsActive(sample, channel))
-            {
-                result.Add(new KimodoEndEffectorConstraintInternal(
-                    sample, modelType, exportContext, type));
-            }
-        }
-
         internal static string NormalizeMode(string value)
         {
             string mode = (value ?? string.Empty)
                 .Trim().ToLowerInvariant().Replace('_', '-');
-            if (mode == string.Empty || mode == "constraint") return "fullbody";
-            // RootEffect is a public root-plus-effector input. Its execution
-            // family is Effector; root support remains in the sample payload.
-            if (mode == "root-effect") return "effector";
-            return mode == "ik" ? "effector" : mode;
+            switch (mode)
+            {
+                case "fullbody": return "fullbody";
+                case "root2d": return "root2d";
+                case "effector": return "effector";
+                default: throw new InvalidOperationException(
+                    $"Unsupported constraint mode '{value}'. Use root2d, fullbody, or effector.");
+            }
         }
     }
 

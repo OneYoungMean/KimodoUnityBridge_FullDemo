@@ -87,9 +87,7 @@ namespace KimodoBridge.Editor
             sample.sampleTime = sampleTime;
             if (marker is KimodoConstraintMarker)
             {
-                sample.constraintMode = marker.ConstraintMode == KimodoConstraintMode.Root2D
-                    ? "root2d"
-                    : marker.ConstraintMode == KimodoConstraintMode.Effector ? "effector" : "fullbody";
+                sample.constraintMode = marker.SampleData.constraintMode;
             }
             KimodoMarkerSampleResult preview = MergeAutoSampledChannels(marker, sample);
             if (preview == null)

@@ -587,12 +587,20 @@ namespace KimodoUnityBridge.Command
                         .FirstOrDefault(item => string.Equals(item.name, savedCharacter.trackName, StringComparison.Ordinal));
                     AnimationTrack poseTrack = track?.GetChildTracks().OfType<AnimationTrack>()
                         .FirstOrDefault(item => string.Equals(item.name, savedCharacter.poseCacheTrackName, StringComparison.Ordinal));
-                    if (root == null || track == null || poseTrack == null ||
-                        (animator == null && !HasRenderableMesh(root)))
+                    if (root == null || track == null || poseTrack == null || animator == null)
                     {
                         continue;
                     }
-                    KimodoLocalAvatarUtility.AvatarResolveResult avatarResult = KimodoLocalAvatarUtility.ResolveAvatarFromGameObject(root);
+                    KimodoLocalAvatarUtility.AvatarResolveResult avatarResult =
+                        KimodoLocalAvatarUtility.ResolveAvatarFromGameObject(root);
+                    if (!KimodoRetargetCoreUtility.IsValidHumanoid(avatarResult.Avatar) ||
+                        !KimodoLocalAvatarUtility.CheckAvatarValid(avatarResult.Avatar, root))
+                    {
+                        // Historical session metadata may contain props or stale
+                        // non-humanoid entries. Keep their Timeline assets intact,
+                        // but do not re-index them as characters.
+                        continue;
+                    }
                     var character = new TimelineCharacterRecord(savedCharacter.characterRef, root, animator, avatarResult.Avatar, track, poseTrack, avatarResult.Error);
                     BindTimelineCharacter(session, root, sourceRoot, animator, track);
                     session.Characters.Add(character);

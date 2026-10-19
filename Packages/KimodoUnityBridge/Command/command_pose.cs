@@ -118,24 +118,6 @@ namespace KimodoUnityBridge.Command
             return sample;
         }
 
-        public static string PoseSetRootTransform(string argumentsJson) => Execute(argumentsJson, arguments =>
-        {
-            TimelineSessionRecord session = RequireCurrentTimelineSession();
-            PoseReference reference = RequirePoseReference(arguments["pose"] as JObject);
-            KimodoConstraintMarker marker = RequirePoseMarker(reference, out TimelineCharacterRecord character);
-            JObject root = arguments["root"] as JObject ?? throw new InvalidOperationException("root must be an object.");
-            KimodoMarkerSampleResult sample = marker.SampleData;
-            ApplyPoseRootTransform(sample, root);
-            marker.CommitSampleData();
-            EditorUtility.SetDirty(marker);
-            SaveTimelineSession(session);
-            return Ok(new JObject
-            {
-                ["pose"] = PoseReferenceJson(character.PoseCacheTrack.name, reference.Index),
-                ["data"] = KimodoConstraintPoseUtility.BuildPoseJson(sample)
-            });
-        });
-
         public static string PoseTest(string argumentsJson) => Execute(argumentsJson, arguments =>
         {
             PoseReference reference = RequirePoseReference(arguments["pose"] as JObject);
@@ -176,7 +158,7 @@ namespace KimodoUnityBridge.Command
             using (EvaluatedPosePreview preview = CreatePipelinePosePreview(character, marker.SampleData.Clone()))
             {
                 if (preview.Animator == null || !preview.Animator.isHuman)
-                    throw new InvalidOperationException("pose_test requires a valid Humanoid pose rig.");
+                    throw new InvalidOperationException("pose.test requires a valid Humanoid pose rig.");
                 var results = new JArray();
                 int tested = 0;
                 bool passed = true;
@@ -236,7 +218,7 @@ namespace KimodoUnityBridge.Command
             JObject effectors = arguments["effector"] as JObject;
             if (root == null && muscles == null && effectors == null)
             {
-                throw new InvalidOperationException("pose_set requires root, muscles, or effector.");
+                throw new InvalidOperationException("pose.set requires root, muscles, or effector.");
             }
 
             KimodoMarkerSampleResult sample = marker.SampleData;
@@ -330,38 +312,6 @@ namespace KimodoUnityBridge.Command
             if (hasRotation) sample.enableMask.rootHeading = true;
             sample.sampleValid = true;
         }
-
-        public static string PoseSetMuscle(string argumentsJson) => Execute(argumentsJson, arguments =>
-        {
-            TimelineSessionRecord session = RequireCurrentTimelineSession();
-            PoseReference reference = RequirePoseReference(arguments["pose"] as JObject);
-            KimodoConstraintMarker marker = RequirePoseMarker(reference, out TimelineCharacterRecord character);
-            JObject muscles = arguments["muscles"] as JObject ?? throw new InvalidOperationException("muscles must be an object.");
-            if (!muscles.Properties().Any())
-            {
-                throw new InvalidOperationException("muscles must contain at least one channel.");
-            }
-            KimodoMarkerSampleResult sample = marker.SampleData;
-            if (sample.sampleData == null || !sample.sampleData.IsValid)
-            {
-                throw new InvalidOperationException("Pose has no valid 70-value sampleData payload.");
-            }
-            foreach (JProperty property in muscles.Properties())
-            {
-                int index = ResolveCanonicalMuscleIndex(property.Name);
-                float value = ReadFiniteFloat(property.Value, $"muscles.{property.Name}");
-                sample.sampleData.data[index] = value;
-            }
-            sample.sampleValid = true;
-            marker.CommitSampleData();
-            EditorUtility.SetDirty(marker);
-            SaveTimelineSession(session);
-            return Ok(new JObject
-            {
-                ["pose"] = PoseReferenceJson(character.PoseCacheTrack.name, reference.Index),
-                ["data"] = KimodoConstraintPoseUtility.BuildPoseJson(sample)
-            });
-        });
 
         private static KimodoMarkerSampleResult ReadPoseSample(
             PoseReference reference,

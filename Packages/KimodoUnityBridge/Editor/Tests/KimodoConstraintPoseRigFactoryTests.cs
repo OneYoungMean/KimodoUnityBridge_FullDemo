@@ -26,7 +26,7 @@ namespace KimodoBridge.Editor.Tests
                     KimodoRetargetSamplingUtility.CaptureBoneSample(skeleton), skeleton, model, mode, 0,
                     out var sample, out error), Is.True, error);
                 sample.constraintMode = mode;
-                sample.enableMask = KimodoConstraintMask.ForType(mode == "mix" ? "root2d" : mode);
+                sample.enableMask = KimodoConstraintMask.ForType(mode);
                 sample.enableMask.rootHeading = heading;
                 sample.rootOverride.t = new Vector3(-3.011355f, 0.841578f, 12.355375f);
                 sample.rootOverride.q = Quaternion.Euler(12f, 65f, -8f);
@@ -106,66 +106,9 @@ namespace KimodoBridge.Editor.Tests
             }
         }
 
-        [Test]
-        public void Root2DCommandSupport_UsesCanonicalPoseSolveOnce()
-        {
-            const string model = KimodoMotionModelProfiles.DefaultModelName;
-            Assert.That(KimodoRuntimeAvatarSkeletonBuilder.TryLoadAvatarByModelName(
-                model, out var avatar, out var error), Is.True, error);
-            Assert.That(KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(
-                avatar, "Root2DCommandSupport", out var skeleton, out error), Is.True, error);
-            try
-            {
-                Assert.That(skeleton.GetBonePose(
-                    HumanBodyBones.Hips, out Vector3 supportRoot, out _), Is.True);
-                var arguments = new JObject
-                {
-                    ["root2d"] = new JObject
-                    {
-                        ["position"] = new JArray(2f, -3f),
-                        ["heading"] = new JArray(0f, 1f)
-                    }
-                };
-                Type context = typeof(command_dispatcher).Assembly
-                    .GetType("KimodoUnityBridge.Command.command_context");
-                MethodInfo method = context?.GetMethod(
-                    "BuildRoot2DConstraint",
-                    BindingFlags.Static | BindingFlags.NonPublic);
-                Assert.That(method, Is.Not.Null);
 
-                var sample = (KimodoMarkerSampleResult)method.Invoke(null, new object[]
-                {
-                    arguments,
-                    30f,
-                    0.0,
-                    0,
-                    skeleton,
-                    null,
-                    null,
-                    new List<string>(),
-                    true
-                });
-
-                Assert.That(sample.constraintMode, Is.EqualTo("root2d"));
-                Assert.That(sample.sampleValid, Is.True);
-                Assert.That(sample.enableMask.rootHeading, Is.True);
-                Assert.That(sample.enableMask.rootPosition, Is.False);
-                Assert.That(sample.rootOverride.t.y, Is.EqualTo(supportRoot.y).Within(0.001f),
-                    "Root2D must preserve the support pose's vertical root position.");
-                Assert.That(skeleton.GetBonePose(
-                    HumanBodyBones.Hips, out Vector3 solvedRoot, out Quaternion solvedHeading), Is.True);
-                Assert.That(solvedRoot.x, Is.EqualTo(2f).Within(0.001f));
-                Assert.That(solvedRoot.z, Is.EqualTo(-3f).Within(0.001f));
-                Assert.That(Quaternion.Angle(solvedHeading, sample.rootOverride.q), Is.LessThan(0.1f));
-            }
-            finally
-            {
-                skeleton.Dispose();
-            }
-        }
-
-        [Test]
-        public void GenerateCommand_Root2DConstraintMatchesCanonicalSampleExport()
+        [TestCase(false), TestCase(true)]
+        public void GenerateCommand_Root2DConstraintMatchesCanonicalSampleExport(bool withEffect)
         {
             const string model = KimodoMotionModelProfiles.DefaultModelName;
             Assert.That(KimodoRuntimeAvatarSkeletonBuilder.TryLoadAvatarByModelName(
@@ -179,12 +122,19 @@ namespace KimodoBridge.Editor.Tests
                     HumanBodyBones.Hips, out Vector3 supportRoot, out _), Is.True);
                 var commandInput = new JObject
                 {
-                    ["root2d"] = new JObject
+                    ["root"] = new JObject
                     {
-                        ["position"] = new JArray(2f, -3f),
-                        ["heading"] = new JArray(0f, 1f)
+                        ["position"] = new JArray(2f, supportRoot.y, -3f),
+                        ["rotation"] = new JArray(0f, 0f, 0f)
                     }
                 };
+                if (withEffect)
+                {
+                    Assert.That(skeleton.GetBonePose(HumanBodyBones.RightHand, out Vector3 hand, out _), Is.True);
+                    Vector3 target = hand + new Vector3(2f - supportRoot.x, 0f, -3f - supportRoot.z);
+                    commandInput["effector"] = new JObject { ["right_hand"] = new JObject {
+                        ["position"] = new JArray(target.x, target.y, target.z) } };
+                }
                 Type context = typeof(command_dispatcher).Assembly
                     .GetType("KimodoUnityBridge.Command.command_context");
                 MethodInfo buildCanonical = context?.GetMethod(
@@ -197,7 +147,7 @@ namespace KimodoBridge.Editor.Tests
                     commandInput, skeleton, model, 30f, sampleTime, 0, null, null, new List<string>()
                 });
                 Assert.That(sample, Is.Not.Null);
-                Assert.That(sample.constraintMode, Is.EqualTo("root2d"));
+                Assert.That(sample.constraintMode, Is.EqualTo(withEffect ? "effector" : "root2d"));
                 Assert.That(sample.sampleValid, Is.True);
                 Assert.That(sample.enableMask.rootHeading, Is.True);
                 Assert.That(sample.rootOverride.t.y, Is.EqualTo(supportRoot.y).Within(0.001f));
@@ -212,7 +162,7 @@ namespace KimodoBridge.Editor.Tests
                     null,
                     30.0);
                 Assert.That(exported, Is.Not.Null);
-                Assert.That(exported.type, Is.EqualTo("root2d"));
+                Assert.That(exported.type, Is.EqualTo(withEffect ? "right-hand" : "root2d"));
                 CollectionAssert.AreEqual(new[] { 37 }, exported.frame_indices);
                 Assert.That(exported.smooth_root_2d, Is.Not.Null);
                 Assert.That(exported.smooth_root_2d, Has.Count.EqualTo(1));
@@ -223,6 +173,49 @@ namespace KimodoBridge.Editor.Tests
             {
                 skeleton.Dispose();
             }
+        }
+
+        [TestCase(false), TestCase(true)]
+        public void Command_PoseAndEffector_ExportsIkSolvedFullBody(bool withRoot)
+        {
+            const string model = KimodoMotionModelProfiles.DefaultModelName;
+            Assert.That(KimodoRuntimeAvatarSkeletonBuilder.TryLoadAvatarByModelName(
+                model, out var avatar, out var error), Is.True, error);
+            Assert.That(KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(
+                avatar, "FullBodyIkExport", out var skeleton, out error), Is.True, error);
+            try
+            {
+                Assert.That(KimodoRetargetMarkerSamplingUtility.TryBuildMarkerSampleResultFromBoneSample(
+                    KimodoRetargetSamplingUtility.CaptureBoneSample(skeleton), skeleton, model, "fullbody", 0,
+                    out var pose, out error), Is.True, error);
+                pose.enableMask = KimodoConstraintMask.ForType("fullbody");
+                var projector = KimodoConstraintExportProjector.CreateProfileNative(model);
+                var baseline = projector(pose);
+                int handIndex = Array.IndexOf(baseline.jointNames, "RightHand");
+                Assert.That(handIndex, Is.GreaterThanOrEqualTo(0));
+                Vector3 target = Vector3.Lerp(baseline.jointPositions[handIndex], baseline.profileRootPosition, 0.2f)
+                    + Vector3.forward * 0.1f;
+                var input = new JObject
+                {
+                    ["pose"] = new JObject { ["track"] = "P", ["index"] = 0 },
+                    ["effector"] = new JObject { ["right_hand"] = new JObject { ["position"] = new JArray(target.x, target.y, target.z) } }
+                };
+                if (withRoot) input["root"] = new JObject { ["position"] = new JArray(pose.rootOverride.t.x, pose.rootOverride.t.y, pose.rootOverride.t.z) };
+                KimodoUnityBridge.Command.command_context.ApplyPointConstraintData(input, pose, 0, 0);
+                var solved = projector(pose);
+                Assert.That(pose.constraintMode, Is.EqualTo("fullbody"));
+                Assert.That(Vector3.Distance(solved.jointPositions[handIndex], target), Is.LessThan(0.03f));
+                int armIndex = Array.IndexOf(solved.jointNames, "RightForeArm");
+                Assert.That(armIndex, Is.GreaterThanOrEqualTo(0));
+                Assert.That(Vector3.Distance(solved.localJointAngles[armIndex], baseline.localJointAngles[armIndex]),
+                    Is.GreaterThan(0.01f), "IK must change the exported arm pose.");
+                var exported = KimodoConstraintJsonExporter.BuildConstraint(pose,
+                    new KimodoConstraintExportContext { projectedPoseProjector = projector }, 0, null, 30);
+                Assert.That(exported.type, Is.EqualTo("fullbody"));
+                Assert.That(exported.local_joints_rot, Has.Count.EqualTo(1));
+                Assert.That(exported.target_positions, Is.Null);
+            }
+            finally { skeleton.Dispose(); }
         }
 
         [TestCase(false)]
@@ -265,7 +258,7 @@ namespace KimodoBridge.Editor.Tests
                     {
                         sample.enableMask.leftFoot = sample.enableMask.rightFoot = true;
                     }
-                    var previewSample = KimodoConstraintSampleComposer.ResolveUnifiedSample(sample);
+                    var previewSample = sample.Clone();
                     Assert.That(KimodoConstraintPoseRigFactory.TryApplyPose(rig,
                         previewSample, model, out error), Is.True, error);
                     Assert.That(previewSample.constraintMode, Is.EqualTo(sample.constraintMode));
@@ -420,320 +413,11 @@ namespace KimodoBridge.Editor.Tests
                 Is.LessThan(0.01f));
         }
 
-        [Test, Ignore("Archived legacy carry behavior; root edits no longer modify effectors.")]
-        public void CarryEffectorsWithRoot_AppliesTheRootRigidTransformDelta()
-        {
-            var sample = new KimodoMarkerSampleResult
-            {
-                carryEffectorsWithRoot = true,
-                rootOverride = new KimodoUnityBridge.KimodoRigidTransform
-                {
-                    t = new Vector3(1f, 0f, 2f),
-                    q = Quaternion.identity
-                },
-                effectors = new KimodoConstraintEffectors
-                {
-                    leftHand = new KimodoUnityBridge.KimodoRigidTransform
-                    {
-                        t = new Vector3(2f, 0f, 2f),
-                        q = Quaternion.identity
-                    },
-                    rightFoot = new KimodoUnityBridge.KimodoRigidTransform
-                    {
-                        t = new Vector3(1f, 0f, 1f),
-                        q = Quaternion.Euler(10f, 20f, 30f)
-                    }
-                },
-                enableMask = new KimodoConstraintMask { leftHand = true, rightFoot = true },
-                validMask = new KimodoConstraintMask { leftHand = true, rightFoot = true }
-            };
-            var entry = new ConstraintPreviewInstance
-            {
-                ConstraintMode = KimodoConstraintMode.Mix,
-                SampleData = sample
-            };
-            Vector3 nextRoot = new Vector3(4f, 0f, 5f);
-            Quaternion nextRotation = Quaternion.Euler(0f, 90f, 0f);
 
-            KimodoConstraintPreviewRenderer.CarryEffectorsWithRoot(
-                entry,
-                sample.rootOverride.t,
-                sample.rootOverride.q,
-                nextRoot,
-                nextRotation);
 
-            Assert.That(
-                Vector3.Distance(sample.effectors.leftHand.t, nextRoot + Vector3.back),
-                Is.LessThan(0.001f));
-            Assert.That(
-                Quaternion.Angle(sample.effectors.leftHand.q, nextRotation),
-                Is.LessThan(0.001f));
-            Assert.That(
-                Quaternion.Angle(
-                    sample.effectors.rightFoot.q,
-                    nextRotation * Quaternion.Euler(10f, 20f, 30f)),
-                Is.LessThan(0.001f));
-        }
 
-        [Test, Ignore("Archived legacy carry behavior; root edits no longer modify effectors.")]
-        public void CarryEffectorsWithRoot_SamplePathAppliesInspectorRootEdit()
-        {
-            var sample = new KimodoMarkerSampleResult
-            {
-                sampleValid = true,
-                carryEffectorsWithRoot = true,
-                rootOverride = KimodoUnityBridge.KimodoRigidTransform.Identity,
-                effectors = new KimodoConstraintEffectors
-                {
-                    leftHand = new KimodoUnityBridge.KimodoRigidTransform
-                    {
-                        t = Vector3.right,
-                        q = Quaternion.identity
-                    }
-                }
-            };
-            Vector3 nextRoot = Vector3.up;
-            Quaternion nextRotation = Quaternion.Euler(0f, 90f, 0f);
 
-            KimodoConstraintPreviewRenderer.CarryEffectorsWithRoot(
-                sample,
-                KimodoConstraintMode.Effector,
-                Vector3.zero,
-                Quaternion.identity,
-                nextRoot,
-                nextRotation);
 
-            Vector3 expectedPosition = nextRoot + nextRotation * Vector3.right;
-            Assert.That(Vector3.Distance(sample.effectors.leftHand.t, expectedPosition), Is.LessThan(0.001f));
-            Assert.That(Quaternion.Angle(sample.effectors.leftHand.q, nextRotation), Is.LessThan(0.001f));
-        }
-
-        [Test, Ignore("Legacy FullBody carry expectation; carry now applies to every valid target payload.")]
-        public void CarryEffectorsWithRoot_FullBodyPromotesFootGoalsForSolveIk()
-        {
-            var sample = new KimodoMarkerSampleResult
-            {
-                carryEffectorsWithRoot = true,
-                rootOverride = KimodoUnityBridge.KimodoRigidTransform.Identity,
-                effectors = new KimodoConstraintEffectors
-                {
-                    leftHand = new KimodoUnityBridge.KimodoRigidTransform
-                    {
-                        t = new Vector3(0.5f, 1f, 0.5f),
-                        q = Quaternion.identity
-                    },
-                    leftFoot = new KimodoUnityBridge.KimodoRigidTransform
-                    {
-                        t = new Vector3(-0.1f, 0f, 0f),
-                        q = Quaternion.identity
-                    },
-                    rightFoot = new KimodoUnityBridge.KimodoRigidTransform
-                    {
-                        t = new Vector3(0.1f, 0f, 0f),
-                        q = Quaternion.identity
-                    }
-                },
-                enableMask = new KimodoConstraintMask { leftFoot = true, rightFoot = true },
-                validMask = new KimodoConstraintMask()
-            };
-            var entry = new ConstraintPreviewInstance
-            {
-                ConstraintMode = KimodoConstraintMode.FullBody,
-                SampleData = sample
-            };
-            Vector3 originalHandPosition = sample.effectors.leftHand.t;
-
-            KimodoConstraintPreviewRenderer.CarryEffectorsWithRoot(
-                entry,
-                Vector3.zero,
-                Quaternion.identity,
-                Vector3.forward,
-                Quaternion.identity);
-
-            Assert.That(sample.effectors.leftFoot.t.z, Is.EqualTo(1f).Within(0.001f));
-            Assert.That(sample.effectors.rightFoot.t.z, Is.EqualTo(1f).Within(0.001f));
-            Assert.That(sample.effectors.leftHand.t, Is.EqualTo(originalHandPosition));
-            Assert.That(sample.enableMask.leftHand, Is.False);
-            Assert.That(KimodoConstraintMask.IsActive(sample, "leftfoot"), Is.True);
-            Assert.That(KimodoConstraintMask.IsActive(sample, "rightfoot"), Is.True);
-        }
-
-        [Test, Ignore("Archived legacy carry behavior; root edits no longer modify effectors.")]
-        public void CarryEffectorsWithRoot_Root2DIgnoresEffectors()
-        {
-            var sample = new KimodoMarkerSampleResult
-            {
-                constraintMode = "root2d",
-                carryEffectorsWithRoot = true,
-                rootOverride = KimodoUnityBridge.KimodoRigidTransform.Identity,
-                effectors = new KimodoConstraintEffectors
-                {
-                    leftHand = new KimodoUnityBridge.KimodoRigidTransform
-                    {
-                        t = new Vector3(1f, 2f, 3f),
-                        q = Quaternion.Euler(10f, 20f, 30f)
-                    }
-                },
-                enableMask = new KimodoConstraintMask
-                {
-                    rootPosition = true,
-                    leftHand = true
-                },
-                validMask = new KimodoConstraintMask
-                {
-                    rootPosition = true,
-                    leftHand = true
-                }
-            };
-            var entry = new ConstraintPreviewInstance
-            {
-                ConstraintMode = KimodoConstraintMode.Root2D,
-                SampleData = sample
-            };
-            Vector3 originalPosition = sample.effectors.leftHand.t;
-            Quaternion originalRotation = sample.effectors.leftHand.q;
-
-            KimodoConstraintPreviewRenderer.CarryEffectorsWithRoot(
-                entry,
-                Vector3.zero,
-                Quaternion.identity,
-                new Vector3(4f, 0f, 5f),
-                Quaternion.Euler(0f, 90f, 0f));
-
-            Assert.That(sample.effectors.leftHand.t, Is.EqualTo(originalPosition));
-            Assert.That(Quaternion.Angle(sample.effectors.leftHand.q, originalRotation), Is.LessThan(0.001f));
-            Assert.That(sample.enableMask.leftHand, Is.True);
-        }
-
-        [Test, Ignore("Archived legacy carry behavior; carry option was removed.")]
-        public void CarryEffectorsWithRoot_DisabledLeavesTargetsUnchanged()
-        {
-            var sample = new KimodoMarkerSampleResult
-            {
-                carryEffectorsWithRoot = false,
-                rootOverride = KimodoUnityBridge.KimodoRigidTransform.Identity,
-                effectors = new KimodoConstraintEffectors
-                {
-                    leftHand = new KimodoUnityBridge.KimodoRigidTransform
-                    {
-                        t = new Vector3(1f, 2f, 3f),
-                        q = Quaternion.Euler(10f, 20f, 30f)
-                    }
-                },
-                enableMask = new KimodoConstraintMask { leftHand = true },
-                validMask = new KimodoConstraintMask { leftHand = true }
-            };
-            var entry = new ConstraintPreviewInstance
-            {
-                ConstraintMode = KimodoConstraintMode.Mix,
-                SampleData = sample
-            };
-            Vector3 originalPosition = sample.effectors.leftHand.t;
-            Quaternion originalRotation = sample.effectors.leftHand.q;
-
-            KimodoConstraintPreviewRenderer.CarryEffectorsWithRoot(
-                entry,
-                Vector3.zero,
-                Quaternion.identity,
-                Vector3.one,
-                Quaternion.Euler(0f, 90f, 0f));
-
-            Assert.That(sample.effectors.leftHand.t, Is.EqualTo(originalPosition));
-            Assert.That(
-                Quaternion.Angle(sample.effectors.leftHand.q, originalRotation),
-                Is.LessThan(0.001f));
-        }
-
-        [Test, Ignore("Archived legacy carry behavior; carry option was removed.")]
-        public void CarryEffectorsWithRoot_TransformsDisabledValidTargetsWithoutEnablingThem()
-        {
-            var sample = new KimodoMarkerSampleResult
-            {
-                carryEffectorsWithRoot = true,
-                rootOverride = KimodoUnityBridge.KimodoRigidTransform.Identity,
-                effectors = new KimodoConstraintEffectors
-                {
-                    leftHand = new KimodoUnityBridge.KimodoRigidTransform
-                    {
-                        t = Vector3.right,
-                        q = Quaternion.identity
-                    }
-                },
-                enableMask = new KimodoConstraintMask { leftHand = false }
-            };
-            var entry = new ConstraintPreviewInstance
-            {
-                ConstraintMode = KimodoConstraintMode.Effector,
-                SampleData = sample
-            };
-
-            KimodoConstraintPreviewRenderer.CarryEffectorsWithRoot(
-                entry,
-                Vector3.zero,
-                Quaternion.identity,
-                Vector3.up,
-                Quaternion.Euler(0f, 90f, 0f));
-
-            Vector3 expected = Vector3.up + Quaternion.Euler(0f, 90f, 0f) * Vector3.right;
-            Assert.That(Vector3.Distance(sample.effectors.leftHand.t, expected),
-                Is.LessThan(0.001f));
-            Assert.That(sample.enableMask.leftHand, Is.False);
-        }
-
-        [Test]
-        public void PosePipeline_CarryFlagDoesNotAlterRuntimeSolve()
-        {
-            const string model = KimodoMotionModelProfiles.DefaultModelName;
-            Assert.That(KimodoRuntimeAvatarSkeletonBuilder.TryLoadAvatarByModelName(
-                model, out var avatar, out var error), Is.True, error);
-            Assert.That(KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(
-                avatar, "CarryRuntimeBaseline", out var baseline, out error), Is.True, error);
-            Assert.That(KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(
-                avatar, "CarryRuntimeFlagged", out var flagged, out error), Is.True, error);
-            try
-            {
-                Assert.That(KimodoRetargetMarkerSamplingUtility.TryBuildMarkerSampleResultFromBoneSample(
-                    KimodoRetargetSamplingUtility.CaptureBoneSample(baseline),
-                    baseline,
-                    model,
-                    "fullbody",
-                    0,
-                    out var baselineSample,
-                    out error), Is.True, error);
-                baselineSample.constraintMode = "fullbody";
-                baselineSample.enableMask = KimodoConstraintMask.ForType("fullbody");
-                baselineSample.rootOverride.t += new Vector3(0.25f, 0.1f, -0.4f);
-                baselineSample.rootOverride.q = Quaternion.Euler(0f, 20f, 0f) * baselineSample.rootOverride.q;
-
-                KimodoMarkerSampleResult flaggedSample = baselineSample.Clone();
-                flaggedSample.carryEffectorsWithRoot = true;
-
-                Assert.That(KimodoConstraintPosePipeline.TryApply(
-                    baselineSample, 30f, baseline, out _, out _, out error), Is.True, error);
-                Assert.That(KimodoConstraintPosePipeline.TryApply(
-                    flaggedSample, 30f, flagged, out _, out _, out error), Is.True, error);
-
-                BoneSample baselinePose = KimodoRetargetSamplingUtility.CaptureBoneSample(baseline);
-                BoneSample flaggedPose = KimodoRetargetSamplingUtility.CaptureBoneSample(flagged);
-                Assert.That(flaggedPose.boneNames, Is.EqualTo(baselinePose.boneNames));
-                for (int i = 0; i < baselinePose.boneNames.Length; i++)
-                {
-                    Assert.That(
-                        Vector3.Distance(flaggedPose.localPositions[i], baselinePose.localPositions[i]),
-                        Is.LessThan(0.001f),
-                        baselinePose.boneNames[i]);
-                    Assert.That(
-                        Quaternion.Angle(flaggedPose.localRotations[i], baselinePose.localRotations[i]),
-                        Is.LessThan(0.1f),
-                        baselinePose.boneNames[i]);
-                }
-            }
-            finally
-            {
-                baseline.Dispose();
-                flagged.Dispose();
-            }
-        }
 
         [Test]
         public void ModelNativeConstraintPipeline_AppliesExplicitRootAndCommandMask()
@@ -992,200 +676,5 @@ namespace KimodoBridge.Editor.Tests
             }
         }
 
-        [Test, Ignore("Independent timeline projection diagnostic; retain for post-batch investigation.")]
-        public void TimelineProjection_SolvesCharacterBeforeRemovingTrackOffset()
-        {
-            const string modelName = KimodoMotionModelProfiles.DefaultModelName;
-            Assert.That(
-                KimodoRuntimeAvatarSkeletonBuilder.TryLoadAvatarByModelName(
-                    modelName,
-                    out Avatar avatar,
-                    out string error),
-                Is.True,
-                error);
-            Assert.That(
-                KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(
-                    avatar,
-                    "KimodoTimelineProjectionSourceTest",
-                    out RetargetSkeleton source,
-                    out error),
-                Is.True,
-                error);
-
-            try
-            {
-                Assert.That(
-                    KimodoRetargetSamplingUtility.TryCaptureMuscleSample(
-                        source,
-                        out MuscleSample bindPose,
-                        out error),
-                    Is.True,
-                    error);
-
-                Vector3 trackPosition = new Vector3(4f, 0.5f, -3f);
-                Quaternion trackRotation = Quaternion.Euler(0f, 35f, 0f);
-                Vector3 expectedRoot = new Vector3(1.25f, 1.1f, 2.5f);
-                Quaternion expectedRotation = Quaternion.Euler(5f, 20f, -3f);
-                KimodoTimelineTrackOffsetUtility.TrackToWorldPose(
-                    expectedRoot,
-                    expectedRotation,
-                    trackPosition,
-                    trackRotation,
-                    out Vector3 worldRoot,
-                    out Quaternion worldRotation);
-
-                Transform sourceHips = KimodoRetargetHumanoidPoseUtility.ResolveHumanBoneTransform(
-                    source,
-                    HumanBodyBones.Hips);
-                Transform sourceLeftHand = KimodoRetargetHumanoidPoseUtility.ResolveHumanBoneTransform(
-                    source,
-                    HumanBodyBones.LeftHand);
-                Assert.That(sourceHips, Is.Not.Null);
-                Assert.That(sourceLeftHand, Is.Not.Null);
-                sourceHips.SetPositionAndRotation(expectedRoot, expectedRotation);
-                Vector3 expectedLeftHand = sourceLeftHand.position + new Vector3(0.08f, 0.04f, 0.03f);
-                Quaternion expectedLeftHandRotation = sourceLeftHand.rotation;
-                KimodoTimelineTrackOffsetUtility.TrackToWorldPose(
-                    expectedLeftHand,
-                    expectedLeftHandRotation,
-                    trackPosition,
-                    trackRotation,
-                    out Vector3 worldLeftHand,
-                    out Quaternion worldLeftHandRotation);
-
-                var sample = new KimodoMarkerSampleResult
-                {
-                    sampleData = bindPose,
-                    rootOverride = new KimodoUnityBridge.KimodoRigidTransform
-                    {
-                        t = worldRoot,
-                        q = worldRotation
-                    },
-                    effectors = new KimodoConstraintEffectors
-                    {
-                        leftHand = new KimodoUnityBridge.KimodoRigidTransform
-                        {
-                            t = worldLeftHand,
-                            q = worldLeftHandRotation
-                        }
-                    },
-                    constraintMode = "fullbody",
-                    enabled = true,
-                    enableMask = new KimodoConstraintMask
-                    {
-                        muscle = true,
-                        rootTQ = true,
-                        leftFootTQ = true,
-                        rightFootTQ = true,
-                        rootPosition = true,
-                        rootHeading = true,
-                        leftHand = true
-                    },
-                    validMask = new KimodoConstraintMask
-                    {
-                        muscle = true,
-                        rootTQ = true,
-                        leftFootTQ = true,
-                        rightFootTQ = true,
-                        rootPosition = true,
-                        rootHeading = true,
-                        leftHand = true
-                    }
-                };
-
-                KimodoConstraintProjectedPose projected =
-                    KimodoConstraintExportProjector.ProjectTimelineSample(
-                        sample,
-                        modelName,
-                        avatar,
-                        trackPosition,
-                        trackRotation);
-
-                Assert.That(
-                    Vector3.Distance(projected.profileRootPosition, expectedRoot),
-                    Is.LessThan(0.01f));
-                Assert.That(
-                    Quaternion.Angle(projected.jointRotations[0], expectedRotation),
-                    Is.LessThan(0.5f));
-                Assert.That(
-                    Vector3.Distance(projected.profileRootPosition, worldRoot),
-                    Is.GreaterThan(0.5f));
-                int leftHandIndex = System.Array.IndexOf(projected.jointNames, "LeftHand");
-                Assert.That(leftHandIndex, Is.GreaterThanOrEqualTo(0));
-                Assert.That(
-                    Vector3.Distance(projected.jointPositions[leftHandIndex], expectedLeftHand),
-                    Is.LessThan(0.03f));
-
-                Assert.That(
-                    KimodoRetargetSamplingUtility.TrySampleTargetFromSingleMuscleSample(
-                        bindPose,
-                        KimodoMotionModelProfiles.ResolveGenerationFrameRate(modelName),
-                        source,
-                        out _,
-                        out _,
-                        out error),
-                    Is.True,
-                    error);
-                Vector3 expectedEffectorOnlyHand = sourceLeftHand.position +
-                    new Vector3(0.05f, 0.02f, 0.02f);
-                KimodoTimelineTrackOffsetUtility.TrackToWorldPose(
-                    expectedEffectorOnlyHand,
-                    sourceLeftHand.rotation,
-                    trackPosition,
-                    trackRotation,
-                    out Vector3 worldEffectorOnlyHand,
-                    out Quaternion worldEffectorOnlyRotation);
-                var effectorOnly = new KimodoMarkerSampleResult
-                {
-                    sampleData = bindPose,
-                    effectors = new KimodoConstraintEffectors
-                    {
-                        leftHand = new KimodoUnityBridge.KimodoRigidTransform
-                        {
-                            t = worldEffectorOnlyHand,
-                            q = worldEffectorOnlyRotation
-                        }
-                    },
-                    constraintMode = "effector",
-                    enabled = true,
-                    enableMask = new KimodoConstraintMask
-                    {
-                        rootTQ = true,
-                        leftFootTQ = true,
-                        rightFootTQ = true,
-                        leftHand = true
-                    },
-                    validMask = new KimodoConstraintMask
-                    {
-                        muscle = true,
-                        rootTQ = true,
-                        leftFootTQ = true,
-                        rightFootTQ = true,
-                        leftHand = true
-                    }
-                };
-
-                KimodoConstraintProjectedPose effectorOnlyProjected =
-                    KimodoConstraintExportProjector.ProjectTimelineSample(
-                        effectorOnly,
-                        modelName,
-                        avatar,
-                        trackPosition,
-                        trackRotation);
-                int effectorOnlyHandIndex = System.Array.IndexOf(
-                    effectorOnlyProjected.jointNames,
-                    "LeftHand");
-                Assert.That(effectorOnlyHandIndex, Is.GreaterThanOrEqualTo(0));
-                Assert.That(
-                    Vector3.Distance(
-                        effectorOnlyProjected.jointPositions[effectorOnlyHandIndex],
-                        expectedEffectorOnlyHand),
-                    Is.LessThan(0.03f));
-            }
-            finally
-            {
-                source.Dispose();
-            }
-        }
     }
 }

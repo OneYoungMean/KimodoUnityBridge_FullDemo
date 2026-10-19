@@ -37,8 +37,6 @@ namespace KimodoUnityBridge.Command
                 [PoseGetCommand] = PoseGet,
                 [PoseTestCommand] = PoseTest,
                 [PoseSetCommand] = PoseSet,
-                [PoseSetRootTransformCommand] = PoseSetRootTransform,
-                [PoseSetMuscleCommand] = PoseSetMuscle,
                 [GetGenerationCommand] = GetGeneration,
                 [CancelGenerationCommand] = CancelGeneration,
                 [SessionClearCommand] = ClearSession,
@@ -105,16 +103,16 @@ namespace KimodoUnityBridge.Command
                 SceneContextCommand => CommandDocumentation(
                     "Read the active Unity scene, its Kimodo Timeline, character handles, and current Session identity.",
                     new[] { "Use returned scene object references for later commands instead of guessing from names or asset paths.", "Set include_history only when the Session-wide animation, generation, and analysis index is needed." },
-                    new[] { "Returns current scene and director details, character/Clip references, frame-rate metadata, and Session identifiers.", "When requested, history includes compact animation, generation, and analysis records." },
-                    new[] { "Read-only; does not create, modify, or clear scene objects or animation assets." },
+                    new[] { "Returns current scene and director details, character/Clip references, frame-rate metadata, and Session identifiers.", "Character discovery uses the generation Avatar resolver: check Animator, importer and cache, then try automatic Avatar generation. Only valid Humanoid Avatars matching the character skeleton are indexed; resolution or generation failures skip the object.", "When requested, history includes compact animation, generation, and analysis records." },
+                    new[] { "May initialize the scene Session and generate missing Humanoid Avatars, including model importer updates and reimports. Existing animation clips are preserved." },
                     new[] { "Context reflects the active loaded scene and current Session; history is omitted by default.", "A Clip asset path is asset metadata and is not itself a scene Clip handle." },
                     GenerateAnimationCommand, AnimationAnalyzeCommand, PoseGetCommand),
                 InstallServerCommand => CommandDocumentation(
                     "Install or refresh the project-local QuickServer runtime before generation when it is unavailable or needs updating.",
-                    new[] { "Starts an asynchronous install task; save the returned request_id and poll it with kimodo_get_generation." },
+                    new[] { "Starts an asynchronous install task; save the returned request_id and poll it with generation.get." },
                     new[] { "The accepted response contains request_id and status; terminal progress and failure details come from polling." },
                     new[] { "Changes project-local runtime files; existing model files and the Python environment are preserved." },
-                    new[] { "Installation requests cannot be canceled with kimodo_cancel_generation." },
+                    new[] { "Installation requests cannot be canceled with generation.cancel." },
                     GetGenerationCommand),
                 AnimationAnalyzeCommand => CommandDocumentation(
                     "Analyze one loaded animation Clip and produce structured motion data with renderable image evidence.",
@@ -124,11 +122,11 @@ namespace KimodoUnityBridge.Command
                     new[] { "The clips array must contain exactly one Clip.", "Static pictures do not establish playback continuity, velocity smoothness, foot sliding, or other time-continuous properties." },
                     SceneContextCommand, PoseGetCommand, TransformCaptureCommand),
                 TransformCaptureCommand => CommandDocumentation(
-                    "Render a four-view image and world-space joint measurements for a scene character or a sampled External Pose, optionally framed with scene objects.",
-                    new[] { "Use character_path for the current scene character or a Pose reference returned by pose_get.", "Use @pose or @pose/<relative bone path> to include the evaluated Pose in the capture." },
-                    new[] { "Returns image_path, view/tile metadata, target references, and evaluated joint positions in world space." },
-                    new[] { "Creates image evidence but does not change scene poses." },
-                    new[] { "To capture a Clip frame, sample it first with pose_get; transforms must resolve in the current scene or Pose." },
+                    "Render a four-view image or a temporary scene-camera image and world-space joint measurements for a scene character or a sampled External Pose, optionally framed with scene objects.",
+                    new[] { "Use character_path for the current scene character, a Pose reference returned by pose.get, or character_path plus timeline_frame_60 for direct single-frame sampling.", "Use @pose or @pose/<relative bone path> to include the evaluated Pose in the capture." },
+                    new[] { "Returns image_path, view/tile metadata, target references, and evaluated joint positions in world space. camera.mode=scene clones the requested camera in memory and never saves its temporary framing." },
+                    new[] { "Creates image evidence but does not change scene poses. A direct timeline_frame_60 capture temporarily evaluates and then restores the Timeline time." },
+                    new[] { "timeline_frame_60 and pose are mutually exclusive; transforms must resolve in the current scene or Pose." },
                     PoseGetCommand, SceneContextCommand),
                 RetargetAnimationCommand => CommandDocumentation(
                     "Retarget one loaded source Clip to another character in the current scene context.",
@@ -139,10 +137,10 @@ namespace KimodoUnityBridge.Command
                     SceneContextCommand, AnimationAnalyzeCommand),
                 GenerateAnimationCommand => CommandDocumentation(
                     "Submit one animation generation request for a character in the current scene context.",
-                    new[] { "Describe one simple semantic action in prompt; aim for 25 words or fewer.", "Represent exact body pose, root position, effector targets, duration, path, loop, and Clip windows in their explicit fields when required.", "Save request_id and use kimodo_get_generation to poll; do not resubmit a running request." },
-                    new[] { "The accepted response contains request_id, status, non-blocking check results, and warnings. Pose/effect safety preflight runs only when the same point constraint explicitly contains both pose and effect; effect-only constraints skip it.", "On completion, kimodo_get_generation returns the generated Clip metadata, asset path, animation_id, and available generation diagnostics." },
+                    new[] { "Describe one simple semantic action in prompt; aim for 25 words or fewer.", "Represent exact body pose, root position, effector targets, duration, path, loop, and Clip windows in their explicit fields when required.", "Save request_id and use generation.get to poll; do not resubmit a running request." },
+                    new[] { "The accepted response contains request_id, status, preflight check results, and warnings. Root speed above 7 m/s warns; above 10 m/s blocks generation. Root acceleration above 10 m/s² warns; above 15 m/s² blocks generation. Pose/effector safety preflight runs only when the same point constraint explicitly contains both pose and effector; effector requires pose or root as explicit root context.", "On completion, generation.get returns the generated Clip metadata, asset path, animation_id, generation diagnostics, and one full animation.analyze result under post_analysis. Analysis failure is reported separately and does not invalidate the generated Clip." },
                     new[] { "A completed result is appended as a Timeline Clip; existing completed Clips are retained.", "The first scene pose is used as the automatic starting anchor unless explicit first-frame or In/Out samples take precedence." },
-                    new[] { "Trajectory overrides require an explicit requirement or confirmed scene/analysis evidence; prompt words do not select path options.", "analysis_option is lightweight generation-time analysis, not the full animation_analyze command.", "Command checks validate supported request boundaries; they do not judge semantic or artistic quality." },
+                    new[] { "Trajectory overrides require an explicit requirement or confirmed scene/analysis evidence; prompt words do not select path options.", "analysis_option is lightweight generation-time analysis, not the full animation.analyze command.", "Command checks validate supported request boundaries; they do not judge semantic or artistic quality." },
                     SceneContextCommand, PoseGetCommand, GetGenerationCommand, CancelGenerationCommand, AnimationAnalyzeCommand),
                 PoseGetCommand => CommandDocumentation(
                     "Materialize an External Pose from a Timeline frame, the current scene Animator pose, or the Avatar skeleton rest pose.",
@@ -153,56 +151,42 @@ namespace KimodoUnityBridge.Command
                     SceneContextCommand, AnimationAnalyzeCommand, TransformCaptureCommand, PoseSetCommand),
                 PoseTestCommand => CommandDocumentation(
                     "Measure the actual world-space positions of Humanoid joints in an External Pose, optionally checking them against expected contact targets.",
-                    new[] { "Call pose_get for the desired scene or Timeline frame first, then pass its returned pose reference.", "Use targets when a contact or reach criterion needs a numerical pass/fail check; target positions and tolerances are in meters in world space." },
+                    new[] { "Call pose.get for the desired scene or Timeline frame first, then pass its returned pose reference.", "Use targets when a contact or reach criterion needs a numerical pass/fail check; target positions and tolerances are in meters in world space." },
                     new[] { "Returns measured joint world positions, optional target distances and tolerance results, and an overall status.", "This samples the evaluated Pose rig; it does not judge whether the pose looks natural or whether a generated Clip plays smoothly." },
                     new[] { "Read-only with respect to the scene, Timeline, Pose slot, and animation assets; evaluation uses a transient preview rig." },
-                    new[] { "pose_test explicitly measures the actual joints in any sampled Pose, including after effect-only generation. Generation-time pose/effect safety preflight is separate and runs only when the same constraint explicitly includes both pose and effect.", "Requires a valid Humanoid character and a Pose reference from the current context." },
+                    new[] { "pose.test explicitly measures the actual joints in any sampled Pose, including after Effector-constrained generation. Generation-time pose/effector safety preflight is separate and runs only when the same constraint explicitly includes both pose and effector.", "Requires a valid Humanoid character and a Pose reference from the current context." },
                     PoseGetCommand, TransformCaptureCommand, GenerateAnimationCommand),
                 PoseSetCommand => CommandDocumentation(
                     "Update the root transform, muscle channels, or effector targets of an existing External Pose slot.",
-                    new[] { "Use only a {track,index} reference returned by pose_get or another Pose editing command.", "Supply at least one of root, muscles, or effector; multiple supplied channels are updated together." },
+                    new[] { "Use only a {track,index} reference returned by pose.get or another Pose editing command.", "Supply at least one of root, muscles, or effector; multiple supplied channels are updated together." },
                     new[] { "Returns the Pose reference and the updated Pose data." },
                     new[] { "Mutates the referenced External Pose slot in the current scene context." },
                     new[] { "This edits Pose data; it does not generate an animation Clip." },
-                    PoseGetCommand, PoseSetRootTransformCommand, PoseSetMuscleCommand),
-                PoseSetRootTransformCommand => CommandDocumentation(
-                    "Compatibility alias for a root-only pose_set update.",
-                    new[] { "Use pose_set for new calls; this command accepts one Pose reference and root transform." },
-                    new[] { "Returns the updated Pose reference and data." },
-                    new[] { "Mutates the referenced External Pose slot." },
-                    new[] { "Only the root transform is accepted by this alias." },
-                    PoseSetCommand, PoseGetCommand),
-                PoseSetMuscleCommand => CommandDocumentation(
-                    "Compatibility alias for a muscles-only pose_set update.",
-                    new[] { "Use pose_set for new calls; this command accepts one Pose reference and a muscle-value map." },
-                    new[] { "Returns the updated Pose reference and data." },
-                    new[] { "Mutates the referenced External Pose slot." },
-                    new[] { "Only muscle channels are accepted by this alias." },
-                    PoseSetCommand, PoseGetCommand),
+                    PoseGetCommand, PoseSetCommand),
                 GetGenerationCommand => CommandDocumentation(
                     "Read progress, terminal status, and results for an installation or generation request.",
-                    new[] { "Pass the exact request_id returned by kimodo_install_server or kimodo_generate_animation.", "Poll until a terminal status; a successful command response can still report task status failed or canceled." },
+                    new[] { "Pass the exact request_id returned by server.install or animation.generate.", "Poll until a terminal status; a successful command response can still report task status failed or canceled." },
                     new[] { "Returns lifecycle status, stage, progress, and error details; completed generation includes Clip metadata and available diagnostics.", "Set include_request_json=true only when the exact backend payload is needed." },
                     new[] { "Read-only; does not resubmit or alter the task." },
                     new[] { "Request records are retained for a bounded number of recent jobs; an unknown or expired id returns an error." },
                     InstallServerCommand, GenerateAnimationCommand, CancelGenerationCommand),
                 MocapVideoAnalysisCommand => CommandDocumentation(
                     "Use when a video file should be converted into a time-ordered SMPL-X pose array for downstream retargeting or analysis.",
-                    new[] { "Pass an absolute video_path that the QuickServer machine can read. Supported formats are MP4, MOV, M4V, AVI, and MKV; the file must not exceed 2 GiB.", "The command returns immediately with status=accepted and a request_id. Poll kimodo_get_generation using that exact id until status is completed, failed, or canceled; do not submit the video again just to check progress.", "For a two-person video, optionally set person to left or right to select the performer by screen position. Omit person for the default selection." },
+                    new[] { "Pass an absolute video_path that the QuickServer machine can read. Supported formats are MP4, MOV, M4V, AVI, and MKV; the file must not exceed 2 GiB.", "The command returns immediately with status=accepted and a request_id. Poll generation.get using that exact id until status is completed, failed, or canceled; do not submit the video again just to check progress.", "For a two-person video, optionally set person to left or right to select the performer by screen position. Omit person for the default selection." },
                     new[] { "A completed request returns poses in source-video order plus one top-level constraints array, fps, frame_count, source_frame_count, joint_names, betas, and rest_joints_m.", "Each pose contains raw global_orient_axis_angle, body_pose_axis_angle, and translation_m values. The top-level constraints array uses the same merged raw FullBody constraint format accepted by animation generation.", "Rotations are axis-angle radians; translation and rest joints are in meters. The global coordinate space is gravity-aligned Y-up. Optional incam_* fields use OpenCV camera coordinates: X-right, Y-down, Z-forward.", "The result does not create a clip, Playable track, character binding, or timeline edit." },
                     new[] { "Read-only; does not create, modify, or clear Unity scene objects or animation assets." },
                     new[] { "The top-level constraints array groups the whole sequence into the existing raw FullBody payload; the command still does not return a rendered animation or create a Unity Humanoid muscle track.", "The request can fail if QuickServer's GVHMR runtime, checkpoints, or the SMPL-X Avatar asset are unavailable." },
                     MocapPictureAnalysisCommand, GetGenerationCommand, RetargetAnimationCommand),
                 MocapPictureAnalysisCommand => CommandDocumentation(
                     "Use when a still image should be converted into a single SMPL-X pose sample for downstream retargeting or analysis.",
-                    new[] { "Pass an absolute image_path for a PNG, JPG, or JPEG file that the QuickServer machine can read. The file must not exceed 2 GiB.", "The command returns immediately with status=accepted and a request_id. Poll kimodo_get_generation using that exact id until status is completed, failed, or canceled; do not submit the image again just to check progress.", "The estimator temporarily treats the still image as a one-second clip and returns one pose sample from it." },
+                    new[] { "Pass an absolute image_path for a PNG, JPG, or JPEG file that the QuickServer machine can read. The file must not exceed 2 GiB.", "The command returns immediately with status=accepted and a request_id. Poll generation.get using that exact id until status is completed, failed, or canceled; do not submit the image again just to check progress.", "The estimator temporarily treats the still image as a one-second clip and returns one pose sample from it." },
                     new[] { "A completed request returns one raw SMPL-X pose plus a top-level constraints array containing the matching raw FullBody constraint, along with joint_names, betas, and rest_joints_m.", "The pose contains raw global_orient_axis_angle, body_pose_axis_angle, and translation_m values. The constraints array uses the same format accepted by animation generation.", "Rotations are axis-angle radians; translation and rest joints are in meters. The global coordinate space is gravity-aligned Y-up. Optional incam_* fields use OpenCV camera coordinates: X-right, Y-down, Z-forward.", "The result does not create a clip, Playable track, character binding, or timeline edit." },
                     new[] { "Read-only; does not create, modify, or clear Unity scene objects or animation assets." },
                     new[] { "The constraints array is a raw FullBody payload with one frame; the command still does not return a rendered animation or create a Unity Humanoid muscle track.", "The request can fail if QuickServer's GVHMR runtime, checkpoints, or the SMPL-X Avatar asset are unavailable." },
                     MocapVideoAnalysisCommand, GetGenerationCommand, RetargetAnimationCommand),
                 CancelGenerationCommand => CommandDocumentation(
                     "Request cancellation of an active animation generation.",
-                    new[] { "Pass the exact generation request_id, then poll with kimodo_get_generation to confirm its terminal state." },
+                    new[] { "Pass the exact generation request_id, then poll with generation.get to confirm its terminal state." },
                     new[] { "Returns the compact cancellation/lifecycle result and any completed Clip metadata." },
                     new[] { "May stop generation work that has not already completed; it does not undo a completed Clip." },
                     new[] { "Installation tasks cannot be canceled with this command.", "A cancellation request is not proof of a canceled terminal state; check the returned status." },
@@ -263,13 +247,13 @@ namespace KimodoUnityBridge.Command
                 InstallServerCommand => new[] { "request_id", "status" },
                 MocapVideoAnalysisCommand or MocapPictureAnalysisCommand => new[] { "request_id", "status" },
                 AnimationAnalyzeCommand => new[] { "analysis_schema_version", "clip", "pictures" },
-                TransformCaptureCommand => new[] { "image_path", "width", "height", "tile_size", "tiles", "source", "targets", "evaluated_joints_world" },
+                TransformCaptureCommand => new[] { "image_path", "width", "height", "tile_size", "tile_border_px", "camera_mode", "tiles", "source", "targets", "evaluated_joints_world" },
                 RetargetAnimationCommand => new[] { "retargeted", "source_character", "character", "animation" },
                 GenerateAnimationCommand => new[] { "request_id", "status", "check", "warnings" },
                 PoseGetCommand => new[] { "pose", "source", "character_root", "data" },
                 PoseTestCommand => new[] { "pose", "source", "overall", "joints" },
-                PoseSetCommand or PoseSetRootTransformCommand or PoseSetMuscleCommand => new[] { "pose", "data" },
-                GetGenerationCommand => new[] { "request_id", "status", "stage", "message", "started_at_utc", "estimated_completion_utc", "eta_seconds", "progress_current", "progress_total", "progress_rate", "backend_progress", "runtime_root", "runtime_version", "install_mode", "server_connected", "clip", "animation_id", "seed", "analysis", "analysis_schema_version", "source_type", "skeleton", "person", "fps", "source_frame_count", "frame_count", "joint_names", "pose_parameterization", "coordinate_spaces", "betas", "rest_joints_m", "poses", "constraints", "constraint_loss", "inout_sampling", "target_alive", "backend_request_json" },
+                PoseSetCommand => new[] { "pose", "data" },
+                GetGenerationCommand => new[] { "request_id", "status", "stage", "message", "started_at_utc", "estimated_completion_utc", "eta_seconds", "progress_current", "progress_total", "progress_rate", "backend_progress", "runtime_root", "runtime_version", "install_mode", "server_connected", "clip", "animation_id", "seed", "analysis", "post_analysis", "analysis_schema_version", "source_type", "skeleton", "person", "fps", "source_frame_count", "frame_count", "joint_names", "pose_parameterization", "coordinate_spaces", "betas", "rest_joints_m", "poses", "constraints", "constraint_loss", "inout_sampling", "target_alive", "backend_request_json" },
                 CancelGenerationCommand => new[] { "request_id", "status", "stage", "message", "canceled", "clip" },
                 SessionClearCommand => new[] { "cleared", "name", "destroyed_context_count", "recreated_on_next_command" },
                 _ => Array.Empty<string>()
@@ -309,10 +293,14 @@ namespace KimodoUnityBridge.Command
                 case "backend_progress": case "analysis_schema_version":
                 case "source_type": case "skeleton": case "person":
                     return new JObject { ["type"] = "string" };
-                case "width": case "height": case "tile_size": case "duration_frames_60": case "current_frame_60":
+                case "camera_mode":
+                    return new JObject { ["type"] = "string", ["enum"] = new JArray("auto", "scene") };
+                case "width": case "height": case "duration_frames_60": case "current_frame_60":
                 case "destroyed_context_count": case "duration_frames": case "progress_current": case "progress_total": case "count": case "seed":
                 case "source_frame_count": case "frame_count": case "source_frame":
                     return new JObject { ["type"] = "integer" };
+                case "tile_size": case "tile_border_px":
+                    return NullableSchema(new JObject { ["type"] = "integer" });
                 case "frame_rate": case "fps":
                     return new JObject { ["type"] = "number" };
                 case "eta_seconds": case "progress_rate":
@@ -416,6 +404,18 @@ namespace KimodoUnityBridge.Command
                 case "overall": return new JObject { ["type"] = "string", ["enum"] = new JArray("passed", "failed", "not_tested") };
                 case "data": case "check": case "analysis": case "constraint_loss": case "inout_sampling": case "evaluated_joints_world":
                     return ObjectSchema();
+                case "post_analysis":
+                    return new JObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JObject
+                        {
+                            ["status"] = new JObject { ["type"] = "string", ["enum"] = new JArray("pending", "completed", "failed", "skipped") },
+                            ["result"] = ObjectSchema("analysis_schema_version", "clip", "pictures"),
+                            ["error"] = ObjectSchema("code", "message")
+                        },
+                        ["additionalProperties"] = true
+                    };
                 default:
                     return new JObject { ["type"] = "object" };
             }
@@ -431,10 +431,11 @@ namespace KimodoUnityBridge.Command
                     "name" or "character" or "source" or "kind" or "asset_path" or "analysis_schema_version" or "track" or
                     "analysis_mode" or "phase_track_version" or "tile" or "view" or "projection" or "key" or "role" or
                     "scene_object" or "object_ref" or "animator" or "avatar" or "hierarchy_path" or "playable_asset" or
-                    "render_version" or "level" or "aspect" or "image_path" or "output" or "mode" or "path" or "type" or "clip" or "screenshot_generated_at" => new JObject { ["type"] = "string" },
+                    "render_version" or "level" or "aspect" or "image_path" or "output" or "mode" or "camera_mode" or "path" or "type" or "clip" or "screenshot_generated_at" => new JObject { ["type"] = "string" },
                     "session_id" or "schema_version" or "animation_id" or "analysis_id" or "animation_name" or "input_signature" or "created_at_utc" or "analysis_path" or "request_id" or "status" or "stage" or "message" or "error" or "started_at_utc" or "updated_at_utc" or "source_type" or "skeleton" or "person" or "pose_parameterization" => new JObject { ["type"] = "string" },
                     "session_revision" or "start_timeline_frame_60" or "end_timeline_frame_60_exclusive" or "duration_frames" or "timeline_frame_60" or
                     "duration_frames_60" or "tile_count" or "width" or "height" or "resolution" or "supersample" or "header_height" or "index" or "frame" or "source_frame" or "source_frame_count" or "frame_count" => new JObject { ["type"] = "integer" },
+                    "tile_border_px" => NullableSchema(new JObject { ["type"] = "integer" }),
                     "enabled" or "avatar_valid_humanoid" or "cached" => new JObject { ["type"] = "boolean" },
                     "frame_rate" or "fps" or "timestamp_seconds" => new JObject { ["type"] = "number" },
                     "segments" or "phase_track" or "keyframes" or "foot_contacts" or "images" or "tile_paths" or "picture_paths" or "transforms" or "animations" or "generations" or "analyses" or "tiles" or "headers" or "global_orient_axis_angle" or "body_pose_axis_angle" or "translation_m" or "incam_global_orient_axis_angle" or "incam_body_pose_axis_angle" or "incam_translation_m" or "static_confidence" or "joint_names" or "coordinate_spaces" or "betas" or "rest_joints_m" or "poses" => new JObject { ["type"] = "array" },
@@ -672,13 +673,6 @@ namespace KimodoUnityBridge.Command
         private static PropertyDefinition OptionalConstraints(string name, string description)
         {
             JObject poseReference = PoseReferenceSchema();
-            JObject vector2 = new JObject
-            {
-                ["type"] = "array",
-                ["items"] = new JObject { ["type"] = "number" },
-                ["minItems"] = 2,
-                ["maxItems"] = 2
-            };
             JObject effectTarget = new JObject
             {
                 ["type"] = "object",
@@ -689,13 +683,13 @@ namespace KimodoUnityBridge.Command
                     {
                         ["type"] = "array", ["minItems"] = 3, ["maxItems"] = 3,
                         ["items"] = new JObject { ["type"] = "number" },
-                        ["description"] = "World-space target position [x,y,z]."
+                        ["description"] = "World-space target position [x,y,z]. Omitted channels retain sampled values."
                     },
                     ["rotation"] = new JObject
                     {
-                        ["type"] = "array", ["minItems"] = 4, ["maxItems"] = 4,
+                        ["type"] = "array", ["minItems"] = 3, ["maxItems"] = 3,
                         ["items"] = new JObject { ["type"] = "number" },
-                        ["description"] = "Target rotation quaternion [x,y,z,w]."
+                        ["description"] = "Rotation in Euler degrees [x,y,z], converted with Unity Quaternion.Euler. Omitted channels retain sampled values."
                     }
                 },
                 ["anyOf"] = new JArray(
@@ -719,27 +713,6 @@ namespace KimodoUnityBridge.Command
                     new JObject { ["required"] = new JArray("left_foot") },
                     new JObject { ["required"] = new JArray("right_foot") })
             };
-            JObject root = new JObject
-            {
-                ["type"] = "object",
-                ["additionalProperties"] = false,
-                ["properties"] = new JObject
-                {
-                    ["position"] = new JObject { ["type"] = "array", ["minItems"] = 3, ["maxItems"] = 3, ["items"] = new JObject { ["type"] = "number" } },
-                    ["rotation"] = new JObject { ["type"] = "array", ["minItems"] = 4, ["maxItems"] = 4, ["items"] = new JObject { ["type"] = "number" } }
-                },
-                ["minProperties"] = 1
-            };
-            JObject muscles = new JObject
-            {
-                ["type"] = "object",
-                ["additionalProperties"] = new JObject { ["type"] = "number" },
-                ["minProperties"] = 1
-            };
-            JObject root2dPosition = (JObject)vector2.DeepClone();
-            root2dPosition["description"] = "Planar root position [x,z].";
-            JObject root2dHeading = (JObject)vector2.DeepClone();
-            root2dHeading["description"] = "Planar heading direction [x,z].";
             var pointItem = new JObject
             {
                 ["type"] = "object",
@@ -748,25 +721,19 @@ namespace KimodoUnityBridge.Command
                 {
                     ["frame"] = new JObject { ["type"] = "integer", ["minimum"] = 0 },
                     ["pose"] = poseReference.DeepClone(),
-                    ["root2d"] = new JObject
-                    {
-                        ["type"] = "object",
-                        ["description"] = "Planar root position and heading constraint; supply both channels together.",
-                        ["additionalProperties"] = false,
-                        ["properties"] = new JObject
-                        {
-                            ["position"] = root2dPosition,
-                            ["heading"] = root2dHeading
-                        },
-                        ["required"] = new JArray("position", "heading")
-                    },
-                    ["effect"] = effectors.DeepClone()
+                    ["root"] = effectTarget.DeepClone(),
+                    ["effector"] = effectors.DeepClone()
                 },
                 ["required"] = new JArray("frame"),
-                ["anyOf"] = new JArray(
+                ["description"] = "Sample, assert concrete type from explicit inputs, then overlay data. root is Root2D; pose with optional root/effector is FullBody after IK; root + effector without pose is Effector. effector alone is invalid. Transforms accept position and/or Euler rotation; omitted channels retain sampled values. Empty transforms are invalid.",
+                ["oneOf"] = new JArray(
                     new JObject { ["required"] = new JArray("pose") },
-                    new JObject { ["required"] = new JArray("root2d") },
-                    new JObject { ["required"] = new JArray("effect") })
+                    new JObject { ["required"] = new JArray("root", "effector"),
+                        ["not"] = new JObject { ["required"] = new JArray("pose") } },
+                    new JObject { ["required"] = new JArray("root"),
+                        ["not"] = new JObject { ["anyOf"] = new JArray(
+                            new JObject { ["required"] = new JArray("pose") },
+                            new JObject { ["required"] = new JArray("effector") }) } })
             };
             var rootPathItem = new JObject
             {
@@ -779,7 +746,7 @@ namespace KimodoUnityBridge.Command
                         ["type"] = "integer",
                         ["minimum"] = 0,
                         ["default"] = 0,
-                        ["description"] = "First path frame; defaults to the clip start. Use a confirmed path for the intended character and motion; root_path generates only start and end Root2D constraints, not intermediate route enforcement."
+                        ["description"] = "First path frame; defaults to the clip start. animation.analyze returns this path in World coordinates because the analyzed Clip begins at frame zero; generation resolves it once against the target character's World anchor. Use a confirmed path for the intended character and motion; root_path generates only start and end Root2D constraints, not intermediate route enforcement."
                     },
                     ["root_path"] = new JObject
                     {
@@ -795,7 +762,7 @@ namespace KimodoUnityBridge.Command
                 ["required"] = new JArray("root_path")
             };
             ((JObject)rootPathItem["properties"]?["root_path"]?["properties"]?["path"])["description"] =
-                "Confirmed analyzed Root Path slot for the intended character and motion, returned by animation_analyze at clip.root_trajectory.path.";
+                "Confirmed analyzed Root Path slot for the intended character and motion, returned by animation.analyze at clip.root_trajectory.path.";
             return new PropertyDefinition(name, new JObject
             {
                 ["type"] = "array",
@@ -841,7 +808,7 @@ namespace KimodoUnityBridge.Command
                     {
                         ["type"] = "integer",
                         ["minimum"] = 0,
-                        ["description"] = "Absolute Timeline-global frame at 60 FPS. Use animation_analyze to find the selected Clip's start frame, then add the clip-local frame offset."
+                        ["description"] = "Absolute Timeline-global frame at 60 FPS. Use animation.analyze to find the selected Clip's start frame, then add the clip-local frame offset."
                     }
                 },
                 ["required"] = new JArray("character"),

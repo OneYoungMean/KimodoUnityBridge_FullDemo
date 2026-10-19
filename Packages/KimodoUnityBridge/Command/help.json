@@ -1,7 +1,7 @@
 {
   "tools": [
     {
-      "name": "kimodo_help",
+      "name": "kimodo.help",
       "description": "Return the command manual, detailed parameter documentation for one command, or currently viable model configurations.",
       "documentation": {
         "when_to_use": "Discover the public command contract, inspect one command, list viable models, or review constraint rules.",
@@ -19,7 +19,7 @@
         ],
         "related_commands": [
           "scene.context",
-          "kimodo_generate_animation"
+          "animation.generate"
         ]
       },
       "inputSchema": {
@@ -193,7 +193,7 @@
         {
           "description": "Inspect generation parameters and examples.",
           "arguments": {
-            "command": "kimodo_generate_animation"
+            "command": "animation.generate"
           }
         }
       ]
@@ -209,19 +209,20 @@
         ],
         "result_notes": [
           "Returns current scene and director details, character/Clip references, frame-rate metadata, and Session identifiers.",
+          "Character discovery uses the generation Avatar resolver: check Animator, importer and cache, then try automatic Avatar generation. Only valid Humanoid Avatars matching the character skeleton are indexed; resolution or generation failures skip the object.",
           "When requested, history includes compact animation, generation, and analysis records."
         ],
         "scene_effects": [
-          "Read-only; does not create, modify, or clear scene objects or animation assets."
+          "May initialize the scene Session and generate missing Humanoid Avatars, including model importer updates and reimports. Existing animation clips are preserved."
         ],
         "limits": [
           "Context reflects the active loaded scene and current Session; history is omitted by default.",
           "A Clip asset path is asset metadata and is not itself a scene Clip handle."
         ],
         "related_commands": [
-          "kimodo_generate_animation",
-          "animation_analyze",
-          "pose_get"
+          "animation.generate",
+          "animation.analyze",
+          "pose.get"
         ]
       },
       "inputSchema": {
@@ -543,12 +544,12 @@
       ]
     },
     {
-      "name": "kimodo_install_server",
-      "description": "Start an asynchronous project-local QuickServer installation task. Returns only request_id and status; poll that request with kimodo_get_generation. Models and the Python environment are preserved.",
+      "name": "server.install",
+      "description": "Start an asynchronous project-local QuickServer installation task. Returns only request_id and status; poll that request with generation.get. Models and the Python environment are preserved.",
       "documentation": {
         "when_to_use": "Install or refresh the project-local QuickServer runtime before generation when it is unavailable or needs updating.",
         "behavior": [
-          "Starts an asynchronous install task; save the returned request_id and poll it with kimodo_get_generation."
+          "Starts an asynchronous install task; save the returned request_id and poll it with generation.get."
         ],
         "result_notes": [
           "The accepted response contains request_id and status; terminal progress and failure details come from polling."
@@ -557,10 +558,10 @@
           "Changes project-local runtime files; existing model files and the Python environment are preserved."
         ],
         "limits": [
-          "Installation requests cannot be canceled with kimodo_cancel_generation."
+          "Installation requests cannot be canceled with generation.cancel."
         ],
         "related_commands": [
-          "kimodo_get_generation"
+          "generation.get"
         ]
       },
       "inputSchema": {
@@ -619,7 +620,7 @@
       ]
     },
     {
-      "name": "animation_analyze",
+      "name": "animation.analyze",
       "description": "Analyze one animation clip at 60 FPS and render graph-space picture evidence. Pass a clips array containing exactly one scene character and one loaded Clip name or Assets/Packages Clip path. The result contains one clip analysis and one pictures evidence object; temporal positions use absolute Timeline-global 60 FPS frames. External Clips are appended to the character's Kimodo Timeline and never modified.",
       "documentation": {
         "when_to_use": "Analyze one loaded animation Clip and produce structured motion data with renderable image evidence.",
@@ -639,8 +640,8 @@
         ],
         "related_commands": [
           "scene.context",
-          "pose_get",
-          "transform_capture"
+          "pose.get",
+          "transform.capture"
         ]
       },
       "inputSchema": {
@@ -851,12 +852,12 @@
     },
     {
       "name": "analysis.video",
-      "description": "Estimate a per-frame SMPL-X pose sequence from a local video. This starts an asynchronous analysis job; poll kimodo_get_generation with its request_id. The result includes raw SMPL-X poses and matching FullBody constraints in the existing raw constraint format; it does not create or apply a Unity animation.",
+      "description": "Estimate a per-frame SMPL-X pose sequence from a local video. This starts an asynchronous analysis job; poll generation.get with its request_id. The result includes raw SMPL-X poses and matching FullBody constraints in the existing raw constraint format; it does not create or apply a Unity animation.",
       "documentation": {
         "when_to_use": "Use when a video file should be converted into a time-ordered SMPL-X pose array for downstream retargeting or analysis.",
         "behavior": [
           "Pass an absolute video_path that the QuickServer machine can read. Supported formats are MP4, MOV, M4V, AVI, and MKV; the file must not exceed 2 GiB.",
-          "The command returns immediately with status=accepted and a request_id. Poll kimodo_get_generation using that exact id until status is completed, failed, or canceled; do not submit the video again just to check progress.",
+          "The command returns immediately with status=accepted and a request_id. Poll generation.get using that exact id until status is completed, failed, or canceled; do not submit the video again just to check progress.",
           "For a two-person video, optionally set person to left or right to select the performer by screen position. Omit person for the default selection."
         ],
         "result_notes": [
@@ -874,8 +875,8 @@
         ],
         "related_commands": [
           "analysis.picture",
-          "kimodo_get_generation",
-          "kimodo_retarget_animation"
+          "generation.get",
+          "animation.retarget"
         ]
       },
       "inputSchema": {
@@ -957,12 +958,12 @@
     },
     {
       "name": "analysis.picture",
-      "description": "Estimate one SMPL-X pose from a local still image. This starts an asynchronous analysis job; poll kimodo_get_generation with its request_id. The result includes raw SMPL-X pose data and a FullBody constraint in the existing raw constraint format; it does not create or apply a Unity animation.",
+      "description": "Estimate one SMPL-X pose from a local still image. This starts an asynchronous analysis job; poll generation.get with its request_id. The result includes raw SMPL-X pose data and a FullBody constraint in the existing raw constraint format; it does not create or apply a Unity animation.",
       "documentation": {
         "when_to_use": "Use when a still image should be converted into a single SMPL-X pose sample for downstream retargeting or analysis.",
         "behavior": [
           "Pass an absolute image_path for a PNG, JPG, or JPEG file that the QuickServer machine can read. The file must not exceed 2 GiB.",
-          "The command returns immediately with status=accepted and a request_id. Poll kimodo_get_generation using that exact id until status is completed, failed, or canceled; do not submit the image again just to check progress.",
+          "The command returns immediately with status=accepted and a request_id. Poll generation.get using that exact id until status is completed, failed, or canceled; do not submit the image again just to check progress.",
           "The estimator temporarily treats the still image as a one-second clip and returns one pose sample from it."
         ],
         "result_notes": [
@@ -980,8 +981,8 @@
         ],
         "related_commands": [
           "analysis.video",
-          "kimodo_get_generation",
-          "kimodo_retarget_animation"
+          "generation.get",
+          "animation.retarget"
         ]
       },
       "inputSchema": {
@@ -1053,25 +1054,25 @@
       ]
     },
     {
-      "name": "transform_capture",
-      "description": "Capture the current scene or an External Pose returned by pose_get together with scene objects, in world space. Returns a four-view image and evaluated joint positions; does not change scene poses.",
+      "name": "transform.capture",
+      "description": "Capture the current scene or an External Pose returned by pose.get together with scene objects, in world space. Optionally sample one absolute Timeline-global 60 FPS frame directly with timeline_frame_60. Returns a four-view image by default, or a single scene-camera image when camera.mode is scene; restores the original Timeline time and never saves temporary camera changes.",
       "documentation": {
-        "when_to_use": "Render a four-view image and world-space joint measurements for a scene character or a sampled External Pose, optionally framed with scene objects.",
+        "when_to_use": "Render a four-view image or a temporary scene-camera image and world-space joint measurements for a scene character or a sampled External Pose, optionally framed with scene objects.",
         "behavior": [
-          "Use character_path for the current scene character or a Pose reference returned by pose_get.",
+          "Use character_path for the current scene character, a Pose reference returned by pose.get, or character_path plus timeline_frame_60 for direct single-frame sampling.",
           "Use @pose or @pose/<relative bone path> to include the evaluated Pose in the capture."
         ],
         "result_notes": [
-          "Returns image_path, view/tile metadata, target references, and evaluated joint positions in world space."
+          "Returns image_path, view/tile metadata, target references, and evaluated joint positions in world space. camera.mode=scene clones the requested camera in memory and never saves its temporary framing."
         ],
         "scene_effects": [
-          "Creates image evidence but does not change scene poses."
+          "Creates image evidence but does not change scene poses. A direct timeline_frame_60 capture temporarily evaluates and then restores the Timeline time."
         ],
         "limits": [
-          "To capture a Clip frame, sample it first with pose_get; transforms must resolve in the current scene or Pose."
+          "timeline_frame_60 and pose are mutually exclusive; transforms must resolve in the current scene or Pose."
         ],
         "related_commands": [
-          "pose_get",
+          "pose.get",
           "scene.context"
         ]
       },
@@ -1100,6 +1101,11 @@
               "index"
             ]
           },
+          "timeline_frame_60": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional absolute Timeline-global frame at 60 FPS. Requires character_path; mutually exclusive with pose. The Timeline and scene objects are evaluated at this frame for the capture, then restored."
+          },
           "transforms": {
             "type": "array",
             "minItems": 1,
@@ -1110,7 +1116,97 @@
           },
           "resolution": {
             "type": "integer",
-            "description": "Per-view pixel size, 64 through 4096; defaults to 1024. To capture an animation frame, first call pose_get and pass its pose reference."
+            "description": "Per-view pixel size for the default four-view capture, 64 through 4096; defaults to 1024. Scene-camera captures use camera.resolution."
+          },
+          "camera": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Optional temporary scene-camera capture. The source camera is cloned, adjusted in memory, rendered, and discarded; the scene camera is never saved.",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "scene"
+                ],
+                "default": "auto",
+                "description": "Use the existing four-view renderer (auto) or a scene camera (scene)."
+              },
+              "path": {
+                "type": "string",
+                "description": "Active-scene camera hierarchy path; defaults to Main Camera when mode is scene."
+              },
+              "auto_frame": {
+                "type": "boolean",
+                "default": true,
+                "description": "Temporarily frame the requested transforms while preserving the source camera's viewing direction."
+              },
+              "resolution": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "integer",
+                  "minimum": 64,
+                  "maximum": 4096
+                },
+                "description": "Scene-camera output [width,height]."
+              },
+              "position": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                  "type": "number"
+                },
+                "description": "Optional temporary world position [x,y,z]."
+              },
+              "rotation": {
+                "type": "array",
+                "minItems": 4,
+                "maxItems": 4,
+                "items": {
+                  "type": "number"
+                },
+                "description": "Optional temporary world rotation quaternion [x,y,z,w]."
+              },
+              "field_of_view": {
+                "type": "number",
+                "minimum": 1,
+                "maximum": 179,
+                "description": "Optional temporary perspective field of view."
+              },
+              "near_clip": {
+                "type": "number",
+                "minimum": 0.001,
+                "description": "Optional temporary near clip plane."
+              },
+              "far_clip": {
+                "type": "number",
+                "minimum": 0.01,
+                "description": "Optional temporary far clip plane."
+              },
+              "orthographic": {
+                "type": "boolean",
+                "description": "Optional temporary projection mode."
+              },
+              "orthographic_size": {
+                "type": "number",
+                "minimum": 0.01,
+                "description": "Optional temporary orthographic size."
+              },
+              "background": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 4,
+                "items": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "description": "Temporary clear color [r,g,b] or [r,g,b,a]."
+              }
+            }
           }
         },
         "required": [
@@ -1155,7 +1251,31 @@
             "type": "integer"
           },
           "tile_size": {
-            "type": "integer"
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tile_border_px": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "camera_mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "scene"
+            ]
           },
           "tiles": {
             "type": "array",
@@ -1256,7 +1376,7 @@
       },
       "examples": [
         {
-          "description": "Capture the External Pose returned by pose_get together with scene objects, without moving the scene character.",
+          "description": "Capture the External Pose returned by pose.get together with scene objects, without moving the scene character.",
           "arguments": {
             "pose": {
               "track": "<returned pose track>",
@@ -1273,7 +1393,7 @@
       ]
     },
     {
-      "name": "kimodo_retarget_animation",
+      "name": "animation.retarget",
       "description": "Retarget one loaded animation to another current scene context character and append the result.",
       "documentation": {
         "when_to_use": "Retarget one loaded source Clip to another character in the current scene context.",
@@ -1291,7 +1411,7 @@
         ],
         "related_commands": [
           "scene.context",
-          "animation_analyze"
+          "animation.analyze"
         ]
       },
       "inputSchema": {
@@ -1428,18 +1548,18 @@
       ]
     },
     {
-      "name": "kimodo_generate_animation",
-      "description": "Start asynchronous generation for a character in the current scene context. Command-created Timeline Clips enable AutoBegin anchoring automatically; explicit first-frame or In/Out samples take precedence. The accepted response contains request_id, status, and non-blocking request/constraint warnings; pose/effect safety preflight runs only when the same point constraint explicitly contains both pose and effect, never for effect-only constraints. These warnings are not measured joint positions in the generated motion; use pose_get then pose_test to measure sampled joint positions and contact reach after generation. Supply trajectory settings only when the requested path is known from explicit requirements or confirmed scene/analysis evidence; prompt wording never selects path options.",
+      "name": "animation.generate",
+      "description": "Start asynchronous generation for a character in the current scene context. Root speed above 7 m/s produces a warning; above 10 m/s blocks generation. Root acceleration above 10 m/s² produces a warning; above 15 m/s² blocks generation. After generation, the same Timeline Clip is analyzed once with the full animation.analyze pipeline and returned under post_analysis; analysis failure does not invalidate the generated Clip. Command-created Timeline Clips enable AutoBegin anchoring automatically; explicit first-frame or In/Out samples take precedence. The accepted response contains request_id, status, and request/constraint diagnostics. Pose/effector safety preflight runs only when the same point constraint explicitly contains both pose and effector; effector requires pose or root as explicit root context. These diagnostics are not measured joint positions in the generated motion; use pose.get then pose.test to measure sampled joint positions and contact reach after generation. Supply trajectory settings only when the requested path is known from explicit requirements or confirmed scene/analysis evidence; prompt wording never selects path options.",
       "documentation": {
         "when_to_use": "Submit one animation generation request for a character in the current scene context.",
         "behavior": [
           "Describe one simple semantic action in prompt; aim for 25 words or fewer.",
           "Represent exact body pose, root position, effector targets, duration, path, loop, and Clip windows in their explicit fields when required.",
-          "Save request_id and use kimodo_get_generation to poll; do not resubmit a running request."
+          "Save request_id and use generation.get to poll; do not resubmit a running request."
         ],
         "result_notes": [
-          "The accepted response contains request_id, status, non-blocking check results, and warnings. Pose/effect safety preflight runs only when the same point constraint explicitly contains both pose and effect; effect-only constraints skip it.",
-          "On completion, kimodo_get_generation returns the generated Clip metadata, asset path, animation_id, and available generation diagnostics."
+          "The accepted response contains request_id, status, preflight check results, and warnings. Root speed above 7 m/s warns; above 10 m/s blocks generation. Root acceleration above 10 m/s² warns; above 15 m/s² blocks generation. Pose/effector safety preflight runs only when the same point constraint explicitly contains both pose and effector; effector requires pose or root as explicit root context.",
+          "On completion, generation.get returns the generated Clip metadata, asset path, animation_id, generation diagnostics, and one full animation.analyze result under post_analysis. Analysis failure is reported separately and does not invalidate the generated Clip."
         ],
         "scene_effects": [
           "A completed result is appended as a Timeline Clip; existing completed Clips are retained.",
@@ -1447,15 +1567,15 @@
         ],
         "limits": [
           "Trajectory overrides require an explicit requirement or confirmed scene/analysis evidence; prompt words do not select path options.",
-          "analysis_option is lightweight generation-time analysis, not the full animation_analyze command.",
+          "analysis_option is lightweight generation-time analysis, not the full animation.analyze command.",
           "Command checks validate supported request boundaries; they do not judge semantic or artistic quality."
         ],
         "related_commands": [
           "scene.context",
-          "pose_get",
-          "kimodo_get_generation",
-          "kimodo_cancel_generation",
-          "animation_analyze"
+          "pose.get",
+          "generation.get",
+          "generation.cancel",
+          "animation.analyze"
         ]
       },
       "inputSchema": {
@@ -1589,11 +1709,11 @@
           },
           "analysis_option": {
             "type": "object",
-            "description": "Optional generation-time lightweight analysis. When enabled, generation returns sparse salient keyframe markers and foot-contact changes; it does not run the full animation_analyze command."
+            "description": "Optional generation-time lightweight analysis. When enabled, generation returns sparse salient keyframe markers and foot-contact changes; it does not run the full animation.analyze command."
           },
           "constraints": {
             "type": "array",
-            "description": "Point constraints are selected by optional pose, root2d, and effect data; multiple fields at one frame compose by channel. Pose/effect safety preflight runs only when the same point constraint explicitly contains both pose and effect; effect-only constraints skip it. root_path and inout remain separate constraint forms; duplicate frames are rejected; command frames use 60 FPS.",
+            "description": "Point constraints resolve to Root2D (root alone), FullBody (pose, optionally root/effector, after IK), or Effector (root + effector without pose). effector alone is invalid. Transforms accept World position and/or Euler rotation in degrees; omitted channels retain sampled values. Pose/effector safety preflight runs when the point explicitly contains both pose and effector. root_path and inout remain separate constraint forms; duplicate frames are rejected; command frames use 60 FPS.",
             "items": {
               "oneOf": [
                 {
@@ -1622,36 +1742,43 @@
                         "index"
                       ]
                     },
-                    "root2d": {
+                    "root": {
                       "type": "object",
-                      "description": "Planar root position and heading constraint; supply both channels together.",
                       "additionalProperties": false,
                       "properties": {
                         "position": {
                           "type": "array",
+                          "minItems": 3,
+                          "maxItems": 3,
                           "items": {
                             "type": "number"
                           },
-                          "minItems": 2,
-                          "maxItems": 2,
-                          "description": "Planar root position [x,z]."
+                          "description": "World-space target position [x,y,z]. Omitted channels retain sampled values."
                         },
-                        "heading": {
+                        "rotation": {
                           "type": "array",
+                          "minItems": 3,
+                          "maxItems": 3,
                           "items": {
                             "type": "number"
                           },
-                          "minItems": 2,
-                          "maxItems": 2,
-                          "description": "Planar heading direction [x,z]."
+                          "description": "Rotation in Euler degrees [x,y,z], converted with Unity Quaternion.Euler. Omitted channels retain sampled values."
                         }
                       },
-                      "required": [
-                        "position",
-                        "heading"
+                      "anyOf": [
+                        {
+                          "required": [
+                            "position"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "rotation"
+                          ]
+                        }
                       ]
                     },
-                    "effect": {
+                    "effector": {
                       "type": "object",
                       "additionalProperties": false,
                       "properties": {
@@ -1666,16 +1793,16 @@
                               "items": {
                                 "type": "number"
                               },
-                              "description": "World-space target position [x,y,z]."
+                              "description": "World-space target position [x,y,z]. Omitted channels retain sampled values."
                             },
                             "rotation": {
                               "type": "array",
-                              "minItems": 4,
-                              "maxItems": 4,
+                              "minItems": 3,
+                              "maxItems": 3,
                               "items": {
                                 "type": "number"
                               },
-                              "description": "Target rotation quaternion [x,y,z,w]."
+                              "description": "Rotation in Euler degrees [x,y,z], converted with Unity Quaternion.Euler. Omitted channels retain sampled values."
                             }
                           },
                           "anyOf": [
@@ -1702,16 +1829,16 @@
                               "items": {
                                 "type": "number"
                               },
-                              "description": "World-space target position [x,y,z]."
+                              "description": "World-space target position [x,y,z]. Omitted channels retain sampled values."
                             },
                             "rotation": {
                               "type": "array",
-                              "minItems": 4,
-                              "maxItems": 4,
+                              "minItems": 3,
+                              "maxItems": 3,
                               "items": {
                                 "type": "number"
                               },
-                              "description": "Target rotation quaternion [x,y,z,w]."
+                              "description": "Rotation in Euler degrees [x,y,z], converted with Unity Quaternion.Euler. Omitted channels retain sampled values."
                             }
                           },
                           "anyOf": [
@@ -1738,16 +1865,16 @@
                               "items": {
                                 "type": "number"
                               },
-                              "description": "World-space target position [x,y,z]."
+                              "description": "World-space target position [x,y,z]. Omitted channels retain sampled values."
                             },
                             "rotation": {
                               "type": "array",
-                              "minItems": 4,
-                              "maxItems": 4,
+                              "minItems": 3,
+                              "maxItems": 3,
                               "items": {
                                 "type": "number"
                               },
-                              "description": "Target rotation quaternion [x,y,z,w]."
+                              "description": "Rotation in Euler degrees [x,y,z], converted with Unity Quaternion.Euler. Omitted channels retain sampled values."
                             }
                           },
                           "anyOf": [
@@ -1774,16 +1901,16 @@
                               "items": {
                                 "type": "number"
                               },
-                              "description": "World-space target position [x,y,z]."
+                              "description": "World-space target position [x,y,z]. Omitted channels retain sampled values."
                             },
                             "rotation": {
                               "type": "array",
-                              "minItems": 4,
-                              "maxItems": 4,
+                              "minItems": 3,
+                              "maxItems": 3,
                               "items": {
                                 "type": "number"
                               },
-                              "description": "Target rotation quaternion [x,y,z,w]."
+                              "description": "Rotation in Euler degrees [x,y,z], converted with Unity Quaternion.Euler. Omitted channels retain sampled values."
                             }
                           },
                           "anyOf": [
@@ -1827,7 +1954,8 @@
                   "required": [
                     "frame"
                   ],
-                  "anyOf": [
+                  "description": "Sample, assert concrete type from explicit inputs, then overlay data. root is Root2D; pose with optional root/effector is FullBody after IK; root + effector without pose is Effector. effector alone is invalid. Transforms accept position and/or Euler rotation; omitted channels retain sampled values. Empty transforms are invalid.",
+                  "oneOf": [
                     {
                       "required": [
                         "pose"
@@ -1835,13 +1963,33 @@
                     },
                     {
                       "required": [
-                        "root2d"
-                      ]
+                        "root",
+                        "effector"
+                      ],
+                      "not": {
+                        "required": [
+                          "pose"
+                        ]
+                      }
                     },
                     {
                       "required": [
-                        "effect"
-                      ]
+                        "root"
+                      ],
+                      "not": {
+                        "anyOf": [
+                          {
+                            "required": [
+                              "pose"
+                            ]
+                          },
+                          {
+                            "required": [
+                              "effector"
+                            ]
+                          }
+                        ]
+                      }
                     }
                   ]
                 },
@@ -1853,7 +2001,7 @@
                       "type": "integer",
                       "minimum": 0,
                       "default": 0,
-                      "description": "First path frame; defaults to the clip start. Use a confirmed path for the intended character and motion; root_path generates only start and end Root2D constraints, not intermediate route enforcement."
+                      "description": "First path frame; defaults to the clip start. animation.analyze returns this path in World coordinates because the analyzed Clip begins at frame zero; generation resolves it once against the target character's World anchor. Use a confirmed path for the intended character and motion; root_path generates only start and end Root2D constraints, not intermediate route enforcement."
                     },
                     "root_path": {
                       "type": "object",
@@ -1861,7 +2009,7 @@
                       "properties": {
                         "path": {
                           "type": "object",
-                          "description": "Confirmed analyzed Root Path slot for the intended character and motion, returned by animation_analyze at clip.root_trajectory.path.",
+                          "description": "Confirmed analyzed Root Path slot for the intended character and motion, returned by animation.analyze at clip.root_trajectory.path.",
                           "additionalProperties": false,
                           "properties": {
                             "track": {
@@ -2072,7 +2220,7 @@
       },
       "examples": [
         {
-          "description": "Submit one Clip request; use the returned request_id with kimodo_get_generation.",
+          "description": "Submit one Clip request; use the returned request_id with generation.get.",
           "arguments": {
             "character": "<character>",
             "prompt": "<short action for one Clip>",
@@ -2163,7 +2311,7 @@
           }
         },
         {
-          "description": "Set one Root2D point. The selected data fields determine the constraint family; no type tag is needed.",
+          "description": "Create a Root2D constraint from a complete World root transform with Euler rotation in degrees.",
           "arguments": {
             "character": "<character>",
             "prompt": "<short action for one Clip>",
@@ -2171,14 +2319,16 @@
             "constraints": [
               {
                 "frame": 60,
-                "root2d": {
+                "root": {
                   "position": [
                     2.4,
+                    0.95,
                     5.0
                   ],
-                  "heading": [
+                  "rotation": [
                     0,
-                    1
+                    0,
+                    0
                   ]
                 }
               }
@@ -2186,7 +2336,7 @@
           }
         },
         {
-          "description": "Mix a FullBody pose, Root2D root override, and hand target at one frame. Root2D overlays the pose root channels and effect overlays the named hand target.",
+          "description": "Create an IK-solved FullBody constraint from a referenced pose, root override, and hand target.",
           "arguments": {
             "character": "<character>",
             "prompt": "<short action for one Clip>",
@@ -2199,17 +2349,19 @@
                   "track": "<pose track>",
                   "index": 0
                 },
-                "root2d": {
+                "root": {
                   "position": [
                     2.4,
+                    0.95,
                     5.0
                   ],
-                  "heading": [
+                  "rotation": [
                     0,
-                    1
+                    0,
+                    0
                   ]
                 },
-                "effect": {
+                "effector": {
                   "right_hand": {
                     "position": [
                       2.55,
@@ -2225,7 +2377,7 @@
       ]
     },
     {
-      "name": "pose_get",
+      "name": "pose.get",
       "description": "Sample one absolute Timeline-global frame at 60 FPS, or select mode scene_pose / skeleton_rest_pose to read the original scene Animator or Avatar rest pose. Every response includes character_root, the bound scene GameObject root Transform in world space; data.root is the sampled Pose root channel. Every call creates an External Pose slot and returns {track,index}.",
       "documentation": {
         "when_to_use": "Materialize an External Pose from a Timeline frame, the current scene Animator pose, or the Avatar skeleton rest pose.",
@@ -2246,9 +2398,9 @@
         ],
         "related_commands": [
           "scene.context",
-          "animation_analyze",
-          "transform_capture",
-          "pose_set"
+          "animation.analyze",
+          "transform.capture",
+          "pose.set"
         ]
       },
       "inputSchema": {
@@ -2274,7 +2426,7 @@
               "timeline_frame_60": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "Absolute Timeline-global frame at 60 FPS. Use animation_analyze to find the selected Clip's start frame, then add the clip-local frame offset."
+                "description": "Absolute Timeline-global frame at 60 FPS. Use animation.analyze to find the selected Clip's start frame, then add the clip-local frame offset."
               }
             },
             "required": [
@@ -2501,12 +2653,12 @@
       ]
     },
     {
-      "name": "pose_test",
-      "description": "Measure actual Humanoid joint world positions after evaluating any External Pose, including a pose sampled from a generated effect-only result. Optionally compare selected joints with world-space target positions; this is an explicit pose measurement, separate from generation-time non-blocking warnings.",
+      "name": "pose.test",
+      "description": "Measure actual Humanoid joint world positions after evaluating any External Pose, including a pose sampled from an Effector-constrained result. Optionally compare selected joints with world-space target positions; this is an explicit pose measurement, separate from generation-time non-blocking warnings.",
       "documentation": {
         "when_to_use": "Measure the actual world-space positions of Humanoid joints in an External Pose, optionally checking them against expected contact targets.",
         "behavior": [
-          "Call pose_get for the desired scene or Timeline frame first, then pass its returned pose reference.",
+          "Call pose.get for the desired scene or Timeline frame first, then pass its returned pose reference.",
           "Use targets when a contact or reach criterion needs a numerical pass/fail check; target positions and tolerances are in meters in world space."
         ],
         "result_notes": [
@@ -2517,13 +2669,13 @@
           "Read-only with respect to the scene, Timeline, Pose slot, and animation assets; evaluation uses a transient preview rig."
         ],
         "limits": [
-          "pose_test explicitly measures the actual joints in any sampled Pose, including after effect-only generation. Generation-time pose/effect safety preflight is separate and runs only when the same constraint explicitly includes both pose and effect.",
+          "pose.test explicitly measures the actual joints in any sampled Pose, including after Effector-constrained generation. Generation-time pose/effector safety preflight is separate and runs only when the same constraint explicitly includes both pose and effector.",
           "Requires a valid Humanoid character and a Pose reference from the current context."
         ],
         "related_commands": [
-          "pose_get",
-          "transform_capture",
-          "kimodo_generate_animation"
+          "pose.get",
+          "transform.capture",
+          "animation.generate"
         ]
       },
       "inputSchema": {
@@ -2783,7 +2935,7 @@
           "description": "Measure the actual world-space hand positions in a sampled Timeline pose.",
           "arguments": {
             "pose": {
-              "track": "<pose track returned by pose_get>",
+              "track": "<pose track returned by pose.get>",
               "index": 0
             },
             "joints": [
@@ -2796,7 +2948,7 @@
           "description": "Check whether the sampled right hand reaches a world-space contact point within 5 cm.",
           "arguments": {
             "pose": {
-              "track": "<pose track returned by pose_get>",
+              "track": "<pose track returned by pose.get>",
               "index": 0
             },
             "targets": [
@@ -2815,12 +2967,12 @@
       ]
     },
     {
-      "name": "pose_set",
+      "name": "pose.set",
       "description": "Modify an External Pose slot. Supply root, muscles, effector, or any combination.",
       "documentation": {
         "when_to_use": "Update the root transform, muscle channels, or effector targets of an existing External Pose slot.",
         "behavior": [
-          "Use only a {track,index} reference returned by pose_get or another Pose editing command.",
+          "Use only a {track,index} reference returned by pose.get or another Pose editing command.",
           "Supply at least one of root, muscles, or effector; multiple supplied channels are updated together."
         ],
         "result_notes": [
@@ -2833,9 +2985,8 @@
           "This edits Pose data; it does not generate an animation Clip."
         ],
         "related_commands": [
-          "pose_get",
-          "pose_set_root_transform",
-          "pose_set_muscle"
+          "pose.get",
+          "pose.set"
         ]
       },
       "inputSchema": {
@@ -3114,7 +3265,7 @@
       },
       "examples": [
         {
-          "description": "Edit the root of the Pose slot returned by pose_get; position is in Character world space.",
+          "description": "Edit the root of the Pose slot returned by pose.get; position is in Character world space.",
           "arguments": {
             "pose": {
               "track": "<returned pose track>",
@@ -3138,254 +3289,12 @@
       ]
     },
     {
-      "name": "pose_set_root_transform",
-      "description": "Compatibility alias for pose_set with a root-only update. Prefer pose_set for new calls.",
-      "documentation": {
-        "when_to_use": "Compatibility alias for a root-only pose_set update.",
-        "behavior": [
-          "Use pose_set for new calls; this command accepts one Pose reference and root transform."
-        ],
-        "result_notes": [
-          "Returns the updated Pose reference and data."
-        ],
-        "scene_effects": [
-          "Mutates the referenced External Pose slot."
-        ],
-        "limits": [
-          "Only the root transform is accepted by this alias."
-        ],
-        "related_commands": [
-          "pose_set",
-          "pose_get"
-        ]
-      },
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "pose": {
-            "type": "object",
-            "description": "External Pose slot in the current scene context.",
-            "additionalProperties": false,
-            "properties": {
-              "track": {
-                "type": "string"
-              },
-              "index": {
-                "type": "integer",
-                "minimum": 0
-              }
-            },
-            "required": [
-              "track",
-              "index"
-            ]
-          },
-          "root": {
-            "type": "object",
-            "description": "Root position and rotation."
-          }
-        },
-        "required": [
-          "pose",
-          "root"
-        ],
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          },
-          "error": {
-            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
-            "type": "object",
-            "properties": {
-              "code": {
-                "type": "string"
-              },
-              "message": {
-                "type": "string"
-              },
-              "details": {
-                "type": "object"
-              }
-            },
-            "required": [
-              "code",
-              "message"
-            ],
-            "additionalProperties": true
-          },
-          "pose": {
-            "type": "object",
-            "properties": {
-              "track": {
-                "type": "string"
-              },
-              "index": {
-                "type": "integer"
-              }
-            },
-            "additionalProperties": true
-          },
-          "data": {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": true
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "additionalProperties": true
-      },
-      "examples": [
-        {
-          "description": "Set a returned Pose slot's root position.",
-          "arguments": {
-            "pose": {
-              "track": "<returned pose track>",
-              "index": 0
-            },
-            "root": {
-              "position": [
-                0,
-                1,
-                0
-              ]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "pose_set_muscle",
-      "description": "Compatibility alias for pose_set with a muscles-only update. Prefer pose_set for new calls.",
-      "documentation": {
-        "when_to_use": "Compatibility alias for a muscles-only pose_set update.",
-        "behavior": [
-          "Use pose_set for new calls; this command accepts one Pose reference and a muscle-value map."
-        ],
-        "result_notes": [
-          "Returns the updated Pose reference and data."
-        ],
-        "scene_effects": [
-          "Mutates the referenced External Pose slot."
-        ],
-        "limits": [
-          "Only muscle channels are accepted by this alias."
-        ],
-        "related_commands": [
-          "pose_set",
-          "pose_get"
-        ]
-      },
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "pose": {
-            "type": "object",
-            "description": "External Pose slot in the current scene context.",
-            "additionalProperties": false,
-            "properties": {
-              "track": {
-                "type": "string"
-              },
-              "index": {
-                "type": "integer",
-                "minimum": 0
-              }
-            },
-            "required": [
-              "track",
-              "index"
-            ]
-          },
-          "muscles": {
-            "type": "object",
-            "description": "Map of muscle channel names to values."
-          }
-        },
-        "required": [
-          "pose",
-          "muscles"
-        ],
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          },
-          "error": {
-            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
-            "type": "object",
-            "properties": {
-              "code": {
-                "type": "string"
-              },
-              "message": {
-                "type": "string"
-              },
-              "details": {
-                "type": "object"
-              }
-            },
-            "required": [
-              "code",
-              "message"
-            ],
-            "additionalProperties": true
-          },
-          "pose": {
-            "type": "object",
-            "properties": {
-              "track": {
-                "type": "string"
-              },
-              "index": {
-                "type": "integer"
-              }
-            },
-            "additionalProperties": true
-          },
-          "data": {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": true
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "additionalProperties": true
-      },
-      "examples": [
-        {
-          "description": "Edit the Spine Front-Back muscle of a returned Pose slot.",
-          "arguments": {
-            "pose": {
-              "track": "<returned pose track>",
-              "index": 0
-            },
-            "muscles": {
-              "Spine Front-Back": 0.1
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "kimodo_get_generation",
-      "description": "Get status and results for install, generation, or Mocap analysis requests. A completed Mocap analysis returns poses and SMPL-X coordinate metadata at the top level. include_request_json explicitly opts into the submitted generation payload.",
+      "name": "generation.get",
+      "description": "Get status and results for install, generation, or Mocap analysis requests. A completed generation includes post_analysis with the full animation.analyze result for the generated Timeline Clip; analysis failure is reported separately and does not invalidate generation. A completed Mocap analysis returns poses and SMPL-X coordinate metadata at the top level. include_request_json explicitly opts into the submitted generation payload.",
       "documentation": {
         "when_to_use": "Read progress, terminal status, and results for an installation or generation request.",
         "behavior": [
-          "Pass the exact request_id returned by kimodo_install_server or kimodo_generate_animation.",
+          "Pass the exact request_id returned by server.install or animation.generate.",
           "Poll until a terminal status; a successful command response can still report task status failed or canceled."
         ],
         "result_notes": [
@@ -3399,9 +3308,9 @@
           "Request records are retained for a bounded number of recent jobs; an unknown or expired id returns an error."
         ],
         "related_commands": [
-          "kimodo_install_server",
-          "kimodo_generate_animation",
-          "kimodo_cancel_generation"
+          "server.install",
+          "animation.generate",
+          "generation.cancel"
         ]
       },
       "inputSchema": {
@@ -3409,7 +3318,7 @@
         "properties": {
           "request_id": {
             "type": "string",
-            "description": "Request id returned by kimodo_install_server, kimodo_generate_animation, analysis.video, or analysis.picture."
+            "description": "Request id returned by server.install, animation.generate, analysis.video, or analysis.picture."
           },
           "include_request_json": {
             "type": "boolean",
@@ -3544,6 +3453,48 @@
           "analysis": {
             "type": "object",
             "properties": {},
+            "additionalProperties": true
+          },
+          "post_analysis": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "completed",
+                  "failed",
+                  "skipped"
+                ]
+              },
+              "result": {
+                "type": "object",
+                "properties": {
+                  "analysis_schema_version": {
+                    "type": "string"
+                  },
+                  "clip": {
+                    "type": "string"
+                  },
+                  "pictures": {
+                    "type": "object"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "error": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "object"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
             "additionalProperties": true
           },
           "analysis_schema_version": {
@@ -3705,12 +3656,12 @@
       ]
     },
     {
-      "name": "kimodo_cancel_generation",
-      "description": "Request cancellation of an active animation generation and return its compact lifecycle result. Installation requests cannot be canceled; use kimodo_get_generation for detailed progress and diagnostics.",
+      "name": "generation.cancel",
+      "description": "Request cancellation of an active animation generation and return its compact lifecycle result. Installation requests cannot be canceled; use generation.get for detailed progress and diagnostics.",
       "documentation": {
         "when_to_use": "Request cancellation of an active animation generation.",
         "behavior": [
-          "Pass the exact generation request_id, then poll with kimodo_get_generation to confirm its terminal state."
+          "Pass the exact generation request_id, then poll with generation.get to confirm its terminal state."
         ],
         "result_notes": [
           "Returns the compact cancellation/lifecycle result and any completed Clip metadata."
@@ -3723,8 +3674,8 @@
           "A cancellation request is not proof of a canceled terminal state; check the returned status."
         ],
         "related_commands": [
-          "kimodo_get_generation",
-          "kimodo_generate_animation"
+          "generation.get",
+          "animation.generate"
         ]
       },
       "inputSchema": {
@@ -3732,7 +3683,7 @@
         "properties": {
           "request_id": {
             "type": "string",
-            "description": "Generation request id returned by kimodo_generate_animation."
+            "description": "Generation request id returned by animation.generate."
           },
           "reason": {
             "type": "string",

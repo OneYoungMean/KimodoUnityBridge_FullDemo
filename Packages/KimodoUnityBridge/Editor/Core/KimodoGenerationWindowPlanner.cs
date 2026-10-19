@@ -299,8 +299,8 @@ namespace KimodoBridge.Editor
             {
                 ["type"] = "root2d",
                 ["frame_indices"] = new JArray(localFrame),
-                ["smooth_root_2d"] = new JArray(new JArray(position.x, position.y)),
-                ["global_root_heading"] = new JArray(new JArray(normalizedHeading.x, normalizedHeading.y))
+                ["smooth_root_2d"] = new JArray { new JArray(position.x, position.y) },
+                ["global_root_heading"] = new JArray { new JArray(normalizedHeading.x, normalizedHeading.y) }
             };
         }
 

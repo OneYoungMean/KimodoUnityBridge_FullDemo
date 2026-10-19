@@ -76,7 +76,7 @@ namespace KimodoBridge.Editor
                     enableMask = sampleData?.IsValid == true
                         ? KimodoConstraintMask.ForType(FullBodyConstraintType)
                         : new KimodoConstraintMask(),
-                    constraintMode = "constraint",
+                    constraintMode = "fullbody",
                     sampleTime = 0.0,
                     enabled = true
                 };

@@ -244,7 +244,7 @@ namespace KimodoUnityBridge.Command.Tests
         {
             await AssertRealKModelGenerationRootKeyframe(
                 "RealKModelGenerationRootEffect",
-                "root-effect",
+                "effector",
                 "right-hand",
                 30.0 / 30.0,
                 1703,
@@ -265,7 +265,7 @@ namespace KimodoUnityBridge.Command.Tests
                 using var timeout = new CancellationTokenSource(
                     TimeSpan.FromMinutes(generationTimeoutMinutes));
                 KimodoMarkerSampleResult sample = fixture.Capture(sampleMode, sampleTime);
-                if (string.Equals(sampleMode, "root-effect", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(sampleMode, "effector", StringComparison.OrdinalIgnoreCase))
                 {
                     sample.rootOverride.t = new Vector3(1f, 1f, 1f);
                     sample.enableMask = new KimodoConstraintMask
@@ -362,7 +362,7 @@ namespace KimodoUnityBridge.Command.Tests
                             new Vector2(actual.rootOverride.t.x, actual.rootOverride.t.z),
                             new Vector2(expected.rootOverride.t.x, expected.rootOverride.t.z))
                         : Vector3.Distance(actual.rootOverride.t, expected.rootOverride.t);
-                    float rootTolerance = string.Equals(sampleMode, "root-effect", StringComparison.OrdinalIgnoreCase)
+                    float rootTolerance = string.Equals(sampleMode, "effector", StringComparison.OrdinalIgnoreCase)
                         ? EffectorRootGenerationToleranceMeters
                         : PositionToleranceMeters;
 
@@ -407,7 +407,7 @@ namespace KimodoUnityBridge.Command.Tests
             {
                 KimodoMarkerSampleResult fullBody = fixture.Capture("fullbody", 10.0 / 30.0);
                 KimodoMarkerSampleResult root2D = fixture.Capture("root2d", 25.0 / 30.0);
-                KimodoMarkerSampleResult rootEffect = fixture.Capture("root-effect", 40.0 / 30.0);
+                KimodoMarkerSampleResult rootEffect = fixture.Capture("effector", 40.0 / 30.0);
                 rootEffect.enableMask = new KimodoConstraintMask
                 {
                     rootPosition = true,
@@ -430,7 +430,7 @@ namespace KimodoUnityBridge.Command.Tests
                 CollectionAssert.Contains(Frames(root2DJson), 25,
                     "The explicit root2d target frame must remain present.");
                 CollectionAssert.Contains(Frames(rightHandJson), 40,
-                    "The root-effect target frame must remain present even when the composer carries a support frame.");
+                    "The effector target frame must remain present alongside independent constraint samples.");
 
                 AssertVector3(fullBodyJson["root_positions"][0],
                     ToKimodoPosition(fullBody.rootOverride.t), "fullbody root", PositionToleranceMeters);
@@ -448,34 +448,34 @@ namespace KimodoUnityBridge.Command.Tests
         }
 
         [Test]
-        public void GenerateCommand_ExposesComposablePointConstraintSchema()
+        public void GenerateCommand_ExposesInferredPointConstraintSchema()
         {
             JObject generation = JObject.Parse(command_dispatcher.GetCommandDefinitionsJson())
                 ["tools"]
                 .Values<JObject>()
-                .Single(tool => tool.Value<string>("name") == "kimodo_generate_animation");
+                .Single(tool => tool.Value<string>("name") == "animation.generate");
             JObject constraints = (JObject)generation["inputSchema"]["properties"]["constraints"];
             JObject point = ((JArray)constraints["items"]["oneOf"])
                 .Values<JObject>()
-                .Single(branch => branch["properties"]?["root2d"] != null && branch["properties"]?["pose"] != null);
+                .Single(branch => branch["properties"]?["root"] != null && branch["properties"]?["pose"] != null);
 
             AssertRequiredProperties(point, "frame");
             Assert.That(point["properties"]["type"], Is.Null);
+            Assert.That(point["properties"]["root2d"], Is.Null);
+            Assert.That(point["properties"]["effect"], Is.Null);
             Assert.That(point["properties"]["pose"], Is.Not.Null);
-            Assert.That(point["properties"]["root2d"], Is.Not.Null);
-            Assert.That(point["properties"]["effect"], Is.Not.Null);
-            AssertRequiredProperties((JObject)point["properties"]["root2d"], "position", "heading");
-            CollectionAssert.AreEquivalent(
-                new[] { "pose", "root2d", "effect" },
-                ((JArray)point["anyOf"]).SelectMany(requirement => ((JArray)requirement["required"]).Values<string>()));
+            Assert.That(point["properties"]["root"], Is.Not.Null);
+            Assert.That(point["properties"]["effector"], Is.Not.Null);
+            Assert.That(point["properties"]["root"]["properties"]["rotation"]["maxItems"].Value<int>(), Is.EqualTo(3));
+            Assert.That(point["oneOf"], Has.Count.EqualTo(3));
         }
 
         [Test]
-        public void GenerationRequest_RootEffect_EmitsRootAndEffectorAtOneFrame()
+        public void GenerationRequest_Effectors_EmbedRootContextWithoutSeparateRoot2D()
         {
             using (var fixture = new GenerationFixture("GenerationRootEffect"))
             {
-                KimodoMarkerSampleResult rootEffect = fixture.Capture("root-effect", 32.0 / 30.0);
+                KimodoMarkerSampleResult rootEffect = fixture.Capture("effector", 32.0 / 30.0);
                 rootEffect.enableMask = new KimodoConstraintMask
                 {
                     rootPosition = true,
@@ -492,7 +492,7 @@ namespace KimodoUnityBridge.Command.Tests
 
                 Assert.That(exported.Any(item => string.Equals(
                     item.Value<string>("type"), "root2d", StringComparison.OrdinalIgnoreCase)), Is.False,
-                    "RootEffect is emitted as one effector family with root support, not a second Root2D constraint.");
+                    "Effector records embed root context without a separate Root2D record.");
                 CollectionAssert.AreEqual(new[] { 32 }, Frames(leftHand));
                 CollectionAssert.AreEqual(new[] { 32 }, Frames(rightHand));
                 Assert.That(request.ConstraintSamples, Has.Count.EqualTo(1));
@@ -601,8 +601,8 @@ namespace KimodoUnityBridge.Command.Tests
                 try
                 {
                     timeline = ScriptableObject.CreateInstance<TimelineAsset>();
-                    directorObject = EditorUtility.CreateGameObjectWithHideFlags(
-                        name + "Director", HideFlags.HideAndDontSave);
+                    // The production resolver only accepts directors in the active scene.
+                    directorObject = new GameObject(name + "Director");
                     director = directorObject.AddComponent<PlayableDirector>();
                     director.playableAsset = timeline;
                     track = timeline.CreateTrack<AnimationTrack>(null, name + "Track");
@@ -624,6 +624,8 @@ namespace KimodoUnityBridge.Command.Tests
                     playable.inOutConstraintMode = KimodoInOutConstraintMode.None;
                     playable.autoBeginAnchor = false;
                     playable.generateLoop = false;
+                    Assert.That(KimodoInOutConstraintAdapter.TryResolveTimelineContext(
+                        timelineClip, out _, out error), Is.True, error);
                     director.RebuildGraph();
                     director.Evaluate();
                 }

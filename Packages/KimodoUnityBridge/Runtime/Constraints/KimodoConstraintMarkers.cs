@@ -39,9 +39,7 @@ namespace KimodoBridge
     {
         Root2D = 0,
         FullBody = 1,
-        Effector = 2,
-        [Obsolete("Mix is no longer an execution mode; migrate to Root2D, Effector, or FullBody.")]
-        Mix = 3
+        Effector = 2
     }
 
     public enum KimodoConstraintMarkerType
@@ -139,9 +137,6 @@ namespace KimodoBridge
             {
                 case "fullbody": result.rootHeading = true; break;
                 case "root2d": result.rootHeading = true; break;
-                case "root-effect":
-                    // Public RootEffect is executed as Effector with root support.
-                    break;
                 case "effector":
                     result.rootHeading = true;
                     result.leftHand = true;
@@ -165,34 +160,6 @@ namespace KimodoBridge
         public bool AnyEndEffector => leftFoot || rightFoot || leftHand || rightHand;
         public bool IsEmpty => !muscle && !rootTQ && !leftFootTQ && !rightFootTQ &&
             !rootPosition && !rootHeading && !AnyEndEffector;
-
-        public static KimodoConstraintMask Resolve(KimodoConstraintMask value, string type)
-        {
-            return value ?? new KimodoConstraintMask();
-        }
-
-        [Obsolete("validMask is ignored; sampleValid gates the complete sample.")]
-        public static KimodoConstraintMask FromSample(KimodoMarkerSampleResult sample)
-        {
-            // Old assets are treated as fully valid. Keep this adapter only for
-            // diagnostics compiled against the former mask API.
-            return new KimodoConstraintMask
-            {
-                muscle = true, rootTQ = true, leftFootTQ = true, rightFootTQ = true,
-                rootPosition = true, rootHeading = true,
-                leftHand = true, rightHand = true, leftFoot = true, rightFoot = true
-            };
-        }
-
-        [Obsolete("Use sampleValid and explicit enable intent.")]
-        public static bool IsEnabledAndValid(
-            KimodoMarkerSampleResult sample,
-            Func<KimodoConstraintMask, bool> enabledSelector,
-            Func<KimodoConstraintMask, bool> validSelector)
-        {
-            if (sample == null || enabledSelector == null || validSelector == null) return false;
-            return sample.sampleValid && enabledSelector(sample.enableMask ?? new KimodoConstraintMask());
-        }
 
         public static bool IsActive(KimodoMarkerSampleResult sample, string channel)
         {
@@ -248,8 +215,7 @@ namespace KimodoBridge
         [Obsolete("Ignored by execution; retained only so old Unity assets deserialize.")]
         public KimodoConstraintMask validMask = new KimodoConstraintMask();
         public bool enabled = true;
-        // Composer uses this as the explicit creation-order tie breaker.
-        // When unset, input order remains the deterministic fallback.
+        // Creation metadata; does not merge or select constraint types.
         public long creationOrder;
 
         // Each effector declares local or world space. The pose pipeline
@@ -262,23 +228,10 @@ namespace KimodoBridge
         // sampled root Y, pitch and roll remain motion channels.
         public KimodoRigidTransform rootOverride = KimodoRigidTransform.Identity;
 
-        // Retained as a non-serialized source-compatibility shim for code that
-        // still constructs old samples. It has no runtime or editor behavior.
-        [System.NonSerialized, Obsolete("Carry with root was removed; root edits never modify effectors.")]
-        public bool carryEffectorsWithRoot;
-
         // One mode is the only persisted constraint semantic. Wire-family
         // selection is centralized in KimodoConstraintInternal.
-        public string constraintMode = "constraint";
+        public string constraintMode = "fullbody";
         public double sampleTime;
-
-        // Runtime-only provenance for same-frame Editor pass composition. A
-        // support MuscleSample may be retained for projection by a Root2D or
-        // Effector pass; these flags prevent it from being mistaken for a
-        // FullBody execution family when the composed sample is exported.
-        [NonSerialized] internal bool composedFullBody;
-        [NonSerialized] internal bool composedRoot2D;
-        [NonSerialized] internal bool composedEffector;
 
         public KimodoMarkerSampleResult Clone() => new KimodoMarkerSampleResult
         {
@@ -289,12 +242,9 @@ namespace KimodoBridge
             enabled = enabled,
             creationOrder = creationOrder,
             effectors = effectors?.Clone() ?? new KimodoConstraintEffectors(),
-            rootOverride = rootOverride?.Clone() ?? KimodoRigidTransform.Identity,
+            rootOverride = rootOverride?.Clone(),
             constraintMode = this.constraintMode,
-            sampleTime = sampleTime,
-            composedFullBody = composedFullBody,
-            composedRoot2D = composedRoot2D,
-            composedEffector = composedEffector
+            sampleTime = sampleTime
         };
     }
 

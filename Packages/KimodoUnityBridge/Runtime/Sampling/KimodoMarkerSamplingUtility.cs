@@ -85,7 +85,7 @@ namespace KimodoBridge
                 return true;
             }
 
-            error = "failed to normalize unified constraint sample";
+            error = "failed to normalize constraint sample";
             return false;
         }
 
@@ -104,22 +104,6 @@ namespace KimodoBridge
             };
             result.sampleData.SetRoot(Vector3.zero, Quaternion.identity);
             return result;
-        }
-
-        /// <summary>Compatibility entry that returns canonical same-frame samples.
-        /// Protocol family selection occurs only in KimodoConstraintInternal.</summary>
-        public static List<KimodoMarkerSampleResult> ExpandUnifiedConstraintSamples(
-            IReadOnlyList<KimodoMarkerSampleResult> samples,
-            double frameRate)
-        {
-            return KimodoConstraintSampleComposer.ComposeCanonicalSamples(samples, frameRate);
-        }
-
-        public static List<KimodoMarkerSampleResult> MergeAsUnifiedConstraintSamples(
-            IReadOnlyList<KimodoMarkerSampleResult> samples,
-            double frameRate)
-        {
-            return KimodoConstraintSampleComposer.MergeAsUnifiedSamples(samples, frameRate);
         }
 
         public static List<string> BuildHighlightJointsForConstraint(

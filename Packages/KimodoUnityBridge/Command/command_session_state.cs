@@ -175,16 +175,6 @@ namespace KimodoUnityBridge.Command
             }
         }
 
-        private static IEnumerable<GameObject> FindSceneMeshObjects()
-        {
-            return Resources.FindObjectsOfTypeAll<GameObject>()
-                .Where(gameObject => gameObject != null && !EditorUtility.IsPersistent(gameObject) &&
-                    gameObject.scene.IsValid() && !IsSessionObject(gameObject) && HasRenderableMesh(gameObject))
-                .GroupBy(gameObject => KimodoUnityObjectIdUtility.IdHash(gameObject))
-                .Select(group => group.First())
-                .ToArray();
-        }
-
         private static GameObject[] ResolveRequestedSceneCharacters(string requestedName)
         {
             if (string.Equals(requestedName, "@active_animator", StringComparison.OrdinalIgnoreCase))
@@ -205,21 +195,25 @@ namespace KimodoUnityBridge.Command
                 {
                     return Array.Empty<GameObject>();
                 }
-                return new[] { activeAnimator.transform.root.gameObject };
+                GameObject activeRoot = activeAnimator.transform.root.gameObject;
+                return IsIndexableHumanoidCharacter(activeRoot)
+                    ? new[] { activeRoot }
+                    : Array.Empty<GameObject>();
             }
 
             bool isPath = requestedName.Contains("/");
-            IEnumerable<GameObject> candidates = FindSceneMeshObjects()
-                .Concat(Resources.FindObjectsOfTypeAll<Animator>()
-                    .Where(animator => animator != null && animator.gameObject.scene.IsValid() &&
-                        !EditorUtility.IsPersistent(animator) && !IsSessionObject(animator.gameObject))
-                    .Select(animator => animator.transform.root.gameObject));
+            // Match the requested identity before resolving Avatars: resolution may reimport a model.
+            IEnumerable<GameObject> candidates = Resources.FindObjectsOfTypeAll<Animator>()
+                .Where(animator => animator != null && animator.gameObject.scene.IsValid() &&
+                    !EditorUtility.IsPersistent(animator) && !IsSessionObject(animator.gameObject))
+                .Select(animator => animator.transform.root.gameObject);
             return candidates
                 .GroupBy(item => KimodoUnityObjectIdUtility.IdHash(item))
                 .Select(group => group.First())
                 .Where(item => isPath
                     ? string.Equals(GetSceneHierarchyPath(item), requestedName, StringComparison.OrdinalIgnoreCase)
                     : string.Equals(item.name, requestedName, StringComparison.OrdinalIgnoreCase))
+                .Where(IsIndexableHumanoidCharacter)
                 .ToArray();
         }
 
@@ -227,6 +221,34 @@ namespace KimodoUnityBridge.Command
         {
             return root != null && root.GetComponentsInChildren<Renderer>(true)
                 .Any(renderer => renderer is MeshRenderer || renderer is SkinnedMeshRenderer);
+        }
+
+        private static bool IsIndexableHumanoidCharacter(GameObject root)
+        {
+            if (root == null || EditorUtility.IsPersistent(root) || !root.scene.IsValid() || IsSessionObject(root))
+            {
+                return false;
+            }
+
+            Animator animator = root.GetComponentInChildren<Animator>(true);
+            return animator != null &&
+                KimodoLocalAvatarUtility.ResolveAvatarFromGameObject(root).IsHumanoid;
+        }
+
+        private static Animator ResolveAutomaticSceneCharacter()
+        {
+            Animator selected = Selection.activeGameObject?.GetComponent<Animator>()
+                ?? Selection.activeGameObject?.GetComponentInParent<Animator>()
+                ?? Selection.activeGameObject?.GetComponentInChildren<Animator>(true);
+            if (selected != null && selected.gameObject.scene == SceneManager.GetActiveScene() &&
+                IsIndexableHumanoidCharacter(selected.transform.root.gameObject))
+            {
+                return selected;
+            }
+
+            return SceneManager.GetActiveScene().GetRootGameObjects()
+                .SelectMany(root => root.GetComponentsInChildren<Animator>(true))
+                .FirstOrDefault(animator => IsIndexableHumanoidCharacter(animator.transform.root.gameObject));
         }
 
         private static string GetSceneHierarchyPath(GameObject gameObject)
@@ -246,7 +268,7 @@ namespace KimodoUnityBridge.Command
             TimelineSessionRecord session,
             GameObject root,
             Animator animator,
-            bool tryGenerateAvatar,
+            bool tryResolveAvatar,
             out string error,
             bool requireAvatar = false)
         {
@@ -258,6 +280,11 @@ namespace KimodoUnityBridge.Command
             }
             root = ResolveCharacterIdentityRoot(root, animator);
             animator = root != null ? root.GetComponentInChildren<Animator>(true) : null;
+            if (requireAvatar && animator == null)
+            {
+                error = "avatar_required: a Humanoid Animator with a valid Avatar is required.";
+                return false;
+            }
             if (animator == null && !HasRenderableMesh(root))
             {
                 error = "character_requires_humanoid_or_mesh: the scene object has neither a valid Animator nor a renderable Mesh.";
@@ -283,7 +310,7 @@ namespace KimodoUnityBridge.Command
             animator = root != null ? root.GetComponentInChildren<Animator>(true) : null;
             Avatar avatar = null;
             string avatarError = string.Empty;
-            if (tryGenerateAvatar)
+            if (tryResolveAvatar)
             {
                 KimodoLocalAvatarUtility.AvatarResolveResult result =
                     KimodoLocalAvatarUtility.ResolveAvatarFromGameObject(root);
@@ -491,12 +518,10 @@ namespace KimodoUnityBridge.Command
                 return;
             }
 
-            List<KimodoMarkerSampleResult> unified =
-                KimodoConstraintSampleComposer.ComposeCanonicalSamples(samples, frameRate);
             double lastSampleTime = Math.Max(0.0, trace.DurationSeconds - 1.0 / Math.Max(1f, frameRate));
-            for (int i = 0; i < unified.Count; i++)
+            for (int i = 0; i < samples.Count; i++)
             {
-                KimodoMarkerSampleResult sample = unified[i];
+                KimodoMarkerSampleResult sample = samples[i];
                 if (sample == null)
                 {
                     continue;
@@ -522,9 +547,6 @@ namespace KimodoUnityBridge.Command
                 }
 
                 KimodoMarkerSampleResult markerSample = sample.Clone();
-                // Preserve the canonical mode inferred by the lower
-                // composer; command code does not choose a protocol family.
-                markerSample.constraintMode = sample.constraintMode;
                 marker.SampleData = markerSample;
                 if (createdMarker)
                 {
@@ -726,23 +748,18 @@ namespace KimodoUnityBridge.Command
                 }
                 currentTimelineSession = session;
                 ActivateTimelineSession(currentTimelineSession);
-                GameObject active = Selection.activeGameObject;
-                if (active == null || active.GetComponentInChildren<Animator>(true) == null)
-                    active = SceneManager.GetActiveScene().GetRootGameObjects()
-                        .SelectMany(root => root.GetComponentsInChildren<Animator>(true).Select(animator => animator.gameObject))
-                        .FirstOrDefault();
-                if (currentTimelineSession.Characters.Count == 0 && active != null)
+                Animator activeAnimator = ResolveAutomaticSceneCharacter();
+                if (currentTimelineSession.Characters.Count == 0 && activeAnimator != null)
                 {
-                    Animator animator = active.GetComponentInParent<Animator>() ?? active.GetComponentInChildren<Animator>(true);
-                    if (animator != null && !AddCharacterTrack(
+                    if (!AddCharacterTrack(
                             currentTimelineSession,
-                            animator.gameObject,
-                            animator,
+                            activeAnimator.gameObject,
+                            activeAnimator,
                             true,
                             out string error,
                             requireAvatar: true))
                     {
-                        throw new InvalidOperationException(error);
+                        Debug.LogWarning($"[Kimodo] Skipped scene character '{activeAnimator.name}': {error}");
                     }
                 }
                 PersistTimelineSessionMetadata(currentTimelineSession);
@@ -874,108 +891,119 @@ namespace KimodoUnityBridge.Command
         public static string AnimationAnalyze(string argumentsJson)
         {
             return Execute(argumentsJson, arguments =>
+                Ok(AnimationAnalyzeCore(arguments, allowActiveGenerationRange: false)));
+        }
+
+        private static JObject AnimationAnalyzeCore(JObject arguments, bool allowActiveGenerationRange)
+        {
+            TimelineSessionRecord session = RequireTimelineSession(arguments);
+            JArray clips = arguments["clips"] as JArray;
+            if (clips == null || clips.Count != 1 || clips[0] is not JObject clipReference)
             {
-                TimelineSessionRecord session = RequireTimelineSession(arguments);
-                JArray clips = arguments["clips"] as JArray;
-                if (clips == null || clips.Count != 1 || clips[0] is not JObject clipReference)
-                {
-                    throw new InvalidOperationException("clips must contain exactly one character and clip reference.");
-                }
-                string characterName = RequiredStringValue(clipReference, "character");
-                if (IsLegacyPreviewCharacterReference(characterName))
-                {
-                    throw new InvalidOperationException($"Character reference '{characterName}' identifies a session preview object. Use the source scene character name instead.");
-                }
-                TimelineCharacterRecord character = session.Characters.FirstOrDefault(item =>
-                    string.Equals(item.Name, characterName, StringComparison.OrdinalIgnoreCase));
-                if (character == null)
-                {
-                    throw new InvalidOperationException($"Character '{characterName}' is not in the current scene context.");
-                }
+                throw new InvalidOperationException("clips must contain exactly one character and clip reference.");
+            }
+            string characterName = RequiredStringValue(clipReference, "character");
+            if (IsLegacyPreviewCharacterReference(characterName))
+            {
+                throw new InvalidOperationException($"Character reference '{characterName}' identifies a session preview object. Use the source scene character name instead.");
+            }
+            TimelineCharacterRecord character = session.Characters.FirstOrDefault(item =>
+                string.Equals(item.Name, characterName, StringComparison.OrdinalIgnoreCase));
+            if (character == null)
+            {
+                throw new InvalidOperationException($"Character '{characterName}' is not in the current scene context.");
+            }
 
-                string clipName = RequiredStringValue(clipReference, "clip");
-                TimelineAnimationRecord animation = character.Animations.FirstOrDefault(item =>
-                    string.Equals(item.Name, clipName, StringComparison.OrdinalIgnoreCase));
-                if (animation == null)
+            string clipName = RequiredStringValue(clipReference, "clip");
+            TimelineAnimationRecord animation = character.Animations.FirstOrDefault(item =>
+                string.Equals(item.Name, clipName, StringComparison.OrdinalIgnoreCase));
+            if (animation == null)
+            {
+                if (allowActiveGenerationRange)
                 {
-                    AnimationClip externalClip = ResolveAnimationClip(clipName);
-                    animation = AppendAnimationClip(session, character, externalClip, "analysis_source", null);
+                    throw new InvalidOperationException(
+                        $"Generated Clip '{clipName}' is not registered in the current scene context; post-analysis will not append a duplicate Clip.");
                 }
-                int startFrame = Mathf.RoundToInt((float)(animation.TimelineStartSeconds * SessionFrameRate));
-                int endFrame = startFrame + Math.Max(1, Mathf.RoundToInt((float)(animation.TimelineDurationSeconds * SessionFrameRate)));
+                AnimationClip externalClip = ResolveAnimationClip(clipName);
+                animation = AppendAnimationClip(session, character, externalClip, "analysis_source", null);
+            }
+            int startFrame = Mathf.RoundToInt((float)(animation.TimelineStartSeconds * SessionFrameRate));
+            int endFrame = startFrame + Math.Max(1, Mathf.RoundToInt((float)(animation.TimelineDurationSeconds * SessionFrameRate)));
+            if (!allowActiveGenerationRange)
+            {
                 ThrowIfGenerationRangeLocked(session, character, startFrame, endFrame, AnimationAnalyzeCommand);
+            }
 
-                JObject picture = AnalysisPictureRequest.Parse(arguments["picture"] as JObject).ToJson();
-                int pictureResolution = ResolveAnalysisPictureResolution(arguments["resolution"]);
-                JObject requestedAnalysisOptions = null;
-                string requestedAnalysisOptionsJson = ParseAnalysisOptionsJson(arguments);
-                if (!string.IsNullOrWhiteSpace(requestedAnalysisOptionsJson))
+            JObject picture = AnalysisPictureRequest.Parse(arguments["picture"] as JObject).ToJson();
+            int pictureResolution = ResolveAnalysisPictureResolution(arguments["resolution"]);
+            JObject requestedAnalysisOptions = null;
+            string requestedAnalysisOptionsJson = ParseAnalysisOptionsJson(arguments);
+            if (!string.IsNullOrWhiteSpace(requestedAnalysisOptionsJson))
+            {
+                requestedAnalysisOptions = JObject.Parse(requestedAnalysisOptionsJson);
+            }
+            JObject analysisOptions = BuildEffectiveAnalysisOptions(requestedAnalysisOptions);
+            string inputSignature = BuildAnimationAnalysisSignature(character, animation, analysisOptions);
+            AnalysisCacheRecord record;
+            if (!TryFindCachedAnimationAnalysis(session, character, animation, inputSignature, out record))
+            {
+                if (!IsHumanoidCharacter(character) && !HasRenderableMesh(character.Root))
                 {
-                    requestedAnalysisOptions = JObject.Parse(requestedAnalysisOptionsJson);
-                }
-                JObject analysisOptions = BuildEffectiveAnalysisOptions(requestedAnalysisOptions);
-                string inputSignature = BuildAnimationAnalysisSignature(character, animation, analysisOptions);
-                AnalysisCacheRecord record;
-                if (!TryFindCachedAnimationAnalysis(session, character, animation, inputSignature, out record))
-                {
-                    if (!IsHumanoidCharacter(character) && !HasRenderableMesh(character.Root))
-                    {
-                        throw new InvalidOperationException(
-                            $"Character '{character.Name}' is neither a valid humanoid nor a renderable Mesh object.");
-                    }
-
-                    JObject analysis;
-                    byte[] analysisMotionBytes;
-                    if (IsHumanoidCharacter(character))
-                    {
-                        analysis = AnalyzeAnimation(session, animation, analysisOptions, out analysisMotionBytes);
-                    }
-                    else
-                    {
-                        analysis = BuildMeshAnalysis(animation);
-                        analysisMotionBytes = null;
-                    }
-                    if (!IsHumanoidCharacter(character)) analysis["source"] = "mesh_only_pose_sampling";
-                    string id = CacheAnalysisResult(
-                        session, character, startFrame / SessionFrameRate, endFrame / SessionFrameRate,
-                        new JArray(), analysis, analysisMotionBytes, animation, inputSignature);
-                    record = GetCachedAnalysis(session, id);
+                    throw new InvalidOperationException(
+                        $"Character '{character.Name}' is neither a valid humanoid nor a renderable Mesh object.");
                 }
 
-                // Normalize on cache hits as well so persisted results never
-                // reintroduce deprecated relative-time keyframe fields.
-                NormalizeAnalysisContract(record.Analysis, startFrame, endFrame);
+                JObject analysis;
+                byte[] analysisMotionBytes;
                 if (IsHumanoidCharacter(character))
                 {
-                    EnsureAnalysisRootTrajectory(session, character, record, startFrame, endFrame);
-                    EnsureEndpointPoseComparison(session, character, animation, record, startFrame, endFrame);
+                    analysis = AnalyzeAnimation(session, animation, analysisOptions, out analysisMotionBytes);
                 }
-                var subject = new AnalysisSubject(character, animation, record, startFrame, endFrame);
-                JObject pictures = RenderAnalysisPictures(session, new[] { subject }, picture, pictureResolution);
-                SaveTimelineSession(session);
-                string analysisImagePath = pictures?.Value<string>("image_path") ?? string.Empty;
-                var analysisLog = new JObject
+                else
                 {
-                    ["picture"] = picture.DeepClone(),
-                    ["clip"] = new JObject
-                    {
-                        ["character"] = subject.Character?.Name ?? string.Empty,
-                        ["clip"] = subject.Animation?.Name ?? string.Empty,
-                        ["analysis"] = subject.Record.Analysis?.DeepClone() ?? new JObject()
-                    },
-                    ["image_path"] = analysisImagePath,
-                    ["image_path_absolute"] = string.IsNullOrWhiteSpace(analysisImagePath)
-                        ? string.Empty
-                        : ProjectRelativePathToAbsolute(analysisImagePath)
-                };
-                Debug.Log("[Kimodo][Analysis] " + analysisLog.ToString(Formatting.None));
-                return Ok(new JObject
+                    analysis = BuildMeshAnalysis(animation);
+                    analysisMotionBytes = null;
+                }
+                if (!IsHumanoidCharacter(character)) analysis["source"] = "mesh_only_pose_sampling";
+                string id = CacheAnalysisResult(
+                    session, character, startFrame / SessionFrameRate, endFrame / SessionFrameRate,
+                    new JArray(), analysis, analysisMotionBytes, animation, inputSignature);
+                record = GetCachedAnalysis(session, id);
+            }
+
+            // Normalize on cache hits as well so persisted results never
+            // reintroduce deprecated relative-time keyframe fields.
+            NormalizeAnalysisContract(record.Analysis, startFrame, endFrame);
+            if (IsHumanoidCharacter(character))
+            {
+                EnsureAnalysisRootTrajectory(session, character, record, startFrame, endFrame);
+                EnsureEndpointPoseComparison(session, character, animation, record, startFrame, endFrame);
+            }
+            var subject = new AnalysisSubject(character, animation, record, startFrame, endFrame);
+            JObject pictures = RenderAnalysisPictures(session, new[] { subject }, picture, pictureResolution);
+            SaveTimelineSession(session);
+            string analysisImagePath = pictures?.Value<string>("image_path") ?? string.Empty;
+            var analysisLog = new JObject
+            {
+                ["picture"] = picture.DeepClone(),
+                ["clip"] = new JObject
                 {
-                    ["analysis_schema_version"] = AnalysisContractVersion,
-                    ["clip"] = BuildAnimationAnalyzeClipResult(subject),
-                    ["pictures"] = BuildPublicPictureMetadata(pictures, subject)
-                });
-            });
+                    ["character"] = subject.Character?.Name ?? string.Empty,
+                    ["clip"] = subject.Animation?.Name ?? string.Empty,
+                    ["analysis"] = subject.Record.Analysis?.DeepClone() ?? new JObject()
+                },
+                ["image_path"] = analysisImagePath,
+                ["image_path_absolute"] = string.IsNullOrWhiteSpace(analysisImagePath)
+                    ? string.Empty
+                    : ProjectRelativePathToAbsolute(analysisImagePath)
+            };
+            Debug.Log("[Kimodo][Analysis] " + analysisLog.ToString(Formatting.None));
+            return new JObject
+            {
+                ["analysis_schema_version"] = AnalysisContractVersion,
+                ["clip"] = BuildAnimationAnalyzeClipResult(subject),
+                ["pictures"] = BuildPublicPictureMetadata(pictures, subject)
+            };
         }
 
         private static JObject BuildAnimationAnalyzeClipResult(AnalysisSubject subject)
@@ -1230,7 +1258,7 @@ namespace KimodoUnityBridge.Command
             {
                 ["motion_semantics_version"] = 2,
                 ["path"] = PoseReferenceJson(character.PoseCacheTrack.name, index),
-                ["coordinate_space"] = "clip_start_local",
+                ["coordinate_space"] = "world",
                 ["frame_rate"] = SessionFrameRate,
                 ["frame_count"] = samples.Length,
                 ["duration_seconds"] = samples.Length / SessionFrameRate,
@@ -1761,7 +1789,7 @@ namespace KimodoUnityBridge.Command
                     string.Equals(character.CharacterRef, sourceId, StringComparison.Ordinal));
                 string error = string.Empty;
                 bool added = match != null || root != null && root.scene.IsValid() && !EditorUtility.IsPersistent(root) &&
-                    AddCharacterTrack(session, root, animator, true, out error, requireAvatar: false);
+                    AddCharacterTrack(session, root, animator, true, out error, requireAvatar: true);
                 if (added)
                 {
                     match ??= session.Characters.FirstOrDefault(character =>
@@ -1800,7 +1828,7 @@ namespace KimodoUnityBridge.Command
             {
                 ["session"] = session.Name,
                 ["session_game_object"] = session.SessionRoot != null ? session.SessionRoot.name : string.Empty,
-                ["characters"] = new JArray(session.Characters.Select(DescribeCharacter)),
+                ["characters"] = new JArray(session.Characters.Where(IsIndexableSessionCharacter).Select(DescribeCharacter)),
                 ["current_timeline_frame_60"] = session.Director != null
                     ? Mathf.RoundToInt((float)(session.Director.time * SessionFrameRate))
                     : 0,
@@ -1815,7 +1843,7 @@ namespace KimodoUnityBridge.Command
             PlayableDirector commandDirector = session.Director;
             TimelineAsset timeline = session.TimelineAsset;
             var characters = new JArray();
-            foreach (TimelineCharacterRecord character in session.Characters)
+            foreach (TimelineCharacterRecord character in session.Characters.Where(IsIndexableSessionCharacter))
             {
                 Animator animator = character.Animator;
                 GameObject sourceRoot = ResolveSourceCharacterRoot(character);
@@ -1891,7 +1919,7 @@ namespace KimodoUnityBridge.Command
             {
                 result["history"] = new JObject
                 {
-                    ["animations"] = new JArray(session.Characters.SelectMany(character => character.Animations.Select(animation =>
+                    ["animations"] = new JArray(session.Characters.Where(IsIndexableSessionCharacter).SelectMany(character => character.Animations.Select(animation =>
                     {
                         JObject item = DescribeAnimation(animation);
                         item["character"] = character.Name;
@@ -1903,6 +1931,14 @@ namespace KimodoUnityBridge.Command
             }
             return Ok(result);
         });
+
+        private static bool IsIndexableSessionCharacter(TimelineCharacterRecord character)
+        {
+            return character != null && character.Root != null && character.Animator != null &&
+                character.Root.scene.IsValid() && !EditorUtility.IsPersistent(character.Root) &&
+                KimodoRetargetCoreUtility.IsValidHumanoid(character.Avatar) &&
+                KimodoLocalAvatarUtility.CheckAvatarValid(character.Avatar, character.Root);
+        }
 
         private static JObject DescribeCharacter(TimelineCharacterRecord character)
         {

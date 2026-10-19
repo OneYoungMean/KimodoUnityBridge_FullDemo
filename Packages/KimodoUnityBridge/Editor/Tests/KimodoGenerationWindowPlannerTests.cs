@@ -126,7 +126,12 @@ namespace KimodoBridge.Editor.Tests
                 heading: new Vector2(Mathf.Sqrt(0.5f), Mathf.Sqrt(0.5f)));
             Assert.That(interpolatedRoot.Value<string>("type"), Is.EqualTo("root2d"));
             Assert.That(interpolatedRoot["frame_indices"]?[0]?.Value<int>(), Is.EqualTo(225));
+            Assert.That(interpolatedRoot["smooth_root_2d"], Is.TypeOf<JArray>());
+            Assert.That(((JArray)interpolatedRoot["smooth_root_2d"]).Count, Is.EqualTo(1));
+            Assert.That(interpolatedRoot["smooth_root_2d"]?[0], Is.TypeOf<JArray>());
             Assert.That(interpolatedRoot["smooth_root_2d"]?[0]?[0]?.Value<float>(), Is.EqualTo(7.5f).Within(0.001f));
+            Assert.That(((JArray)interpolatedRoot["global_root_heading"]).Count, Is.EqualTo(1));
+            Assert.That(interpolatedRoot["global_root_heading"]?[0], Is.TypeOf<JArray>());
             Assert.That(interpolatedRoot["global_root_heading"]?[0]?[0]?.Value<float>(), Is.EqualTo(Mathf.Sqrt(0.5f)).Within(0.001f));
         }
 

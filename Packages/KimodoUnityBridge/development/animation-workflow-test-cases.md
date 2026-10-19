@@ -1,14 +1,17 @@
 # Reusable Animation Loop: Practical Test Cases
 
-These are interactive acceptance tests for the Skill workflow, not Unity unit tests. Run them in a Unity project with KimodoUnityBridge installed, a ready local runtime, an active Timeline Session, and at least one valid humanoid character. Re-check `kimodo_help` and the live schema before each run. Do not treat a test prompt as permission to alter scene assets outside the requested generated output.
+These are interactive acceptance tests for the Skill workflow, not Unity unit tests. Run them in a Unity project with KimodoUnityBridge installed, a ready local runtime, an active Timeline Session, and at least one valid humanoid character. Re-check `kimodo.help` and the live schema before each run. Do not treat a test prompt as permission to alter scene assets outside the requested generated output.
 
 ## Shared pass criteria
 
 - The plan states intent, action beats, space, timing, evidence needed, acceptance criteria, and consequential unknowns.
+- The plan selects a task route, distinguishes current commands, inspected APIs, planned capabilities, and unavailable routes, and keeps capability separate from criterion results. Check gates may be re-entered; unrelated passing work is not regenerated.
 - The request adds only supported structured constraints, validates time bases and references, and stops when an exact input cannot be resolved.
-- The loop saves the exact `request_id`, checks warnings, polls to a terminal state, and does not duplicate an in-flight request.
-- Completed Clips use `animation_analyze`; returned image evidence is opened, and unsupported conclusions remain unknown.
+- When a command is asynchronous, the loop saves its exact `request_id`, checks warnings, polls to a terminal state, and does not duplicate an in-flight request. Timeout preserves the pending ID for resumption.
+- Evaluated Humanoid Clips use `animation.analyze`; prop/integration checks inspect the evaluated scene. Returned image evidence is opened before visual claims, and unsupported conclusions remain unknown.
 - A correction produces a distinct derived Clip and repeats only the affected loop steps; earlier Clips and their history remain available.
+- Candidate decisions cite the current scene/session, Clip, Timeline range, and matching evidence. Old images or another candidate's analysis are not reused as proof.
+- The loop records a finite budget and its stop reason. The local default is one initial candidate and two targeted revisions per failing criterion; task-specific limits take precedence. Two consecutive attempts without meaningful improvement stop that revision loop.
 
 ## Cases
 
@@ -18,7 +21,7 @@ These are interactive acceptance tests for the Skill workflow, not Unity unit te
 
 **Setup:** Any valid humanoid character in the current scene.
 
-**Exercise:** Run the reusable loop without adding path, Pose, or loop constraints unless the live scene or user requirement establishes a need. Generate, poll, run `animation_analyze` on one Clip, and inspect its returned image.
+**Exercise:** Run the reusable loop without adding path, Pose, or loop constraints unless the live scene or user requirement establishes a need. Generate, poll, run `animation.analyze` on one Clip, and inspect its returned image.
 
 **Pass when:** the plan preserves the planted greeting and relaxed ending; no unsupported spatial constraints are submitted; the report distinguishes visible evidence from unverified playback quality.
 
@@ -26,7 +29,7 @@ These are interactive acceptance tests for the Skill workflow, not Unity unit te
 
 **Request:** “Use the analyzed path from the selected source Clip as a movement reference for this new action.”
 
-**Setup:** A valid humanoid and a source Clip whose `animation_analyze` result contains `clip.root_trajectory.path`.
+**Setup:** A valid humanoid and a source Clip whose `animation.analyze` result contains `clip.root_trajectory.path`.
 
 **Exercise:** Resolve the source Clip from current scene context, confirm its analysis result and path `{track,index}`, then construct `root_path` using that returned reference. Inspect warnings and analyze the generated result.
 
@@ -38,7 +41,7 @@ These are interactive acceptance tests for the Skill workflow, not Unity unit te
 
 **Setup:** A valid humanoid, a source Clip with a candidate crouch, and a visible or otherwise confirmed landing context.
 
-**Exercise:** Analyze the source Clip, select a candidate Timeline-global frame, call `pose_get` with `source.timeline_frame_60`, inspect the returned Pose, and only then pass its returned `{track,index}` as the generation constraint. Analyze the result and inspect relevant pose tiles.
+**Exercise:** Analyze the source Clip, select a candidate Timeline-global frame, call `pose.get` with `source.timeline_frame_60`, inspect the returned Pose, and only then pass its returned `{track,index}` as the generation constraint. Analyze the result and inspect relevant pose tiles.
 
 **Pass when:** the Pose was sampled and confirmed for the landing role, the Timeline-global source frame is not confused with a generated-Clip-relative constraint frame, and the report does not treat one Pose as proof of the whole jump or obstacle clearance.
 
@@ -92,6 +95,36 @@ These are interactive acceptance tests for the Skill workflow, not Unity unit te
 
 **Pass when:** the system does not silently change the action, route, or duration and does not invent coordinates; no generation request is submitted before the consequential ambiguity is resolved.
 
+### 9. Inspect without generating or editing
+
+**Request:** “Check this walk for endpoint mismatch and possible foot sliding. Do not change it.”
+
+**Setup:** One selected source Clip; scene and Session information can resolve its target. Playback may or may not be available.
+
+**Exercise:** Resolve the source through available context, inspect endpoint evidence, and obtain playback or a relevant temporal measurement if available. Do not create a replacement animation merely because the generic loop contains generation steps.
+
+**Pass when:** no generation or source edit occurs, no redundant clarification blocks read-only discovery, and unsupported foot-sliding claims remain unknown. Any analysis-time Timeline append is distinguished from modifying the source asset.
+
+### 10. Prop integration and stale evidence
+
+**Request:** “Complete the pickup so the apple remains on the table until contact, then follows the hand and stays held.”
+
+**Setup:** A character Clip, a simple apple prop, and a Timeline. Retain evidence from an earlier candidate, then change the character Clip, prop offset, or Timeline binding. Prop curve authoring may require an inspected Unity API rather than a Kimodo command.
+
+**Exercise:** Resolve actual prop transforms, contact events, attachment/curve behavior, and Timeline ranges. Sample the assembled scene before contact, at contact, during lifting, and at the end; observe playback when claiming temporal quality. Reuse only unaffected evidence.
+
+**Pass when:** earlier evidence does not certify the changed integration, the actual prop follows the selected character candidate without an unsupported future command, and a passing character Clip alone does not pass the interaction. Remaining evidence gaps are explicit.
+
+### 11. Bounded revision and failure attribution
+
+**Request:** “Improve this walk until the declared stop position and continuity criteria pass; preserve the original.”
+
+**Setup:** A source Clip and a finite attempt budget. Use recorded outcomes containing a pre-generation protocol failure, comparable candidates with no improvement, and a candidate that improves one criterion while breaking another required constraint.
+
+**Exercise:** Attribute the protocol failure before changing motion constraints. For completed candidates, compare the declared criteria, retain the best acceptable output, count actual attempts, and stop at the budget or no-improvement condition. This case may be reviewed from existing traces without spending additional generations.
+
+**Pass when:** a protocol failure is not labeled poor motion quality, regressions are not silently accepted, the loop does not restart its budget, and the final report distinguishes failed, unknown, tooling repair, and animator work.
+
 ## Record for each run
 
-Record the Unity project/scene, character, user request, chosen interpretation, constraints submitted, warnings, `request_id`, terminal task status, `animation_id`, `analysis_id`, image paths, observed playback (if any), and pass/fail/unknown result for each acceptance criterion. Keep this in the test log; do not add it to the public Command payload or persistent CLI state.
+Record the Unity project/scene/session and relevant tool version, character/prop references, request and interpretation, chosen routes, assumptions, criteria, submitted settings, warnings, returned IDs when available, API-created asset/track references, Timeline range and frame origin, evidence paths, observed playback or temporal measurements, criterion results, revision budget/attempts, failure attribution, selected output, and stop reason. Keep this in the test log; do not add it to the public Command payload or persistent CLI state.

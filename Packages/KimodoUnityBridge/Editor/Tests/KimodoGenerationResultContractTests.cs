@@ -69,6 +69,8 @@ namespace KimodoUnityBridge.Generation.Tests
                 "Seed",
                 "MotionJsonCompact",
                 "AnalysisJson",
+                "PostAnalysisJson",
+                "PostAnalysisError",
                 "ConstraintLoss",
                 "MotionBytes",
                 "StartFrame",

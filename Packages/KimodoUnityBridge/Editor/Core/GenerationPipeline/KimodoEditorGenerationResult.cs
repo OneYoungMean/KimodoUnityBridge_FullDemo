@@ -10,6 +10,8 @@ namespace KimodoBridge.Editor
         public int Seed;
         public string MotionJsonCompact;
         public string AnalysisJson;
+        public string PostAnalysisJson;
+        public string PostAnalysisError;
         public JObject ConstraintLoss;
         public byte[] MotionBytes;
         public int StartFrame;

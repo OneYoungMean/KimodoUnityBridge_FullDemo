@@ -286,10 +286,9 @@ namespace KimodoBridge
             KimodoConstraintProjectedPose expected)
         {
             string mode = KimodoConstraintInternal.ResolveExecutionMode(sample);
-            bool fullBody = sample.composedFullBody || mode == "fullbody";
-            bool root2D = sample.composedRoot2D || mode == "root2d";
-            bool effector = sample.composedEffector || mode == "effector" ||
-                mode == "left-hand" || mode == "right-hand" || mode == "left-foot" || mode == "right-foot";
+            bool fullBody = mode == "fullbody";
+            bool root2D = mode == "root2d";
+            bool effector = mode == "effector" || (fullBody && sample.enableMask?.AnyEndEffector == true);
             var result = new JObject
             {
                 ["constraint_index"] = constraintIndex,

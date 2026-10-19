@@ -10,17 +10,19 @@ using UnityEngine;
 namespace KimodoBridge.Editor
 {
     /// <summary>
-    /// Shared, non-blocking generation diagnostics for every animation generator.
-    /// Protocol/schema validation remains the only generation blocker.
+    /// Shared generation preflight checks for every animation generator.
     /// </summary>
     public static class KimodoGenerationWarningCheckService
     {
         public const float MaxSpeedMetersPerSecond = 7f;
-        public const float MaxAccelerationMetersPerSecondSquared = 5f;
+        public const float MaxBlockingSpeedMetersPerSecond = 10f;
+        public const float MaxAccelerationMetersPerSecondSquared = 10f;
+        public const float MaxBlockingAccelerationMetersPerSecondSquared = 15f;
         private const float PositionToleranceMeters = 0.05f;
         private const float HeadingToleranceDegrees = 5f;
         private const float HeadingJumpWarningDegrees = 45f;
         private const float RootYJumpWarningMeters = 0.25f;
+        private const string RootMotionLimitSuggestion = " Try splitting the action into multiple animation generations. For each following clip, use an In constraint (constraints[].inout.in) referencing the preceding clip.";
 
         public static JObject Build(
             JObject arguments,
@@ -36,11 +38,13 @@ namespace KimodoBridge.Editor
                 JObject overlap = BuildConstraintOverlap(arguments, frameRate, generatedSamples);
                 JObject effectors = BuildEffectorChecks(
                     arguments, characterName, modelName, frameRate, generatedSamples);
+                bool blocking = rootTrajectory.Value<float>("max_speed_mps") > MaxBlockingSpeedMetersPerSecond
+                    || rootTrajectory.Value<float>("max_acceleration_mps2") > MaxBlockingAccelerationMetersPerSecondSquared;
                 bool warning = HasWarning(rootTrajectory) || HasWarning(overlap) || HasWarning(effectors);
                 return new JObject
                 {
-                    ["blocking"] = false,
-                    ["overall"] = warning ? "warning" : "ok",
+                    ["blocking"] = blocking,
+                    ["overall"] = blocking ? "error" : warning ? "warning" : "ok",
                     ["root_trajectory"] = rootTrajectory,
                     ["constraint_overlap"] = overlap,
                     ["effectors"] = effectors
@@ -66,7 +70,6 @@ namespace KimodoBridge.Editor
             public bool HasY;
             public Vector2 Heading;
             public bool HasHeading;
-            public JObject Root2D;
         }
 
         private static JObject BuildRootTrajectory(
@@ -115,9 +118,13 @@ namespace KimodoBridge.Editor
 
                 bool sourceChanged = !string.Equals(previous.Source, current.Source, StringComparison.OrdinalIgnoreCase);
                 if (speed > MaxSpeedMetersPerSecond)
-                    AddIssue(issues, "speed_limit", current.Frame, $"Root speed {speed:F3} m/s exceeds {MaxSpeedMetersPerSecond:F1} m/s.", previous.Source, current.Source);
+                    AddIssue(issues, "speed_limit", current.Frame, $"Root speed {speed:F3} m/s exceeds {MaxSpeedMetersPerSecond:F1} m/s." + RootMotionLimitSuggestion, previous.Source, current.Source);
+                if (speed > MaxBlockingSpeedMetersPerSecond)
+                    AddIssue(issues, "speed_hard_limit", current.Frame, $"Root speed {speed:F3} m/s exceeds the hard limit of {MaxBlockingSpeedMetersPerSecond:F1} m/s." + RootMotionLimitSuggestion, previous.Source, current.Source);
                 if (acceleration > MaxAccelerationMetersPerSecondSquared)
-                    AddIssue(issues, sourceChanged ? "constraint_jump" : "acceleration_limit", current.Frame, $"Root acceleration {acceleration:F3} m/s² exceeds {MaxAccelerationMetersPerSecondSquared:F1} m/s².", previous.Source, current.Source);
+                    AddIssue(issues, sourceChanged ? "constraint_jump" : "acceleration_limit", current.Frame, $"Root acceleration {acceleration:F3} m/s² exceeds {MaxAccelerationMetersPerSecondSquared:F1} m/s²." + RootMotionLimitSuggestion, previous.Source, current.Source);
+                if (acceleration > MaxBlockingAccelerationMetersPerSecondSquared)
+                    AddIssue(issues, "acceleration_hard_limit", current.Frame, $"Root acceleration {acceleration:F3} m/s² exceeds the hard limit of {MaxBlockingAccelerationMetersPerSecondSquared:F1} m/s²." + RootMotionLimitSuggestion, previous.Source, current.Source);
                 if (sourceChanged && (speed > MaxSpeedMetersPerSecond || acceleration > MaxAccelerationMetersPerSecondSquared))
                     AddIssue(issues, "constraint_jump", current.Frame, "Adjacent constraints introduce a large root trajectory jump.", previous.Source, current.Source);
                 if (headingJump > HeadingJumpWarningDegrees)
@@ -211,24 +218,24 @@ namespace KimodoBridge.Editor
             foreach (JObject item in constraints?.OfType<JObject>() ?? Enumerable.Empty<JObject>())
             {
                 int frame = item.Value<int?>("frame") ?? 0;
-                if (item["effect"] is JObject effect)
+                if (item["effector"] is JObject effect)
                 {
                     foreach (JProperty target in effect?.Properties() ?? Enumerable.Empty<JProperty>())
                     {
                         JObject payload = target.Value as JObject;
-                        if (!HasPosition(payload)) continue;
+                        if (payload == null || (!HasPosition(payload) && payload["rotation"] == null)) continue;
                         JObject check = new JObject
                         {
                             ["frame"] = frame,
                             ["effector"] = target.Name,
-                            ["source"] = "effect",
+                            ["source"] = "effector",
                             ["status"] = "not_verified"
                         };
                         checks.Add(check);
                     }
                 }
 
-                if (item["pose"] != null && item["root2d"] == null &&
+                if (item["pose"] != null && item["root"] == null &&
                     samplesByFrame.TryGetValue(frame, out KimodoMarkerSampleResult sample))
                 {
                     AddSampleEffectorCheck(checks, frame, "left_hand", sample.sampleValid, sample.effectors?.leftHand);
@@ -271,67 +278,37 @@ namespace KimodoBridge.Editor
             foreach (JObject item in constraints?.OfType<JObject>() ?? Enumerable.Empty<JObject>())
             {
                 int frame = item.Value<int?>("frame") ?? 0;
-                JObject rootInput = item["root2d"] as JObject;
-                if (rootInput != null && TryReadRoot2D(rootInput, out Vector3 position, out Vector2 heading))
+                JObject rootInput = item["root"] as JObject;
+                KimodoMarkerSampleResult sample = generatedSamples?.LastOrDefault(candidate =>
+                    candidate != null && candidate.sampleValid && candidate.rootOverride != null &&
+                    Mathf.RoundToInt((float)(candidate.sampleTime * Mathf.Max(1f, frameRate))) == frame);
+                if (rootInput == null && item["pose"] == null) continue;
+                if (sample != null)
                 {
+                    Vector3 forward = sample.rootOverride.q * Vector3.forward;
                     observations.Add(new RootObservation
                     {
-                        Frame = frame,
-                        Source = "root2d",
-                        Position = position,
-                        HasY = false,
-                        Heading = heading,
-                        HasHeading = true,
-                        Root2D = rootInput
+                        Frame = frame, Source = rootInput != null ? "root" : "pose",
+                        Position = sample.rootOverride.t, HasY = true,
+                        Heading = new Vector2(forward.x, forward.z), HasHeading = true
                     });
                 }
-                else if (item["pose"] != null && generatedSamples != null)
+                else if (rootInput != null && HasPosition(rootInput))
                 {
-                    KimodoMarkerSampleResult sample = generatedSamples.LastOrDefault(itemSample =>
-                        itemSample != null && itemSample.sampleValid && itemSample.rootOverride != null &&
-                        Mathf.RoundToInt((float)(itemSample.sampleTime * Mathf.Max(1f, frameRate))) == frame);
-                    if (sample != null)
+                    JArray p = (JArray)rootInput["position"];
+                    JArray r = rootInput["rotation"] as JArray;
+                    Vector3 forward = r?.Count == 3
+                        ? Quaternion.Euler(r[0].Value<float>(), r[1].Value<float>(), r[2].Value<float>()) * Vector3.forward
+                        : Vector3.forward;
+                    observations.Add(new RootObservation
                     {
-                        Vector3 root = sample.rootOverride.t;
-                        Vector3 forward = sample.rootOverride.q * Vector3.forward;
-                        observations.Add(new RootObservation { Frame = frame, Source = "pose", Position = root, HasY = true, Heading = new Vector2(forward.x, forward.z), HasHeading = true });
-                    }
+                        Frame = frame, Source = "root", HasY = true,
+                        Position = new Vector3(p[0].Value<float>(), p[1].Value<float>(), p[2].Value<float>()),
+                        Heading = new Vector2(forward.x, forward.z), HasHeading = r?.Count == 3
+                    });
                 }
             }
             return observations;
-        }
-
-        private static bool TryReadMixRoot(JObject root, out Vector3 position, out Vector2 heading, out bool hasY)
-        {
-            position = Vector3.zero;
-            heading = Vector2.up;
-            hasY = false;
-            JArray p = root?["position"] as JArray;
-            JArray q = root?["rotation"] as JArray;
-            if (p != null && p.Count >= 3)
-            {
-                position = new Vector3(p[0].Value<float>(), p[1].Value<float>(), p[2].Value<float>());
-                hasY = true;
-            }
-            if (q != null && q.Count >= 4)
-            {
-                Quaternion rotation = new Quaternion(q[0].Value<float>(), q[1].Value<float>(), q[2].Value<float>(), q[3].Value<float>());
-                Vector3 forward = rotation * Vector3.forward;
-                heading = new Vector2(forward.x, forward.z);
-            }
-            return p != null || q != null;
-        }
-
-        private static bool TryReadRoot2D(JObject root, out Vector3 position, out Vector2 heading)
-        {
-            position = Vector3.zero;
-            heading = Vector2.up;
-            JArray p = root?["position"] as JArray;
-            JArray h = root?["heading"] as JArray;
-            if (p == null || p.Count < 2 || h == null || h.Count < 2) return false;
-            position = new Vector3(p[0].Value<float>(), 0f, p[1].Value<float>());
-            heading = new Vector2(h[0].Value<float>(), h[1].Value<float>());
-            return heading.sqrMagnitude > 1e-8f;
         }
 
         private static bool HasPosition(JObject value)

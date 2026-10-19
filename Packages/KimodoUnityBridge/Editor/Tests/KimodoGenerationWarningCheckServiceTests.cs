@@ -1,5 +1,6 @@
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
+using System.Linq;
 using KimodoBridge.Editor;
 using KimodoBridge;
 using KimodoUnityBridge;
@@ -10,27 +11,75 @@ namespace KimodoBridge.Editor.Tests
     public sealed class KimodoGenerationWarningCheckServiceTests
     {
         [Test]
-        public void RootTrajectory_ReportsSpeedAndAccelerationWithoutBlocking()
+        public void RootTrajectory_ReportsSevenMetersPerSecondWarningWithoutBlocking()
         {
             JObject args = new JObject
             {
                 ["constraints"] = new JArray
                 {
-                    new JObject { ["frame"] = 0, ["root2d"] = Root(0f, 0f) },
-                    new JObject { ["frame"] = 1, ["root2d"] = Root(1f, 0f) }
+                    new JObject { ["frame"] = 0, ["root"] = Root(0f, 0f) },
+                    new JObject { ["frame"] = 60, ["root"] = Root(8f, 0f) }
+                }
+            };
+
+            JObject result = KimodoGenerationWarningCheckService.Build(args, 120, 60f);
+
+            Assert.That(result.Value<bool>("blocking"), Is.False);
+            Assert.That(result.Value<string>("overall"), Is.EqualTo("warning"));
+            Assert.That(result["root_trajectory"].Value<float>("max_speed_mps"), Is.EqualTo(8f).Within(0.001f));
+            Assert.That(result["root_trajectory"]["issues"].ToObject<JArray>().Count, Is.GreaterThan(0));
+        }
+
+        [Test]
+        public void RootTrajectory_AboveTenMetersPerSecondBlocksGeneration()
+        {
+            JObject args = new JObject
+            {
+                ["constraints"] = new JArray
+                {
+                    new JObject { ["frame"] = 0, ["root"] = Root(0f, 0f) },
+                    new JObject { ["frame"] = 60, ["root"] = Root(11f, 0f) }
+                }
+            };
+
+            JObject result = KimodoGenerationWarningCheckService.Build(args, 120, 60f);
+
+            Assert.That(result.Value<bool>("blocking"), Is.True);
+            Assert.That(result.Value<string>("overall"), Is.EqualTo("error"));
+            Assert.That(result["root_trajectory"]["issues"].ToObject<JArray>()
+                .Any(issue => issue.Value<string>("code") == "speed_hard_limit"), Is.True);
+        }
+
+        [TestCase(9.99f, false, false)]
+        [TestCase(10f, false, false)]
+        [TestCase(10.01f, true, false)]
+        [TestCase(14.99f, true, false)]
+        [TestCase(15f, true, false)]
+        [TestCase(15.01f, true, true)]
+        [TestCase(16f, true, true)]
+        public void RootTrajectory_AccelerationThresholds(float acceleration, bool warning, bool blocking)
+        {
+            JObject args = new JObject
+            {
+                ["constraints"] = new JArray
+                {
+                    new JObject { ["frame"] = 0, ["root"] = Root(0f, 0f) },
+                    new JObject { ["frame"] = 30, ["root"] = Root(acceleration * 0.25f, 0f) }
                 }
             };
 
             JObject result = KimodoGenerationWarningCheckService.Build(args, 60, 60f);
 
-            Assert.That(result.Value<bool>("blocking"), Is.False);
-            Assert.That(result.Value<string>("overall"), Is.EqualTo("warning"));
-            Assert.That(result["root_trajectory"].Value<float>("max_speed_mps"), Is.GreaterThan(7f));
-            Assert.That(result["root_trajectory"]["issues"].ToObject<JArray>().Count, Is.GreaterThan(0));
+            Assert.That(result.Value<bool>("blocking"), Is.EqualTo(blocking));
+            Assert.That(result.Value<string>("overall"), Is.EqualTo(blocking ? "error" : warning ? "warning" : "ok"));
+            Assert.That(result["root_trajectory"].Value<float>("max_acceleration_mps2"), Is.EqualTo(acceleration).Within(0.001f));
+            JArray issues = result["root_trajectory"]["issues"].ToObject<JArray>();
+            Assert.That(issues.Any(issue => issue.Value<string>("code") == "acceleration_limit"), Is.EqualTo(warning));
+            Assert.That(issues.Any(issue => issue.Value<string>("code") == "acceleration_hard_limit"), Is.EqualTo(blocking));
         }
 
         [Test]
-        public void ComposedRootAndEffect_AreNotReportedAsConflictingConstraints()
+        public void RootAndEffector_AreNotReportedAsConflictingConstraints()
         {
             JObject args = new JObject
             {
@@ -39,8 +88,8 @@ namespace KimodoBridge.Editor.Tests
                     new JObject
                     {
                         ["frame"] = 10,
-                        ["root2d"] = Root(1f, 0f),
-                        ["effect"] = new JObject { ["right_hand"] = new JObject { ["position"] = new JArray(0, 1, 0) } }
+                        ["root"] = Root(1f, 0f),
+                        ["effector"] = new JObject { ["right_hand"] = new JObject { ["position"] = new JArray(0, 1, 0) } }
                     }
                 }
             };
@@ -64,8 +113,12 @@ namespace KimodoBridge.Editor.Tests
             var sample = new KimodoMarkerSampleResult
             {
                 sampleTime = 0,
-                validMask = new KimodoConstraintMask { leftHand = true },
-                effectors = new KimodoConstraintEffectors { leftHand = new KimodoRigidTransform { t = Vector3.one } }
+                sampleValid = true,
+                effectors = new KimodoConstraintEffectors
+                {
+                    leftHand = new KimodoRigidTransform { t = Vector3.one },
+                    rightHand = null, leftFoot = null, rightFoot = null
+                }
             };
 
             JObject result = KimodoGenerationWarningCheckService.Build(args, 60, 60f, generatedSamples: new[] { sample });
@@ -79,8 +132,8 @@ namespace KimodoBridge.Editor.Tests
         {
             return new JObject
             {
-                ["position"] = new JArray(x, z),
-                ["heading"] = new JArray(0, 1)
+                ["position"] = new JArray(x, 0f, z),
+                ["rotation"] = new JArray(0, 0, 0)
             };
         }
     }

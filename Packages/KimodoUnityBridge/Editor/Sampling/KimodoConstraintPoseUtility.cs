@@ -20,7 +20,7 @@ namespace KimodoBridge.Editor
                 sampleData = sample?.Clone() ?? new MuscleSample(),
                 sampleValid = hasSampleData,
                 enableMask = hasSampleData ? KimodoConstraintMask.ForType("fullbody") : new KimodoConstraintMask(),
-                constraintMode = "constraint",
+                constraintMode = "fullbody",
                 sampleTime = sampleTime,
                 enabled = true
             };
