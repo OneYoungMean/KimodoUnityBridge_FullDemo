@@ -23,13 +23,12 @@ namespace KimodoUnityBridge.Command
         public const string SceneContextCommand = "scene.context";
         public const string InstallServerCommand = "server.install";
         public const string GenerateAnimationCommand = "animation.generate";
-        public const string AnimationAnalyzeCommand = "animation.analyze";
-        public const string MocapVideoAnalysisCommand = "analysis.video";
-        public const string MocapPictureAnalysisCommand = "analysis.picture";
-        public const string TransformCaptureCommand = "transform.capture";
+        public const string AnimationAnalysisCommand = "animation.analysis";
+        public const string PoseFromVideoCommand = "pose.fromvideo";
+        public const string PoseFromPictureCommand = "pose.frompicture";
+        public const string PoseAnalysisCommand = "pose.analysis";
         public const string RetargetAnimationCommand = "animation.retarget";
         public const string PoseGetCommand = "pose.get";
-        public const string PoseTestCommand = "pose.test";
         public const string PoseSetCommand = "pose.set";
         public const string GetGenerationCommand = "generation.get";
         public const string CancelGenerationCommand = "generation.cancel";
@@ -44,6 +43,55 @@ namespace KimodoUnityBridge.Command
         private static readonly Lazy<CommandCatalog> Commands = new Lazy<CommandCatalog>(BuildCommandCatalog, LazyThreadSafetyMode.ExecutionAndPublication);
 
         public static string GetCommandDefinitionsJson() => BuildCommandDefinitionsJson();
+
+        private static JObject SceneCameraSchema()
+        {
+            return new JObject
+            {
+                ["type"] = "object",
+                ["additionalProperties"] = false,
+                ["description"] = "SceneView camera controls shared by pose.analysis and animation.analysis.",
+                ["properties"] = new JObject
+                {
+                    ["direction"] = new JObject
+                    {
+                        ["type"] = "array", ["minItems"] = 3, ["maxItems"] = 3,
+                        ["items"] = new JObject { ["type"] = "number" },
+                        ["description"] = "Optional camera-to-target direction [x,y,z]. animation.analysis keeps each tile's direction when omitted."
+                    },
+                    ["orthographic"] = new JObject { ["type"] = "boolean", ["default"] = true },
+                    ["padding"] = new JObject { ["type"] = "number", ["minimum"] = 0.01, ["default"] = 1.1 },
+                    ["near_clip"] = new JObject { ["type"] = "number", ["minimum"] = 0.001 },
+                    ["far_clip"] = new JObject { ["type"] = "number", ["minimum"] = 0.01 },
+                    ["resolution"] = new JObject
+                    {
+                        ["type"] = "array", ["minItems"] = 2, ["maxItems"] = 2,
+                        ["items"] = new JObject { ["type"] = "integer", ["minimum"] = 64, ["maximum"] = 4096 },
+                        ["description"] = "SceneView render size [width,height]. Defaults to the current SceneView camera size."
+                    },
+                    ["scene_lighting"] = new JObject { ["type"] = "boolean", ["description"] = "Set SceneView scene lighting when explicitly supplied; otherwise keep its current setting." },
+                    ["show_skybox"] = new JObject { ["type"] = "boolean", ["description"] = "Set SceneView skybox visibility when explicitly supplied; otherwise keep its current setting." },
+                    ["show_gizmos"] = new JObject { ["type"] = "boolean", ["description"] = "Set SceneView gizmo visibility when explicitly supplied; otherwise keep its current setting." },
+                    ["show_grid"] = new JObject { ["type"] = "boolean", ["description"] = "Set SceneView grid visibility when explicitly supplied; otherwise keep its current setting." },
+                    ["scope"] = new JObject
+                    {
+                        ["type"] = "string", ["enum"] = new JArray("targets", "scene"), ["default"] = "targets",
+                        ["description"] = "Render only the requested objects, or include the active scene around the sampled pose."
+                    }
+                }
+            };
+        }
+
+        private static JObject PoseAnalysisConstraintsSchema()
+        {
+            JObject schema = (JObject)OptionalConstraints(
+                "constraints",
+                "Point constraints to preview through pose.analysis before submitting the same payload to animation.generate.")
+                .Schema.DeepClone();
+            schema["items"] = schema["items"]?["oneOf"]?.First?.DeepClone();
+            schema["minItems"] = 1;
+            return schema;
+        }
 
         private static string BuildCommandDefinitionsJson()
         {
@@ -68,23 +116,50 @@ namespace KimodoUnityBridge.Command
                     CommandDefinition(InstallServerCommand,
                         "Start an asynchronous project-local QuickServer installation task. Returns only request_id and status; poll that request with generation.get. Models and the Python environment are preserved.",
                         Properties()),
-                    CommandDefinition(AnimationAnalyzeCommand,
-                        "Analyze one animation clip at 60 FPS and render graph-space picture evidence. Pass a clips array containing exactly one scene character and one loaded Clip name or Assets/Packages Clip path. The result contains one clip analysis and one pictures evidence object; temporal positions use absolute Timeline-global 60 FPS frames. External Clips are appended to the character's Kimodo Timeline and never modified.",
+                    CommandDefinition(AnimationAnalysisCommand,
+                        "Analyze one animation clip at 60 FPS and render the fixed 20-tile SceneView picture evidence. Pass a clips array containing exactly one scene character and one loaded Clip name or Assets/Packages Clip path. The result contains one clip analysis and one pictures evidence object; temporal positions use absolute Timeline-global 60 FPS frames. External Clips are appended to the character's Kimodo Timeline and never modified.",
                         Properties(
                             RequiredAnalysisClips(),
-                            new PropertyDefinition("picture", new JObject
-                            {
-                                ["type"] = "object",
-                                ["description"] = "Unified graph-space picture request with tiles and output mode."
-                            }, false),
                             new PropertyDefinition("resolution", new JObject
                             {
                                 ["type"] = "integer",
                                 ["minimum"] = 64,
                                 ["maximum"] = 4096,
-                                ["description"] = "Final picture tile resolution in pixels; accepts 64 through 4096. Rendering uses a 2x supersample and downsamples to this size. Defaults to 1920."
-                            }, false))),
-                    CommandDefinition(MocapVideoAnalysisCommand,
+                                ["default"] = 1920,
+                                ["description"] = "Final 16:9 composite width in pixels; accepts 64 through 4096. Defaults to 1920."
+                            }, false),
+                            new PropertyDefinition("camera", SceneCameraSchema(), false))),
+                    CommandDefinition(PoseAnalysisCommand,
+                        "Preview one or more animation point constraints as Humanoid poses through the real SceneView camera and return measured joint positions.",
+                        Properties(
+                            Required("character", "string", "Scene character that will receive the constraints in animation.generate."),
+                            new PropertyDefinition("constraints", PoseAnalysisConstraintsSchema(), true),
+                            new PropertyDefinition("combine", new JObject
+                            {
+                                ["type"] = "boolean",
+                                ["default"] = false,
+                                ["description"] = "Render all constrained poses together in one opaque SceneView image; defaults to false, which returns one image per constraint."
+                            }, false),
+                            new PropertyDefinition("transforms", new JObject
+                            {
+                                ["type"] = "array", ["minItems"] = 1,
+                                ["items"] = new JObject { ["type"] = "string" },
+                                ["description"] = "Scene hierarchy paths to frame and render. Defaults to @pose; use @pose/<relative bone path> for part of the sampled character."
+                            }, false),
+                            new PropertyDefinition("joints", new JObject
+                            {
+                                ["type"] = "array", ["uniqueItems"] = true,
+                                ["items"] = new JObject
+                                {
+                                    ["type"] = "string",
+                                    ["enum"] = new JArray("Hips", "Head", "LeftHand", "RightHand", "LeftFoot", "RightFoot",
+                                        "LeftUpperArm", "RightUpperArm", "LeftLowerArm", "RightLowerArm",
+                                        "LeftUpperLeg", "RightUpperLeg", "LeftLowerLeg", "RightLowerLeg")
+                                },
+                                ["description"] = "Humanoid joints to measure. Defaults to hips, head, hands, and feet; effector-constrained joints are included automatically."
+                            }, false),
+                            new PropertyDefinition("camera", SceneCameraSchema(), false))),
+                    CommandDefinition(PoseFromVideoCommand,
                         "Estimate a per-frame SMPL-X pose sequence from a local video. This starts an asynchronous analysis job; poll generation.get with its request_id. The result includes raw SMPL-X poses and matching FullBody constraints in the existing raw constraint format; it does not create or apply a Unity animation.",
                         Properties(
                             Required("video_path", "string", "Absolute path to a local video readable by QuickServer."),
@@ -94,48 +169,10 @@ namespace KimodoUnityBridge.Command
                                 ["enum"] = new JArray("left", "right"),
                                 ["description"] = "Select one performer by screen side in a two-person video."
                             }, false))),
-                    CommandDefinition(MocapPictureAnalysisCommand,
+                    CommandDefinition(PoseFromPictureCommand,
                         "Estimate one SMPL-X pose from a local still image. This starts an asynchronous analysis job; poll generation.get with its request_id. The result includes raw SMPL-X pose data and a FullBody constraint in the existing raw constraint format; it does not create or apply a Unity animation.",
                         Properties(
                             Required("image_path", "string", "Absolute path to a local PNG or JPEG readable by QuickServer."))),
-                    CommandDefinition(TransformCaptureCommand,
-                        "Capture the current scene or an External Pose returned by pose.get together with scene objects, in world space. Optionally sample one absolute Timeline-global 60 FPS frame directly with timeline_frame_60. Returns a four-view image by default, or a single scene-camera image when camera.mode is scene; restores the original Timeline time and never saves temporary camera changes.",
-                        Properties(
-                            Optional("character_path", "string", "Active-scene character hierarchy path; required unless pose is supplied."),
-                            new PropertyDefinition("pose", PoseReferenceSchema(), false),
-                            new PropertyDefinition("timeline_frame_60", new JObject
-                            {
-                                ["type"] = "integer", ["minimum"] = 0,
-                                ["description"] = "Optional absolute Timeline-global frame at 60 FPS. Requires character_path; mutually exclusive with pose. The Timeline and scene objects are evaluated at this frame for the capture, then restored."
-                            }, false),
-                            new PropertyDefinition("transforms", new JObject
-                            {
-                                ["type"] = "array", ["minItems"] = 1,
-                                ["items"] = new JObject { ["type"] = "string" },
-                                ["description"] = "Scene hierarchy paths or character-relative paths. With pose, use @pose for the evaluated character or @pose/<relative bone path>. Include environment paths to frame them together."
-                            }, true),
-                            Optional("resolution", "integer", "Per-view pixel size for the default four-view capture, 64 through 4096; defaults to 1024. Scene-camera captures use camera.resolution."),
-                            new PropertyDefinition("camera", new JObject
-                            {
-                                ["type"] = "object",
-                                ["additionalProperties"] = false,
-                                ["description"] = "Optional temporary scene-camera capture. The source camera is cloned, adjusted in memory, rendered, and discarded; the scene camera is never saved.",
-                                ["properties"] = new JObject
-                                {
-                                    ["mode"] = new JObject { ["type"] = "string", ["enum"] = new JArray("auto", "scene"), ["default"] = "auto", ["description"] = "Use the existing four-view renderer (auto) or a scene camera (scene)." },
-                                    ["path"] = new JObject { ["type"] = "string", ["description"] = "Active-scene camera hierarchy path; defaults to Main Camera when mode is scene." },
-                                    ["auto_frame"] = new JObject { ["type"] = "boolean", ["default"] = true, ["description"] = "Temporarily frame the requested transforms while preserving the source camera's viewing direction." },
-                                    ["resolution"] = new JObject { ["type"] = "array", ["minItems"] = 2, ["maxItems"] = 2, ["items"] = new JObject { ["type"] = "integer", ["minimum"] = 64, ["maximum"] = 4096 }, ["description"] = "Scene-camera output [width,height]." },
-                                    ["position"] = new JObject { ["type"] = "array", ["minItems"] = 3, ["maxItems"] = 3, ["items"] = new JObject { ["type"] = "number" }, ["description"] = "Optional temporary world position [x,y,z]." },
-                                    ["rotation"] = new JObject { ["type"] = "array", ["minItems"] = 4, ["maxItems"] = 4, ["items"] = new JObject { ["type"] = "number" }, ["description"] = "Optional temporary world rotation quaternion [x,y,z,w]." },
-                                    ["field_of_view"] = new JObject { ["type"] = "number", ["minimum"] = 1, ["maximum"] = 179, ["description"] = "Optional temporary perspective field of view." },
-                                    ["near_clip"] = new JObject { ["type"] = "number", ["minimum"] = 0.001, ["description"] = "Optional temporary near clip plane." },
-                                    ["far_clip"] = new JObject { ["type"] = "number", ["minimum"] = 0.01, ["description"] = "Optional temporary far clip plane." },
-                                    ["orthographic"] = new JObject { ["type"] = "boolean", ["description"] = "Optional temporary projection mode." },
-                                    ["orthographic_size"] = new JObject { ["type"] = "number", ["minimum"] = 0.01, ["description"] = "Optional temporary orthographic size." },
-                                    ["background"] = new JObject { ["type"] = "array", ["minItems"] = 3, ["maxItems"] = 4, ["items"] = new JObject { ["type"] = "number", ["minimum"] = 0, ["maximum"] = 1 }, ["description"] = "Temporary clear color [r,g,b] or [r,g,b,a]." }
-                                }
-                            }, false))),
                     CommandDefinition(RetargetAnimationCommand,
                         "Retarget one loaded animation to another current scene context character and append the result.",
                         Properties(
@@ -144,7 +181,7 @@ namespace KimodoUnityBridge.Command
                             Required("target_character", "string", "Target scene character name or object_ref. Session preview objects are rejected."),
                             OptionalOutput())),
                     CommandDefinition(GenerateAnimationCommand,
-                        "Start asynchronous generation for a character in the current scene context. Root speed above 7 m/s produces a warning; above 10 m/s blocks generation. Root acceleration above 10 m/s² produces a warning; above 15 m/s² blocks generation. After generation, the same Timeline Clip is analyzed once with the full animation.analyze pipeline and returned under post_analysis; analysis failure does not invalidate the generated Clip. Command-created Timeline Clips enable AutoBegin anchoring automatically; explicit first-frame or In/Out samples take precedence. The accepted response contains request_id, status, and request/constraint diagnostics. Pose/effector safety preflight runs only when the same point constraint explicitly contains both pose and effector; effector requires pose or root as explicit root context. These diagnostics are not measured joint positions in the generated motion; use pose.get then pose.test to measure sampled joint positions and contact reach after generation. Supply trajectory settings only when the requested path is known from explicit requirements or confirmed scene/analysis evidence; prompt wording never selects path options.",
+                        "Start asynchronous generation for a character in the current scene context. Root speed above 7 m/s produces a warning; above 10 m/s blocks generation. Root acceleration above 10 m/s² produces a warning; above 15 m/s² blocks generation. After generation, the same Timeline Clip is analyzed once with the full animation.analysis pipeline and returned under post_analysis; analysis failure does not invalidate the generated Clip. Command-created Timeline Clips enable AutoBegin anchoring automatically; explicit first-frame or In/Out samples take precedence. The accepted response contains request_id, status, and request/constraint diagnostics. Pose/effector safety preflight runs only when the same point constraint explicitly contains both pose and effector; effector requires pose or root as explicit root context. These diagnostics are not measured joint positions in the generated motion; use pose.analysis to capture the sampled pose and measure joint positions after generation. Supply trajectory settings only when the requested path is known from explicit requirements or confirmed scene/analysis evidence; prompt wording never selects path options.",
                         Properties(
                             Required("character", "string", "Scene character name or object_ref. Session preview objects are rejected; use the source scene character."),
                             Required("prompt", "string", "Short semantic description of the current Clip's action; aim for 25 words or fewer. Express exact FullBody, position, and effector anchors through structured constraints."),
@@ -159,26 +196,20 @@ namespace KimodoUnityBridge.Command
                             OptionalPath(),
                             OptionalGeneration(),
                             OptionalOutput(),
-                            Optional("analysis_option", "object", "Optional generation-time lightweight analysis. When enabled, generation returns sparse salient keyframe markers and foot-contact changes; it does not run the full animation.analyze command."),
+                            Optional("analysis_option", "object", "Optional generation-time lightweight analysis. When enabled, generation returns sparse salient keyframe markers and foot-contact changes; it does not run the full animation.analysis command."),
                             OptionalConstraints("constraints", "Point constraints resolve to Root2D (root alone), FullBody (pose, optionally root/effector, after IK), or Effector (root + effector without pose). effector alone is invalid. Transforms accept World position and/or Euler rotation in degrees; omitted channels retain sampled values. Pose/effector safety preflight runs when the point explicitly contains both pose and effector. root_path and inout remain separate constraint forms; duplicate frames are rejected; command frames use 60 FPS."))),
                     CommandDefinition(PoseGetCommand,
                         "Sample one absolute Timeline-global frame at 60 FPS, or select mode scene_pose / skeleton_rest_pose to read the original scene Animator or Avatar rest pose. Every response includes character_root, the bound scene GameObject root Transform in world space; data.root is the sampled Pose root channel. Every call creates an External Pose slot and returns {track,index}.",
                         Properties(
                             RequiredPoseSource("source"),
                             Optional("full_data", "boolean", "Return all 49 muscles and TQ channels; defaults to false."))),
-                    CommandDefinition(PoseTestCommand,
-                        "Measure actual Humanoid joint world positions after evaluating any External Pose, including a pose sampled from an Effector-constrained result. Optionally compare selected joints with world-space target positions; this is an explicit pose measurement, separate from generation-time non-blocking warnings.",
-                        Properties(
-                            RequiredPoseReference("pose"),
-                            OptionalEnumArray("joints", "Humanoid joints to measure. Defaults to hips, head, hands, and feet; joints named in targets are included automatically.", "Hips", "Head", "LeftHand", "RightHand", "LeftFoot", "RightFoot", "LeftUpperArm", "RightUpperArm", "LeftLowerArm", "RightLowerArm", "LeftUpperLeg", "RightUpperLeg", "LeftLowerLeg", "RightLowerLeg"),
-                            OptionalPoseTestTargets())),
                     CommandDefinition(PoseSetCommand,
                         "Modify an External Pose slot. Supply root, muscles, effector, or any combination.",
                         PoseSetSchema()),
                     CommandDefinition(GetGenerationCommand,
-                        "Get status and results for install, generation, or Mocap analysis requests. A completed generation includes post_analysis with the full animation.analyze result for the generated Timeline Clip; analysis failure is reported separately and does not invalidate generation. A completed Mocap analysis returns poses and SMPL-X coordinate metadata at the top level. include_request_json explicitly opts into the submitted generation payload.",
+                        "Get status and results for install, generation, or Mocap analysis requests. A completed generation includes post_analysis with the full animation.analysis result for the generated Timeline Clip; analysis failure is reported separately and does not invalidate generation. A completed Mocap analysis returns poses and SMPL-X coordinate metadata at the top level. include_request_json explicitly opts into the submitted generation payload.",
                         Properties(
-                            Required("request_id", "string", "Request id returned by server.install, animation.generate, analysis.video, or analysis.picture."),
+                            Required("request_id", "string", "Request id returned by server.install, animation.generate, pose.fromvideo, or pose.frompicture."),
                             Optional("include_request_json", "boolean", "Include the exact JSON payload sent to QuickServer; defaults to false."))),
                     CommandDefinition(CancelGenerationCommand,
                         "Request cancellation of an active animation generation and return its compact lifecycle result. Installation requests cannot be canceled; use generation.get for detailed progress and diagnostics.",
@@ -270,17 +301,17 @@ namespace KimodoUnityBridge.Command
                         Route("read active scene context", SceneContextCommand),
                         Route("reinstall the local server", InstallServerCommand, "then " + GetGenerationCommand),
                         Route("generate motion", GenerateAnimationCommand, "then " + GetGenerationCommand),
-                        Route("analyze a video for SMPL-X poses", MocapVideoAnalysisCommand, "then " + GetGenerationCommand),
-                        Route("analyze a picture for one SMPL-X pose", MocapPictureAnalysisCommand, "then " + GetGenerationCommand),
-                        Route("analyze and render motion", AnimationAnalyzeCommand, "returns one composite picture and self-describing tiles"),
+                        Route("analyze a video for SMPL-X poses", PoseFromVideoCommand, "then " + GetGenerationCommand),
+                        Route("analyze a picture for one SMPL-X pose", PoseFromPictureCommand, "then " + GetGenerationCommand),
+                        Route("analyze and render motion", AnimationAnalysisCommand, "returns one composite picture and self-describing tiles"),
+                        Route("capture and measure a sampled Humanoid pose", PoseAnalysisCommand, "returns a SceneView image and world-space joint measurements"),
                         Route("materialize or edit a pose", PoseGetCommand, "then pose.set"),
-                        Route("measure actual joint positions or test contact reach", PoseGetCommand, "then " + PoseTestCommand),
-                        Route("obtain a reusable root trajectory", AnimationAnalyzeCommand, "then reference root_trajectory.path from a generation root_path constraint"),
+                        Route("obtain a reusable root trajectory", AnimationAnalysisCommand, "then reference root_trajectory.path from a generation root_path constraint"),
                     },
                     ["handles"] = new JObject
                     {
-                        ["request_id"] = "Returned by server.install, animation.generate, analysis.video, or analysis.picture. Pass it to generation.get; only generation request ids can be canceled.",
-                        ["pictures.image_path"] = "Read the composite PNG returned by animation.analyze.",
+                        ["request_id"] = "Returned by server.install, animation.generate, pose.fromvideo, or pose.frompicture. Pass it to generation.get; only generation request ids can be canceled.",
+                        ["pictures.image_path"] = "Read the composite PNG returned by animation.analysis.",
                         ["pose"] = "A {track,index} reference returned by pose.get or a pose editing command.",
                         ["clip.asset_path"] = "A project-relative generated animation asset path returned after generation completes."
                     },
@@ -290,7 +321,7 @@ namespace KimodoUnityBridge.Command
                         new JObject { ["command"] = GetGenerationCommand, ["arguments"] = new JObject { ["request_id"] = "<install_request_id>" }, ["repeat_until"] = "status is completed or failed" },
                         new JObject { ["command"] = GenerateAnimationCommand, ["arguments"] = new JObject { ["character"] = "<character>", ["prompt"] = "<short action for one Clip>", ["duration_frames"] = 60 }, ["save"] = "request_id" },
                         new JObject { ["command"] = GetGenerationCommand, ["arguments"] = new JObject { ["request_id"] = "<request_id>" }, ["repeat_until"] = "status is completed, failed, or canceled" },
-                        new JObject { ["command"] = AnimationAnalyzeCommand, ["arguments"] = new JObject { ["clips"] = new JArray(new JObject { ["character"] = "<character>", ["clip"] = "<completed animation>" }), ["picture"] = new JObject { ["output"] = "both" } }, ["save"] = "pictures.image_path" },
+                        new JObject { ["command"] = AnimationAnalysisCommand, ["arguments"] = new JObject { ["clips"] = new JArray(new JObject { ["character"] = "<character>", ["clip"] = "<completed animation>" }) }, ["save"] = "pictures.image_path" },
                     },
                     ["commands"] = new JArray(all["tools"].Children<JObject>().Select(item => new JObject
                     {
@@ -317,7 +348,7 @@ namespace KimodoUnityBridge.Command
                     new JObject
                     {
                         ["type"] = "point",
-                        ["description"] = "Sample a complete pose, assert one concrete type from root/pose/effector inputs, then overlay the supplied data. Pose/effector safety preflight runs only when the same point constraint explicitly contains both pose and effector.",
+                        ["description"] = "Use the explicit External Pose, or the Avatar skeleton rest pose when pose is omitted; never implicitly sample the Timeline. Select one concrete type from root/pose/effector inputs, then overlay the supplied data. Pose/effector safety preflight runs only when the same point constraint explicitly contains both pose and effector.",
                         ["shape"] = new JObject
                         {
                             ["frame"] = "Relative frame in the generated clip.",
@@ -340,18 +371,18 @@ namespace KimodoUnityBridge.Command
                         ["shape"] = new JObject
                         {
                             ["frame"] = "Optional first path frame; defaults to 0.",
-                            ["root_path"] = new JObject { ["path"] = "{track,index} from animation.analyze clip.root_trajectory.path" }
+                            ["root_path"] = new JObject { ["path"] = "{track,index} from animation.analysis clip.root_trajectory.path" }
                         }
                     }
                 },
                 ["rules"] = new JArray
                 {
                     "The command selects Root2D, FullBody, or Effector solely from explicit root, pose, and effector fields. Full root values map to the UI fields; the existing solver and exporter handle their semantics.",
-                    "Pose/effector safety preflight runs only when the same point constraint explicitly contains both pose and effector. root + effector constraints skip this preflight; pose.test remains available to measure actual sampled poses after generation.",
+                    "Pose/effector safety preflight runs only when the same point constraint explicitly contains both pose and effector. root + effector constraints skip this preflight; pose.analysis measures and captures an actual sampled pose after generation.",
                     "A point constraint selects one mode: pose with optional root/effector is FullBody after IK; root + effector without pose is Effector; root alone is Root2D. effector alone is invalid. Put combined data in one point object; the command rejects duplicate frames.",
-                    "Use animation.analyze, confirm that the returned World-space Root Path belongs to the intended character and motion, then reference clip.root_trajectory.path from root_path; generation resolves it once against the target character's World anchor.",
+                    "Use animation.analysis, confirm that the returned World-space Root Path belongs to the intended character and motion, then reference clip.root_trajectory.path from root_path; generation resolves it once against the target character's rest-pose World anchor.",
                     "Use path angles, distance, or heading only for a known trajectory backed by an explicit requirement or confirmed evidence. Do not infer any trajectory setting from prompt keywords; omit path when the route is unknown.",
-                    "Use root_path only with a confirmed World-space animation.analyze Root Path reference for the intended character and motion. Generation resolves its path once against the target character's World anchor and creates only start and end Root2D constraints, so it does not prove an intermediate route.",
+                    "Use root_path only with a confirmed World-space animation.analysis Root Path reference for the intended character and motion. Generation resolves its path once against the target character's rest-pose World anchor and creates only start and end Root2D constraints, so it does not prove an intermediate route.",
                     "An explicit point frame cannot overlap a root_path sample frame; the command rejects the collision.",
                     "At most one standalone inout entry; in/out each require an explicit completed source Clip. Source character defaults to the generation character and must be the same character.",
                     "In/Out window_frames and source.frame use 60 FPS. Windows round up to model frames; sample_count must fit distinct model frames. One sample uses the seam; multiple samples include both endpoints.",
@@ -763,14 +794,13 @@ namespace KimodoUnityBridge.Command
                 "Running post-generation animation analysis.");
             try
             {
-                JObject analysisResponse = AnimationAnalyzeCore(new JObject
+                JObject analysisResponse = AnimationAnalysisCore(new JObject
                 {
                     ["clips"] = new JArray(new JObject
                     {
                         ["character"] = trace.Character.Name,
                         ["clip"] = trace.Animation.Name
-                    }),
-                    ["picture"] = new JObject { ["output"] = "composite" }
+                    })
                 }, allowActiveGenerationRange: true);
                 result.PostAnalysisJson = analysisResponse.ToString(Formatting.None);
             }

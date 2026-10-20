@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Playables;
@@ -12,6 +13,18 @@ namespace KimodoUnityBridge.Command
 {
     internal static partial class command_context
     {
+        private sealed class TransformSceneCaptureRequest
+        {
+            public string File;
+            public string Error;
+            public JObject PendingResult;
+            public JObject Result;
+            public Action Cleanup;
+        }
+
+        private static readonly Dictionary<string, TransformSceneCaptureRequest> TransformSceneCaptureRequests =
+            new Dictionary<string, TransformSceneCaptureRequest>(StringComparer.Ordinal);
+
         public static string TransformCapture(string argumentsJson) => Execute(argumentsJson, arguments =>
         {
             if (arguments["frames"] != null)
@@ -25,6 +38,20 @@ namespace KimodoUnityBridge.Command
             PlayableDirector sampledDirector = null;
             double originalTime = 0.0;
             bool restorePlaying = false;
+            bool cleanupDeferred = false;
+            Action cleanup = () =>
+            {
+                if (sampledDirector != null)
+                {
+                    sampledDirector.time = originalTime;
+                    sampledDirector.Evaluate();
+                    if (restorePlaying) sampledDirector.Play();
+                }
+                foreach (var entry in visibility)
+                    if (entry.Key != null) entry.Key.forceRenderingOff = entry.Value;
+                RestoreLightingAfterCapture(lightStates);
+                preview?.Dispose();
+            };
             try
             {
                 JObject source;
@@ -81,25 +108,38 @@ namespace KimodoUnityBridge.Command
                     source = new JObject { ["type"] = "scene", ["character_path"] = characterPath };
                 }
                 Animator captureAnimator = preview?.Animator ?? (hasTimelineFrame ? character.GetComponentInChildren<Animator>(true) : null);
-                return RenderTransformCapture(arguments, character, source, captureAnimator, visibility, ref lightStates);
+                return RenderTransformCapture(arguments, character, source, captureAnimator, visibility, ref lightStates,
+                    cleanup, ref cleanupDeferred);
             }
             finally
             {
-                if (sampledDirector != null)
-                {
-                    sampledDirector.time = originalTime;
-                    sampledDirector.Evaluate();
-                    if (restorePlaying) sampledDirector.Play();
-                }
-                foreach (var entry in visibility)
-                    if (entry.Key != null) entry.Key.forceRenderingOff = entry.Value;
-                RestoreLightingAfterCapture(lightStates);
-                preview?.Dispose();
+                if (!cleanupDeferred) cleanup();
             }
         });
 
+        public static string TransformCaptureGet(string argumentsJson) => Execute(argumentsJson, arguments =>
+        {
+            string requestId = RequiredStringValue(arguments, "request_id");
+            if (!TransformSceneCaptureRequests.TryGetValue(requestId, out TransformSceneCaptureRequest request))
+                throw new InvalidOperationException($"Unknown transform capture request '{requestId}'.");
+            if (!string.IsNullOrEmpty(request.Error))
+                return Ok(new JObject
+                {
+                    ["request_id"] = requestId,
+                    ["status"] = "failed",
+                    ["error_message"] = request.Error
+                });
+            if (request.Result == null)
+                return Ok(new JObject { ["request_id"] = requestId, ["status"] = "running" });
+            JObject result = (JObject)request.Result.DeepClone();
+            result["request_id"] = requestId;
+            result["status"] = "completed";
+            return Ok(result);
+        });
+
         private static string RenderTransformCapture(JObject arguments, GameObject character, JObject source,
-            Animator poseAnimator, Dictionary<Renderer, bool> visibility, ref List<LightCaptureState> lightStates)
+            Animator poseAnimator, Dictionary<Renderer, bool> visibility, ref List<LightCaptureState> lightStates,
+            Action cleanup, ref bool cleanupDeferred)
         {
             JArray transformValues = arguments["transforms"] as JArray
                 ?? throw new InvalidOperationException("transforms must be an array.");
@@ -111,6 +151,10 @@ namespace KimodoUnityBridge.Command
             if (!string.Equals(cameraMode, "auto", StringComparison.Ordinal) &&
                 !string.Equals(cameraMode, "scene", StringComparison.Ordinal))
                 throw new InvalidOperationException("camera.mode must be 'auto' or 'scene'.");
+            string scope = cameraOptions?.Value<string>("scope") ?? "targets";
+            if (!string.Equals(scope, "targets", StringComparison.Ordinal) &&
+                !string.Equals(scope, "scene", StringComparison.Ordinal))
+                throw new InvalidOperationException("camera.scope must be 'targets' or 'scene'.");
             var targets = transformValues.Values<string>().Select(path =>
             {
                 bool isPose = path == "@pose" || (path?.StartsWith("@pose/", StringComparison.Ordinal) ?? false);
@@ -134,15 +178,18 @@ namespace KimodoUnityBridge.Command
                 else bounds.Encapsulate(targetBounds);
             }
 
-            // Render only requested subjects, so the live character and session
-            // duplicates cannot overlap the pose being inspected. Restore on failure too.
-            foreach (Renderer renderer in Resources.FindObjectsOfTypeAll<Renderer>())
+            // In targets scope, render only requested subjects so live characters and
+            // session duplicates cannot overlap the pose being inspected. Scene scope
+            // deliberately leaves the current scene intact.
+            if (!string.Equals(scope, "scene", StringComparison.Ordinal))
             {
-                if (renderer == null || !renderer.gameObject.scene.IsValid()) continue;
-                visibility[renderer] = renderer.forceRenderingOff;
-                renderer.forceRenderingOff = !targets.Any(target => IsRelevantRenderer(renderer, target.Transform));
+                foreach (Renderer renderer in Resources.FindObjectsOfTypeAll<Renderer>())
+                {
+                    if (renderer == null || !renderer.gameObject.scene.IsValid()) continue;
+                    visibility[renderer] = renderer.forceRenderingOff;
+                    renderer.forceRenderingOff = !targets.Any(target => IsRelevantRenderer(renderer, target.Transform));
+                }
             }
-            lightStates = SuppressLightingForCapture();
 
             string folder = Path.Combine(Application.dataPath, "KimodoGeneratedClips", "TransformCaptures");
             Directory.CreateDirectory(folder);
@@ -155,55 +202,77 @@ namespace KimodoUnityBridge.Command
             int outputHeight = size * (sceneCameraMode ? 1 : 2);
             if (sceneCameraMode)
             {
-                JObject sceneCameraOptions = cameraOptions ?? new JObject();
-                string cameraPath = sceneCameraOptions.Value<string>("path") ?? "Main Camera";
-                Transform sceneCameraTransform = FindSceneTransform(cameraPath);
-                Camera sourceCamera = sceneCameraTransform != null ? sceneCameraTransform.GetComponent<Camera>() : null;
-                if (sourceCamera == null)
-                    throw new InvalidOperationException($"Scene camera '{cameraPath}' was not found.");
-                int[] cameraResolution = ReadCameraResolution(sceneCameraOptions, size);
-                outputWidth = cameraResolution[0];
-                outputHeight = cameraResolution[1];
-                Camera camera = null;
+                SceneView sceneView = SceneView.lastActiveSceneView;
+                if (sceneView == null || sceneView.camera == null)
+                    throw new InvalidOperationException("No active Scene View camera is available.");
+                JObject sceneCameraOptions = arguments["camera"] as JObject ?? new JObject();
+                if (sceneCameraOptions.Value<bool?>("auto_frame") ?? true)
+                {
+                    Vector3 direction = ReadSceneVector(sceneCameraOptions["direction"], "camera.direction", new Vector3(1f, .75f, -1f));
+                    FrameSceneView(sceneView, bounds, direction,
+                        sceneCameraOptions.Value<bool?>("orthographic") ?? true,
+                        Mathf.Max(.01f, sceneCameraOptions.Value<float?>("padding") ?? 1.1f));
+                }
+                lightStates = null;
+                JObject result = new JObject
+                {
+                    ["image_path"] = "Assets/KimodoGeneratedClips/TransformCaptures/" + Path.GetFileName(file),
+                    ["width"] = JValue.CreateNull(),
+                    ["height"] = JValue.CreateNull(),
+                    ["tile_size"] = JValue.CreateNull(),
+                    ["tile_border_px"] = JValue.CreateNull(),
+                    ["camera_mode"] = cameraMode,
+                    ["capture_type"] = "scene_view_target",
+                    ["scene_view_camera"] = true,
+                    ["scope"] = scope,
+                    ["tiles"] = new JArray
+                    {
+                        new JObject
+                        {
+                            ["tile"] = "1-1",
+                            ["view"] = "scene_view",
+                            ["projection"] = sceneView.camera.orthographic ? "orthographic" : "perspective",
+                            ["transforms"] = new JArray(targets.Select(target => target.Path)),
+                            ["bounds"] = new JObject
+                            {
+                                ["min"] = new JArray(bounds.min.x, bounds.min.y, bounds.min.z),
+                                ["max"] = new JArray(bounds.max.x, bounds.max.y, bounds.max.z)
+                            }
+                        }
+                    },
+                    ["source"] = source.DeepClone(),
+                    ["targets"] = new JArray(targets.Select(target => new JObject
+                    {
+                        ["key"] = target.Path,
+                        ["world_position"] = CapturePositionJson(target.Transform.position)
+                    }))
+                };
+                if (poseAnimator != null && poseAnimator.isHuman)
+                    result["evaluated_joints_world"] = CaptureJointsJson(poseAnimator);
                 Texture2D image = null;
-                List<MaterialCaptureState> materialStates = null;
                 try
                 {
-                    GameObject cameraObject = UnityEngine.Object.Instantiate(sourceCamera.gameObject);
-                    cameraObject.name = "Kimodo Scene Camera Capture";
-                    cameraObject.hideFlags = HideFlags.HideAndDontSave;
-                    camera = cameraObject.GetComponent<Camera>();
-                    ConfigureAnalysisCamera(camera);
-                    camera.allowHDR = false;
-                    camera.aspect = outputWidth / (float)Mathf.Max(1, outputHeight);
-                    ApplySceneCameraOptions(camera, sceneCameraOptions, bounds, outputWidth / (float)Mathf.Max(1, outputHeight));
-                    materialStates = SuppressEmissionForCapture();
-                    image = RenderCamera(camera, outputWidth, outputHeight, ReadCameraBackground(sceneCameraOptions));
-                    image.Apply(false, false);
+                    image = SceneViewCaptureBridge.Render(sceneView, Mathf.Max(64, sceneView.camera.pixelWidth), Mathf.Max(64, sceneView.camera.pixelHeight));
                     File.WriteAllBytes(file, image.EncodeToPNG());
-                    descriptions.Add(new JObject
+                    result["width"] = image.width;
+                    result["height"] = image.height;
+                    result["tiles"] = new JArray(new JObject
                     {
-                        ["tile"] = "1-1",
-                        ["view"] = "scene_camera",
-                        ["projection"] = camera.orthographic ? "orthographic" : "perspective",
-                        ["camera_path"] = cameraPath,
+                        ["tile"] = "1-1", ["view"] = "scene_view",
+                        ["projection"] = sceneView.camera.orthographic ? "orthographic" : "perspective",
                         ["transforms"] = new JArray(targets.Select(target => target.Path)),
-                        ["bounds"] = new JObject
-                        {
-                            ["min"] = new JArray(bounds.min.x, bounds.min.y, bounds.min.z),
-                            ["max"] = new JArray(bounds.max.x, bounds.max.y, bounds.max.z)
-                        }
+                        ["bounds"] = new JObject { ["min"] = CapturePositionJson(bounds.min), ["max"] = CapturePositionJson(bounds.max) }
                     });
                 }
-                finally
-                {
-                    if (image != null) UnityEngine.Object.DestroyImmediate(image);
-                    if (camera != null) UnityEngine.Object.DestroyImmediate(camera.gameObject);
-                    RestoreEmissionAfterCapture(materialStates);
-                }
+                finally { if (image != null) UnityEngine.Object.DestroyImmediate(image); }
+                AssetDatabase.Refresh();
+                result["image_path"] = "Assets/KimodoGeneratedClips/TransformCaptures/" + Path.GetFileName(file);
+                result["ok"] = true;
+                return Ok(result);
             }
             else
             {
+                lightStates = SuppressLightingForCapture();
                 var directions = new[] { Vector3.back, Vector3.right, Vector3.up, new Vector3(1f, .75f, -1f) };
                 var views = new[] { "front", "right", "top", "3d" };
                 var sheet = new Texture2D(size * 2, size * 2, TextureFormat.RGBA32, false);
@@ -276,6 +345,69 @@ namespace KimodoUnityBridge.Command
         }
 
         private static JArray CapturePositionJson(Vector3 position) => new JArray(position.x, position.y, position.z);
+
+        private static JObject CaptureJointsJson(Animator animator)
+        {
+            var joints = new JObject();
+            foreach (HumanBodyBones bone in new[] { HumanBodyBones.Hips, HumanBodyBones.RightHand,
+                HumanBodyBones.LeftHand, HumanBodyBones.RightFoot, HumanBodyBones.LeftFoot, HumanBodyBones.RightUpperArm })
+            {
+                Transform joint = animator.GetBoneTransform(bone);
+                if (joint != null) joints[bone.ToString()] = CapturePositionJson(joint.position);
+            }
+            return joints;
+        }
+
+        private static void CaptureTransformSceneView(SceneView sceneView)
+        {
+            if (sceneView != SceneView.lastActiveSceneView || sceneView?.camera?.targetTexture is not RenderTexture target ||
+                !target.IsCreated()) return;
+            foreach (KeyValuePair<string, TransformSceneCaptureRequest> entry in TransformSceneCaptureRequests.ToList())
+            {
+                string requestId = entry.Key;
+                TransformSceneCaptureRequest request = entry.Value;
+                if (request.Result != null || !string.IsNullOrEmpty(request.Error)) continue;
+                RenderTexture previous = RenderTexture.active;
+                Texture2D image = null;
+                try
+                {
+                    image = new Texture2D(target.width, target.height, TextureFormat.RGBA32, false);
+                    RenderTexture.active = target;
+                    image.ReadPixels(new Rect(0, 0, target.width, target.height), 0, 0);
+                    image.Apply(false, false);
+                    File.WriteAllBytes(request.File, image.EncodeToPNG());
+                    request.PendingResult["width"] = target.width;
+                    request.PendingResult["height"] = target.height;
+                    request.Result = request.PendingResult;
+                }
+                catch (Exception exception)
+                {
+                    request.Error = exception.Message;
+                }
+                finally
+                {
+                    RenderTexture.active = previous;
+                    if (image != null) UnityEngine.Object.DestroyImmediate(image);
+                    request.Cleanup?.Invoke();
+                }
+            }
+            if (TransformSceneCaptureRequests.Values.All(request => request.Result != null || !string.IsNullOrEmpty(request.Error)))
+                UnsubscribeAfterSceneViewRender(CaptureTransformSceneView);
+        }
+
+        private static void SubscribeAfterSceneViewRender(Action<SceneView> callback)
+        {
+            EventInfo completedEvent = typeof(SceneView).GetEvent("onGUIEnded", BindingFlags.Static | BindingFlags.NonPublic);
+            if (completedEvent == null)
+                throw new InvalidOperationException("This Unity version does not expose the SceneView render completion event.");
+            completedEvent.RemoveEventHandler(null, callback);
+            completedEvent.AddEventHandler(null, callback);
+        }
+
+        private static void UnsubscribeAfterSceneViewRender(Action<SceneView> callback)
+        {
+            typeof(SceneView).GetEvent("onGUIEnded", BindingFlags.Static | BindingFlags.NonPublic)?.RemoveEventHandler(null, callback);
+        }
 
         private static Camera CreateTransformCaptureCamera(Bounds bounds, Vector3 direction, bool orthographic)
         {

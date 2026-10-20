@@ -10,3 +10,9 @@
 /archive/*
 !/archive/skill-four-phase-legacy-20261014/
 !/archive/skill-four-phase-legacy-20261014/**
+!/archive/analyze-picture-legacy/
+!/archive/analyze-picture-legacy/**
+!/archive/analysis-new-legacy~/
+!/archive/analysis-new-legacy~/**
+!/archive/retired-capture-api~/
+!/archive/retired-capture-api~/**

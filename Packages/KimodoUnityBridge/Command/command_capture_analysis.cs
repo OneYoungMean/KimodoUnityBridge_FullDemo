@@ -38,156 +38,23 @@ namespace KimodoUnityBridge.Command
             return samples;
         }
 
-        // The analysis picture is the fixed 16:9 test-layout composite: four
+        // The analysis picture is the fixed 16:9 composite: four
         // overview tiles plus eight key poses and eight step poses.
         private static JObject RenderAnalysisPictures(
             TimelineSessionRecord session,
             IReadOnlyList<AnalysisSubject> subjects,
-            JObject picture,
-            int requestedResolution)
+            int requestedResolution,
+            JObject cameraOptions)
         {
             if (subjects == null || subjects.Count != 1)
             {
                 throw new InvalidOperationException("Analysis picture rendering accepts exactly one clip.");
             }
-            AnalysisPictureRequest request = AnalysisPictureRequest.Parse(picture);
-            if (request.WritesComposite && request.TileTypes.Count == 6 && request.Includes("3d_track") && request.Includes("height_time_track") &&
-                request.Includes("3d_ghost") && request.Includes("3d_ghost_track") &&
-                request.Includes("key_pose") && request.Includes("step_pose"))
-            {
-                return RenderAnalysisPictures16By9(session, subjects[0], request, "middle", requestedResolution);
-            }
-            return RenderTestAnalysisPictures(session, subjects[0], requestedResolution);
+            JObject capture = RenderSceneAnalysisCapture(session, subjects[0], requestedResolution, cameraOptions);
+            return (capture["pictures"] as JObject)?.DeepClone() as JObject ?? new JObject();
         }
 
-        private static JObject RenderAnalysisPictures16By9(
-            TimelineSessionRecord session,
-            AnalysisSubject subject,
-            AnalysisPictureRequest request,
-            string level,
-            int requestedResolution)
-        {
-            SubjectPictureData data = BuildSubjectPictureData(session, subject);
-            EnsurePhaseTrack(data);
-            AnalysisCache[data.Subject.Record.Id] = data.Subject.Record;
-            WriteJsonAtomically(AnalysisCachePath(session, data.Subject.Record.Id), data.Subject.Record.ToJson());
-            var tiles = BuildTestAnalysisTiles(data);
-            DateTime capturedAt = DateTime.Now;
-            int width = Math.Max(64, requestedResolution);
-            int height = Math.Max(36, Mathf.RoundToInt(width * 9f / 16f));
-            const int renderWidth = TestAnalysisCanvasWidth;
-            const int renderHeight = TestAnalysisCanvasHeight;
-            const int gap = 8;
-            const int header = 60;
-            int overviewWidth = Math.Max(1, (renderWidth - gap * 3) / 4);
-            int poseWidth = Math.Max(1, (renderWidth - gap * 7) / 8);
-            int overviewHeight = Mathf.Max(1, Mathf.RoundToInt(overviewWidth * .75f));
-            int poseHeight = Math.Max(1, (renderHeight - header - overviewHeight) / 2);
-            var images = new List<Texture2D>(tiles.Count);
-            var rects = new List<RectInt>(tiles.Count);
-            var hiddenRenderers = new List<(Renderer Renderer, bool Enabled)>();
-            GameObject previousCaptureRoot = captureSessionRoot;
-            bool previousFog = RenderSettings.fog;
-            Texture2D canvas = null;
-            try
-            {
-                using (var captureLights = new AnalysisCaptureLightScope())
-                {
-                    captureSessionRoot = session?.SessionRoot;
-                    if (subject.Character?.Root != null)
-                    {
-                        foreach (Renderer renderer in subject.Character.Root.GetComponentsInChildren<Renderer>(true))
-                        {
-                            hiddenRenderers.Add((renderer, renderer.enabled));
-                            renderer.enabled = false;
-                        }
-                    }
-                    RenderSettings.fog = false;
-                    TrajectoryScale scale = BuildTrajectoryScale(new[] { data }, true);
-                    for (int index = 0; index < tiles.Count; index++)
-                    {
-                        captureLights.Refresh();
-                        int tileWidth = index < 4 ? overviewWidth : poseWidth;
-                        int tileHeight = index < 4 ? overviewHeight : poseHeight;
-                        images.Add(tiles[index].IsEmpty
-                            ? CreateEmptyTestTile(tileWidth, tileHeight)
-                            : RenderPictureTileSupersampled(tiles[index], tileWidth, tileHeight, scale, 1));
-                    }
-                    for (int row = 0; row < 3; row++)
-                    {
-                        int count = row == 0 ? 4 : 8;
-                        int tileWidth = row == 0 ? overviewWidth : poseWidth;
-                        int tileHeight = row == 0 ? overviewHeight : poseHeight;
-                        int x = Math.Max(0, (renderWidth - count * tileWidth - gap * (count - 1)) / 2);
-                        int y = row == 0 ? renderHeight - header - overviewHeight : renderHeight - header - overviewHeight - poseHeight * row;
-                        for (int column = 0; column < count; column++)
-                        {
-                            rects.Add(new RectInt(x, y, tileWidth, tileHeight));
-                            x += tileWidth + gap;
-                        }
-                    }
-                    canvas = ComposePictureCanvasGpu(images, rects, renderWidth, renderHeight);
-                    DrawTestAnalysisHeader(canvas, subject.Animation?.Name, data.Pelvis.Length, capturedAt);
-                    canvas.Apply(false, false);
-                    List<RectInt> outputRects = rects;
-                    if (width != renderWidth || height != renderHeight)
-                    {
-                        outputRects = rects.Select(rect => new RectInt(
-                            Mathf.RoundToInt(rect.x * width / (float)renderWidth),
-                            Mathf.RoundToInt(rect.y * height / (float)renderHeight),
-                            Mathf.Max(1, Mathf.RoundToInt(rect.width * width / (float)renderWidth)),
-                            Mathf.Max(1, Mathf.RoundToInt(rect.height * height / (float)renderHeight)))).ToList();
-                        Texture2D resized = ResizeTexture(canvas, width, height);
-                        UnityEngine.Object.DestroyImmediate(canvas);
-                        canvas = resized;
-                    }
-            string signature = BuildPictureSignature(new[] { subject }, "16:9-layout", requestedResolution);
-                string imagePath = Path.Combine(EvidenceFolder(session), $"analysis_picture_{signature}.png");
-                Directory.CreateDirectory(EvidenceFolder(session));
-                File.WriteAllBytes(imagePath, canvas.EncodeToPNG());
-                var descriptions = new JArray();
-                for (int index = 0; index < tiles.Count; index++)
-                {
-                    PictureTile tile = tiles[index];
-                    JObject description = (JObject)tile.Description.DeepClone();
-                    description["subject"] = subject.Character?.Name ?? string.Empty;
-                    if (tile.Presentation == "test_pose") description["frame"] = tile.Frame;
-                    descriptions.Add(new JObject
-                    {
-                        ["id"] = index < 4 ? $"1.{index + 1}" : index < 12 ? $"2.{index - 3}" : $"3.{index - 11}",
-                        ["rect"] = new JObject { ["x"] = outputRects[index].x, ["y"] = outputRects[index].y, ["width"] = outputRects[index].width, ["height"] = outputRects[index].height },
-                        ["description"] = description
-                    });
-                }
-                string capturedText = capturedAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
-                var result = new JObject
-                {
-                    ["picture"] = request.ToJson(), ["level"] = level,
-                    ["render_version"] = TestAnalysisPicture20TileRenderVersion,
-                    ["image_path"] = ToProjectRelativePath(imagePath), ["width"] = width, ["height"] = height,
-                    ["resolution"] = requestedResolution, ["aspect"] = "16:9",
-                    ["header_height"] = Mathf.Max(1, Mathf.RoundToInt(header * height / (float)renderHeight)),
-                    ["screenshot_generated_at"] = capturedText, ["supersample"] = 1, ["tile_count"] = tiles.Count,
-                    ["title"] = new JObject { ["animation_name"] = subject.Animation?.Name ?? string.Empty, ["duration_frames"] = data.Pelvis.Length, ["guid"] = subject.Animation?.Id.ToString("D") ?? string.Empty },
-                    ["header"] = new JObject { ["clip"] = subject.Animation?.Name ?? string.Empty, ["frame_count"] = data.Pelvis.Length, ["fps"] = SessionFrameRate, ["duration_frames"] = data.Pelvis.Length, ["tile_type"] = "analysis-test", ["screenshot_generated_at"] = capturedText },
-                    ["headers"] = new JArray(new JObject { ["subject"] = subject.Character?.Name ?? string.Empty, ["clip"] = subject.Animation?.Name ?? string.Empty, ["total_frames"] = data.Pelvis.Length, ["fps"] = SessionFrameRate, ["duration_frames"] = data.Pelvis.Length, ["screenshot_generated_at"] = capturedText, ["tile_types"] = new JArray("3d_track", "height_time_track", "3d_ghost", "3d_ghost_track", "test_pose"), ["rect"] = new JObject { ["x"] = 0, ["y"] = 0, ["width"] = width, ["height"] = height } }),
-                    ["images"] = descriptions, ["cached"] = false
-                };
-            PersistPictureSummary(session, subject.Record, result);
-            return result;
-                }
-            }
-            finally
-            {
-                foreach (Texture2D image in images) if (image != null) UnityEngine.Object.DestroyImmediate(image);
-                if (canvas != null) UnityEngine.Object.DestroyImmediate(canvas);
-                foreach ((Renderer renderer, bool enabled) in hiddenRenderers) if (renderer != null) renderer.enabled = enabled;
-                RenderSettings.fog = previousFog;
-                captureSessionRoot = previousCaptureRoot;
-            }
-        }
-
-        private static List<PictureTile> BuildTestAnalysisTiles(SubjectPictureData subject)
+        private static List<PictureTile> BuildAnalysisTiles(SubjectPictureData subject)
         {
             List<int> allKeyframes = GetAllAnalysisKeyframes(subject);
             List<int> allFootEvents = GetAllFootEventFrames(subject);
@@ -195,13 +62,13 @@ namespace KimodoUnityBridge.Command
             IReadOnlyList<int?> steps = SelectFirstNonOverlappingFrames(subject, allFootEvents, 8);
             var result = new List<PictureTile>
             {
-                PictureTile.TestOverview(subject, "3d_track", Vector3.up),
-                PictureTile.TestOverview(subject, "height_time_track", Vector3.up),
-                PictureTile.TestSelectedOverview(subject, "3d_ghost", allKeyframes, new Vector3(1f, .75f, -1f)),
-                PictureTile.TestSelectedOverview(subject, "3d_ghost_track", allFootEvents, new Vector3(1f, .75f, -1f))
+                PictureTile.Overview(subject, "3d_track", Vector3.up),
+                PictureTile.Overview(subject, "height_time_track", Vector3.up),
+                PictureTile.SelectedOverview(subject, "3d_ghost", allKeyframes, new Vector3(1f, .75f, -1f)),
+                PictureTile.SelectedOverview(subject, "3d_ghost_track", allFootEvents, new Vector3(1f, .75f, -1f))
             };
-            for (int index = 0; index < 8; index++) result.Add(PictureTile.TestPoseSlot(subject, keyframes[index], "key_pose", index + 1));
-            for (int index = 0; index < 8; index++) result.Add(PictureTile.TestPoseSlot(subject, steps[index], "step_pose", index + 1));
+            for (int index = 0; index < 8; index++) result.Add(PictureTile.PoseSlot(subject, keyframes[index], "key_pose", index + 1));
+            for (int index = 0; index < 8; index++) result.Add(PictureTile.PoseSlot(subject, steps[index], "step_pose", index + 1));
             result[2].Description["frames"] = new JArray(allKeyframes);
             result[3].Description["frames"] = new JArray(allFootEvents);
             result[2].Description["selected_frames"] = new JArray(keyframes.Where(value => value.HasValue).Select(value => value.Value));
@@ -209,6 +76,122 @@ namespace KimodoUnityBridge.Command
             result[2].Description["shared_with"] = "key_pose";
             result[3].Description["shared_with"] = "step_pose";
             return result;
+        }
+
+        private static List<int> BuildHeightTimePoseFrames(SubjectPictureData subject)
+        {
+            int lastFrame = Math.Max(0, subject?.Pelvis?.Length - 1 ?? 0);
+            var frames = (subject?.KeyFrameSet ?? new HashSet<int>())
+                .Append(0)
+                .Append(lastFrame)
+                .Select(frame => Mathf.Clamp(frame, 0, lastFrame))
+                .Distinct()
+                .OrderBy(frame => frame)
+                .ToList();
+            if (subject == null || frames.Count <= 2) return frames;
+
+            const float maximumWidthToHeight = 5f;
+            const float layoutAspect = 4f / 3f;
+            while (frames.Count > 2)
+            {
+                float poseHeight = CalculateHeightTimePoseHeight(subject, frames);
+                float length = CalculateHeightTimeLength(subject, frames, layoutAspect);
+                if (length / Mathf.Max(.001f, poseHeight) <= maximumWidthToHeight) break;
+
+                int removeIndex = -1;
+                int closestGap = int.MaxValue;
+                for (int index = 0; index < frames.Count - 1; index++)
+                {
+                    if (frames[index + 1] == lastFrame) continue;
+                    int gap = frames[index + 1] - frames[index];
+                    if (gap <= closestGap)
+                    {
+                        closestGap = gap;
+                        removeIndex = index + 1;
+                    }
+                }
+                if (removeIndex < 0) break;
+                frames.RemoveAt(removeIndex);
+            }
+            return frames;
+        }
+
+        private static float CalculateHeightTimePoseHeight(
+            SubjectPictureData subject,
+            IReadOnlyList<int> poseFrames)
+        {
+            float minY = float.PositiveInfinity;
+            float maxY = float.NegativeInfinity;
+            for (int index = 0; index < poseFrames.Count; index++)
+            {
+                int frame = Mathf.Clamp(poseFrames[index], 0, Math.Max(0, subject.Pelvis.Length - 1));
+                Bounds pose = CalculateRawPreviewPoseBounds(subject, frame);
+                minY = Mathf.Min(minY, pose.min.y);
+                maxY = Mathf.Max(maxY, pose.max.y);
+            }
+            if (float.IsInfinity(minY) || float.IsInfinity(maxY)) return 1f;
+            return Mathf.Max(.001f, maxY - minY);
+        }
+
+        private static float CalculateHeightTimeLength(
+            SubjectPictureData subject,
+            IReadOnlyList<int> poseFrames,
+            float aspect)
+        {
+            if (subject == null || poseFrames == null || poseFrames.Count == 0) return 1f;
+            var poses = new List<Bounds>(poseFrames.Count);
+            float minY = float.PositiveInfinity;
+            float maxY = float.NegativeInfinity;
+            for (int index = 0; index < poseFrames.Count; index++)
+            {
+                int frame = Mathf.Clamp(poseFrames[index], 0, Math.Max(0, subject.Pelvis.Length - 1));
+                Bounds pose = CalculateRawPreviewPoseBounds(subject, frame);
+                Vector3 hips = subject.Pelvis[frame];
+                pose.center += new Vector3(-hips.x, 0f, -hips.z);
+                poses.Add(pose);
+                minY = Mathf.Min(minY, pose.min.y);
+                maxY = Mathf.Max(maxY, pose.max.y);
+            }
+
+            if (float.IsNaN(minY) || float.IsInfinity(minY) || float.IsNaN(maxY) || float.IsInfinity(maxY)) return 1f;
+            float targetWidth = Mathf.Max(.001f, maxY - minY) * Mathf.Max(.001f, aspect);
+            float minimumLength = 0f;
+            const float poseGap = .06f;
+            int lastFrame = Math.Max(1, subject.Pelvis.Length - 1);
+            for (int right = 1; right < poses.Count; right++)
+            for (int left = 0; left < right; left++)
+            {
+                int frameGap = poseFrames[right] - poseFrames[left];
+                if (frameGap <= 0) continue;
+                minimumLength = Mathf.Max(minimumLength,
+                    (poses[left].max.z - poses[right].min.z + poseGap) * lastFrame / frameGap);
+            }
+
+            float WidthAtLength(float length)
+            {
+                float minZ = float.PositiveInfinity;
+                float maxZ = float.NegativeInfinity;
+                for (int index = 0; index < poses.Count; index++)
+                {
+                    float time = subject.Pelvis.Length <= 1 ? 0f :
+                        Mathf.Clamp(poseFrames[index], 0, subject.Pelvis.Length - 1) / (float)(subject.Pelvis.Length - 1);
+                    minZ = Mathf.Min(minZ, time * length + poses[index].min.z);
+                    maxZ = Mathf.Max(maxZ, time * length + poses[index].max.z);
+                }
+                return maxZ - minZ;
+            }
+
+            float upper = Mathf.Max(1f, targetWidth - poses[0].min.z);
+            while (WidthAtLength(upper) < targetWidth && upper < 100000f) upper *= 2f;
+            if (WidthAtLength(0f) >= targetWidth) return Mathf.Max(.001f, minimumLength);
+            float lower = 0f;
+            for (int iteration = 0; iteration < 32; iteration++)
+            {
+                float middle = (lower + upper) * .5f;
+                if (WidthAtLength(middle) < targetWidth) lower = middle;
+                else upper = middle;
+            }
+            return Mathf.Max(.001f, upper, minimumLength);
         }
 
         private static List<int> GetAllAnalysisKeyframes(SubjectPictureData subject)
@@ -325,407 +308,7 @@ namespace KimodoUnityBridge.Command
             return selected.Concat(Enumerable.Repeat<int?>(null, targetCount - selectedCount)).ToArray();
         }
 
-        private static IReadOnlyList<int?> NormalizeTestKeyframes(SubjectPictureData subject, int count)
-        {
-            return SelectUniformlySpacedKeyframes(subject, GetAllAnalysisKeyframes(subject), count);
-        }
-
-        private static IReadOnlyList<int?> NormalizeTestStepFrames(SubjectPictureData subject, int count)
-        {
-            return SelectFirstNonOverlappingFrames(subject, GetAllFootEventFrames(subject), count);
-        }
-
-        private static JObject RenderUnifiedAnalysisPictures(
-            TimelineSessionRecord session,
-            IReadOnlyList<AnalysisSubject> subjects,
-            JObject picture,
-            int requestedResolution)
-        {
-            AnalysisPictureRequest pictureRequest = AnalysisPictureRequest.Parse(picture);
-            string pictureKey = pictureRequest.ToJson().ToString(Formatting.None);
-            string signature = BuildPictureSignature(subjects, pictureKey, requestedResolution);
-            string imagePath = Path.Combine(EvidenceFolder(session), $"analysis_picture_{signature}.png");
-            string projectPath = ToProjectRelativePath(imagePath);
-            JObject persisted = subjects[0].Record.Pictures;
-            bool phaseTrackReady = subjects.All(item =>
-                string.Equals(item.Record.Analysis?.Value<string>("phase_track_version"), PhaseTrackVersion, StringComparison.Ordinal));
-            if (phaseTrackReady && persisted != null &&
-                string.Equals(persisted.Value<string>("picture"), pictureKey, StringComparison.Ordinal) &&
-                string.Equals(persisted.Value<string>("image_path"), projectPath, StringComparison.OrdinalIgnoreCase) &&
-                File.Exists(imagePath))
-            {
-                var cachedResult = (JObject)persisted.DeepClone();
-                cachedResult["render_version"] = UnifiedAnalysisPictureRenderVersion;
-                cachedResult["cached"] = true;
-                return cachedResult;
-            }
-
-            var data = subjects.Select(subject => BuildSubjectPictureData(session, subject)).ToList();
-            foreach (SubjectPictureData subject in data)
-            {
-                EnsurePhaseTrack(subject);
-                AnalysisCache[subject.Subject.Record.Id] = subject.Subject.Record;
-                WriteJsonAtomically(
-                    AnalysisCachePath(session, subject.Subject.Record.Id),
-                    subject.Subject.Record.ToJson());
-            }
-            TrajectoryScale trajectoryScale = BuildTrajectoryScale(data, true);
-            var tiles = new List<PictureTile>();
-            foreach (SubjectPictureData subject in data)
-            {
-                tiles.AddRange(BuildPictureTiles(subject, pictureRequest));
-            }
-
-            int maxTileCount = Math.Max(
-                1,
-                data.Select(subject => tiles.Count(tile => ReferenceEquals(tile.Subject, subject))).DefaultIfEmpty(1).Max());
-            PictureLayout layout = PictureLayout.ForLevel(maxTileCount, true, requestedResolution);
-
-            int tileWidth = layout.TileSize;
-            int tileHeight = ResolvePictureTileHeight(layout, tiles, tileWidth);
-            int panelHeight = layout.TileRows * tileHeight;
-
-            List<RectInt> imageRects;
-            int imageWidth;
-            int imageHeight;
-            bool cached = false;
-            Directory.CreateDirectory(EvidenceFolder(session));
-            GameObject previousCaptureRoot = captureSessionRoot;
-            bool previousFogEnabled = RenderSettings.fog;
-            var hiddenCharacterRenderers = new List<(Renderer Renderer, bool Enabled)>();
-            Texture2D canvas;
-            try
-            {
-                captureSessionRoot = session?.SessionRoot;
-                foreach (GameObject characterRoot in subjects
-                    .Select(subject => subject.Character?.Root)
-                    .Where(root => root != null)
-                    .Distinct())
-                {
-                    foreach (Renderer renderer in characterRoot.GetComponentsInChildren<Renderer>(true))
-                    {
-                        hiddenCharacterRenderers.Add((renderer, renderer.enabled));
-                        renderer.enabled = false;
-                    }
-                }
-                // Analysis evidence must not inherit distance-based project fog.
-                RenderSettings.fog = false;
-                canvas = RenderPictureCanvas(
-                    data,
-                    tiles,
-                    layout,
-                    trajectoryScale,
-                    tileWidth,
-                    tileHeight,
-                    PictureSupersample,
-                    out imageRects);
-            }
-            finally
-            {
-                foreach ((Renderer renderer, bool enabled) in hiddenCharacterRenderers)
-                {
-                    if (renderer != null) renderer.enabled = enabled;
-                }
-                RenderSettings.fog = previousFogEnabled;
-                captureSessionRoot = previousCaptureRoot;
-            }
-            imageWidth = canvas.width;
-            imageHeight = canvas.height;
-            if (pictureRequest.WritesComposite)
-            {
-                File.WriteAllBytes(imagePath, canvas.EncodeToPNG());
-            }
-
-            var descriptions = new JArray();
-            var tilePaths = new JArray();
-            for (int index = 0; index < tiles.Count; index++)
-            {
-                PictureTile tile = tiles[index];
-                RectInt rect = imageRects[index];
-                int panel = data.FindIndex(item => ReferenceEquals(item, tile.Subject));
-                int localIndex = tiles.Take(index).Count(item => ReferenceEquals(item.Subject, tile.Subject));
-                JObject description = (JObject)tile.Description.DeepClone();
-                description["subject"] = tile.Subject.Subject.Character.Name;
-                if (pictureRequest.WritesTiles)
-                {
-                    string tilePath = Path.Combine(
-                        EvidenceFolder(session),
-                        $"analysis_picture_{signature}_tile_{index + 1:00}.png");
-                    Texture2D tileImage = new Texture2D(rect.width, rect.height, TextureFormat.RGBA32, false);
-                    tileImage.SetPixels(canvas.GetPixels(rect.x, rect.y, rect.width, rect.height));
-                    tileImage.Apply(false, false);
-                    try { File.WriteAllBytes(tilePath, tileImage.EncodeToPNG()); }
-                    finally { UnityEngine.Object.DestroyImmediate(tileImage); }
-                    tilePaths.Add(ToProjectRelativePath(tilePath));
-                }
-                descriptions.Add(new JObject
-                {
-                    ["id"] = (panel + 1).ToString(CultureInfo.InvariantCulture) + "." +
-                        (localIndex + 1).ToString(CultureInfo.InvariantCulture),
-                    ["rect"] = new JObject { ["x"] = rect.x, ["y"] = rect.y, ["width"] = rect.width, ["height"] = rect.height },
-                    ["description"] = description
-                });
-            }
-
-            var result = new JObject
-            {
-                ["picture"] = pictureKey,
-                ["level"] = "middle",
-                ["aspect"] = "16:9",
-                ["tile_count"] = tiles.Count,
-                ["render_version"] = pictureRequest.Includes("key_pose") && pictureRequest.Includes("step_pose")
-                    ? TestAnalysisPicture20TileRenderVersion
-                    : UnifiedAnalysisPictureRenderVersion,
-                ["image_path"] = pictureRequest.WritesComposite ? projectPath : string.Empty,
-                ["width"] = imageWidth,
-                ["height"] = imageHeight,
-                ["resolution"] = requestedResolution,
-                ["supersample"] = PictureSupersample,
-                ["images"] = descriptions,
-                ["tile_paths"] = tilePaths,
-                ["cached"] = cached
-            };
-            if (!pictureRequest.WritesTiles) result.Remove("tile_paths");
-            UnityEngine.Object.DestroyImmediate(canvas);
-            PersistPictureSummary(session, subjects[0].Record, result);
-            return result;
-        }
-
-        private static int ResolvePictureTileHeight(
-            PictureLayout layout,
-            IReadOnlyList<PictureTile> tiles,
-            int tileWidth)
-        {
-            if (layout.TileSize != tileWidth || tiles == null ||
-                !tiles.Any(tile => tile.Presentation == "test_foot_transitions" || tile.Presentation == "test_keyframes"))
-            {
-                return layout.TileSize;
-            }
-
-            float widestAspect = 1f;
-            foreach (PictureTile tile in tiles)
-            {
-                if (tile.Presentation != "test_foot_transitions" && tile.Presentation != "test_keyframes") continue;
-                CalculateTestViewExtents(tile.Subject, tile.Direction, out _, out float horizontal, out float vertical, out _);
-                widestAspect = Mathf.Max(
-                    widestAspect,
-                    (horizontal + TestCameraMarginMeters) / Mathf.Max(.01f, vertical + TestCameraMarginMeters));
-            }
-
-            int minimumHeight = Mathf.Max(1, Mathf.Min(160, tileWidth / 3));
-            return Mathf.Clamp(Mathf.RoundToInt(tileWidth / widestAspect), minimumHeight, tileWidth);
-        }
-
-        private static JObject RenderTestAnalysisPictures(
-            TimelineSessionRecord session,
-            AnalysisSubject subject,
-            int requestedResolution)
-        {
-            if (subject == null) throw new InvalidOperationException("-test analysis requires one clip.");
-            SubjectPictureData data = BuildSubjectPictureData(session, subject);
-            EnsurePhaseTrack(data);
-                AnalysisCache[data.Subject.Record.Id] = data.Subject.Record;
-                WriteJsonAtomically(
-                AnalysisCachePath(session, data.Subject.Record.Id),
-                data.Subject.Record.ToJson());
-            var tiles = BuildTestAnalysisTiles(data);
-            TestPictureLayout layout = TestPictureLayout.ForResolution(requestedResolution);
-            DateTime capturedAt = DateTime.Now;
-            TrajectoryScale trajectoryScale = BuildTrajectoryScale(new[] { data }, true);
-            var images = new List<Texture2D>(tiles.Count);
-            var rects = new List<RectInt>(tiles.Count);
-            using var captureLights = new AnalysisCaptureLightScope();
-            Texture2D canvas = null;
-            var hiddenCharacterRenderers = new List<(Renderer Renderer, bool Enabled)>();
-            GameObject previousCaptureRoot = captureSessionRoot;
-            bool previousFogEnabled = RenderSettings.fog;
-            try
-            {
-                captureSessionRoot = session?.SessionRoot;
-                if (subject.Character?.Root != null)
-                {
-                    foreach (Renderer renderer in subject.Character.Root.GetComponentsInChildren<Renderer>(true))
-                    {
-                        hiddenCharacterRenderers.Add((renderer, renderer.enabled));
-                        renderer.enabled = false;
-                    }
-                }
-                RenderSettings.fog = false;
-                foreach (PictureTile tile in tiles)
-                {
-                    int width = layout.WidthFor(tile);
-                    int height = layout.HeightFor(tile);
-                    Texture2D image = tile.IsEmpty
-                        ? CreateEmptyTestTile(width, height)
-                        : RenderPictureTileSupersampled(tile, width, height, trajectoryScale, 1);
-                    if (image.width != width || image.height != height)
-                    {
-                        Texture2D resized = ResizeTexture(image, width, height);
-                        UnityEngine.Object.DestroyImmediate(image);
-                        image = resized;
-                    }
-                    images.Add(image);
-                }
-
-                canvas = new Texture2D(layout.CanvasWidth, layout.CanvasHeight, TextureFormat.RGBA32, false);
-                Fill(canvas, new Color(.12f, .12f, .12f, 1f));
-                canvas.Apply(false, false);
-                int tileIndex = 0;
-                for (int row = 0; row < 3; row++)
-                {
-                    int rowCount = row == 0 ? 4 : 8;
-                    int rowWidth = Enumerable.Range(0, rowCount)
-                        .Sum(column => layout.WidthFor(tiles[tileIndex + column])) +
-                        TestPictureLayout.TileGapPixels * (rowCount - 1);
-                    int x = Mathf.Max(0, (layout.CanvasWidth - rowWidth) / 2);
-                    int y = layout.CanvasHeight - layout.HeaderHeight - layout.RowHeights.Take(row + 1).Sum();
-                    int count = rowCount;
-                    for (int column = 0; column < count; column++)
-                    {
-                        PictureTile tile = tiles[tileIndex];
-                        int width = layout.WidthFor(tile);
-                        int height = layout.HeightFor(tile);
-                        RectInt rect = new RectInt(x, y, width, height);
-                        rects.Add(rect);
-                        if (!tile.IsEmpty)
-                        {
-                            DrawTestTileNumber(images[tileIndex], $"{row + 1}-{column + 1}");
-                            if (row >= 1 && tile.Presentation == "test_pose") DrawFrameNumber(images[tileIndex], tile.Frame);
-                        }
-                        CopyTileIntoCanvas(images[tileIndex], canvas, rect);
-                        tileIndex++;
-                        x += width + TestPictureLayout.TileGapPixels;
-                    }
-                }
-                DrawTestAnalysisHeader(
-                    canvas,
-                    subject.Animation?.Name,
-                    data.Pelvis.Length,
-                    capturedAt);
-                canvas.Apply(false, false);
-                    string signature = BuildPictureSignature(new[] { subject }, "legacy-diagnostic", requestedResolution);
-                string imagePath = Path.Combine(EvidenceFolder(session), $"analysis_picture_{signature}.png");
-                Directory.CreateDirectory(EvidenceFolder(session));
-                File.WriteAllBytes(imagePath, canvas.EncodeToPNG());
-
-                var descriptions = new JArray();
-                for (int index = 0; index < tiles.Count; index++)
-                {
-                    PictureTile tile = tiles[index];
-                    JObject description = (JObject)tile.Description.DeepClone();
-                    if (tile.Presentation == "test_pose") description["frame"] = tile.Frame;
-                    descriptions.Add(new JObject
-                    {
-                        ["id"] = $"{(index < 4 ? 1 : index < 12 ? 2 : 3)}-{(index < 4 ? index + 1 : index < 12 ? index - 3 : index - 11)}",
-                        ["rect"] = new JObject { ["x"] = rects[index].x, ["y"] = rects[index].y, ["width"] = rects[index].width, ["height"] = rects[index].height },
-                        ["description"] = description
-                    });
-                }
-                var result = new JObject
-                {
-                    ["picture"] = new JObject { ["output"] = "composite" },
-                    ["render_version"] = UnifiedAnalysisPictureRenderVersion,
-                    ["image_path"] = ToProjectRelativePath(imagePath),
-                    ["width"] = layout.CanvasWidth,
-                    ["height"] = layout.CanvasHeight,
-                    ["resolution"] = requestedResolution,
-                    ["aspect"] = "16:9",
-                    ["header_height"] = layout.HeaderHeight,
-                    ["screenshot_generated_at"] = capturedAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
-                    ["tile_count"] = tiles.Count,
-                    ["title"] = new JObject
-                    {
-                        ["animation_name"] = subject.Animation?.Name ?? string.Empty,
-                        ["duration_frames"] = data.Pelvis.Length,
-                        ["guid"] = subject.Animation?.Id.ToString("D") ?? string.Empty
-                    },
-                    ["header"] = new JObject
-                    {
-                        ["clip"] = subject.Animation?.Name ?? string.Empty,
-                        ["frame_count"] = data.Pelvis.Length,
-                        ["fps"] = SessionFrameRate,
-                        ["duration_frames"] = data.Pelvis.Length,
-                        ["tile_type"] = "analysis-test",
-                        ["screenshot_generated_at"] = capturedAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
-                    },
-                    ["headers"] = new JArray
-                    {
-                        new JObject
-                        {
-                            ["subject"] = subject.Character.Name,
-                            ["clip"] = subject.Animation?.Name ?? string.Empty,
-                            ["total_frames"] = data.Pelvis.Length,
-                            ["fps"] = SessionFrameRate,
-                            ["duration_frames"] = data.Pelvis.Length,
-                            ["screenshot_generated_at"] = capturedAt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
-                            ["tile_types"] = new JArray("3d_track", "height_time_track", "3d_ghost", "3d_ghost_track", "test_pose"),
-                            ["rect"] = new JObject { ["x"] = 0, ["y"] = 0, ["width"] = layout.CanvasWidth, ["height"] = layout.CanvasHeight }
-                        }
-                    },
-                    ["images"] = descriptions,
-                    ["cached"] = false
-                };
-                PersistPictureSummary(session, subject.Record, result);
-                return result;
-            }
-            finally
-            {
-                foreach (Texture2D image in images) if (image != null) UnityEngine.Object.DestroyImmediate(image);
-                if (canvas != null) UnityEngine.Object.DestroyImmediate(canvas);
-                foreach ((Renderer renderer, bool enabled) in hiddenCharacterRenderers)
-                {
-                    if (renderer != null) renderer.enabled = enabled;
-                }
-                RenderSettings.fog = previousFogEnabled;
-                captureSessionRoot = previousCaptureRoot;
-            }
-        }
-
-        private static Texture2D CreateEmptyTestTile(int width, int height)
-        {
-            var texture = new Texture2D(Math.Max(1, width), Math.Max(1, height), TextureFormat.RGBA32, false);
-            Fill(texture, new Color(.04f, .05f, .07f, 1f));
-            texture.Apply(false, false);
-            return texture;
-        }
-
-        private static void CopyTileIntoCanvas(Texture2D source, Texture2D canvas, RectInt rect)
-        {
-            if (source == null || canvas == null) return;
-            bool canCopy = SystemInfo.copyTextureSupport != CopyTextureSupport.None &&
-                source.format == canvas.format && source.width == rect.width && source.height == rect.height;
-            if (canCopy)
-            {
-                Graphics.CopyTexture(source, 0, 0, 0, 0, rect.width, rect.height,
-                    canvas, 0, 0, rect.x, rect.y);
-                return;
-            }
-            // Fallback for older Unity graphics backends.
-            canvas.SetPixels(rect.x, rect.y, rect.width, rect.height, source.GetPixels());
-        }
-
-        private static Bounds CalculateTestContentBounds(SubjectPictureData subject)
-        {
-            if (subject == null || subject.Pelvis == null || subject.Pelvis.Length == 0)
-            {
-                return new Bounds(Vector3.up, Vector3.one);
-            }
-
-            Bounds bounds = new Bounds(subject.Pelvis[0], Vector3.zero);
-            // The viewport follows the sampled trajectory markers directly.
-            // Do not extrapolate a body envelope from first/last mesh bounds;
-            // that mixes a world-space mesh box with every Hips sample.
-            foreach (Vector3 point in subject.Pelvis) bounds.Encapsulate(point);
-            foreach (Vector3 point in subject.LeftHand) bounds.Encapsulate(point);
-            foreach (Vector3 point in subject.RightHand) bounds.Encapsulate(point);
-            foreach (Vector3 point in subject.LeftFoot) bounds.Encapsulate(point);
-            foreach (Vector3 point in subject.RightFoot) bounds.Encapsulate(point);
-            foreach (Vector3 point in subject.Head) bounds.Encapsulate(point);
-
-            return bounds;
-        }
-
-        private static void CalculateTestViewExtents(
+        private static void CalculateSceneViewExtents(
             SubjectPictureData subject,
             Vector3 direction,
             out Vector3 viewCenter,
@@ -733,7 +316,7 @@ namespace KimodoUnityBridge.Command
             out float maxVertical,
             out float maxDepth)
         {
-            CalculateTestViewExtents(
+            CalculateSceneViewExtents(
                 subject.Pelvis.Concat(subject.LeftHand)
                     .Concat(subject.RightHand).Concat(subject.LeftFoot).Concat(subject.RightFoot)
                     .Concat(subject.Head),
@@ -744,7 +327,7 @@ namespace KimodoUnityBridge.Command
                 out maxDepth);
         }
 
-        private static void CalculateTestViewExtents(
+        private static void CalculateSceneViewExtents(
             Bounds bounds,
             Vector3 direction,
             out Vector3 viewCenter,
@@ -752,7 +335,7 @@ namespace KimodoUnityBridge.Command
             out float maxVertical,
             out float maxDepth)
         {
-            CalculateTestViewExtents(
+            CalculateSceneViewExtents(
                 new[]
                 {
                     new Vector3(bounds.min.x, bounds.min.y, bounds.min.z),
@@ -771,7 +354,7 @@ namespace KimodoUnityBridge.Command
                 out maxDepth);
         }
 
-        private static void CalculateTestViewExtents(
+        private static void CalculateSceneViewExtents(
             IEnumerable<Vector3> points,
             Vector3 direction,
             out Vector3 viewCenter,
@@ -820,63 +403,6 @@ namespace KimodoUnityBridge.Command
             maxDepth = (maxDepthValue - minDepth) * .5f;
         }
 
-        private static Vector3[] ExpandPosePointsAwayFromHipsInCameraSpace(
-            IReadOnlyList<Vector3> points,
-            Vector3 direction,
-            Vector3 characterForward)
-        {
-            if (points == null || points.Count == 0) return Array.Empty<Vector3>();
-            Vector3 normalizedDirection = direction.sqrMagnitude > .0001f
-                ? direction.normalized
-                : new Vector3(1f, .75f, -1f).normalized;
-            Vector3 up = Mathf.Abs(Vector3.Dot(normalizedDirection, Vector3.up)) > .95f
-                ? Vector3.forward
-                : Vector3.up;
-            Quaternion toCameraSpace = Quaternion.Inverse(Quaternion.LookRotation(-normalizedDirection, up));
-            Quaternion toWorldSpace = Quaternion.Inverse(toCameraSpace);
-            Vector3 hips = toCameraSpace * points[0];
-            Vector3 forward = toCameraSpace * characterForward;
-            var expanded = new List<Vector3>(points.Count * 2 + 2);
-            expanded.AddRange(points);
-            for (int index = 1; index < points.Count; index++)
-            {
-                Vector3 joint = toCameraSpace * points[index];
-                Vector3 fromHips = joint - hips;
-                if (fromHips.sqrMagnitude > .0001f)
-                {
-                    float offset = index == points.Count - 1 ? TestPoseHeadCameraOffsetMeters : TestPoseJointCameraOffsetMeters;
-                    joint += fromHips.normalized * offset;
-                }
-                expanded.Add(toWorldSpace * joint);
-                if ((index == 5 || index == 6) && forward.sqrMagnitude > .0001f)
-                {
-                    expanded.Add(toWorldSpace * (joint + forward.normalized * TestPoseFootForwardCameraOffsetMeters));
-                }
-            }
-            return expanded.ToArray();
-        }
-
-        private static void PersistPictureSummary(TimelineSessionRecord session, AnalysisCacheRecord record, JObject pictures)
-        {
-            if (record == null || session == null) return;
-            record.Pictures = pictures != null ? (JObject)pictures.DeepClone() : new JObject();
-            AnalysisCache[record.Id] = record;
-            WriteJsonAtomically(AnalysisCachePath(session, record.Id), record.ToJson());
-        }
-
-        private static string BuildPictureSignature(
-            IReadOnlyList<AnalysisSubject> subjects,
-            string pictureKey,
-            int requestedResolution)
-        {
-            string source = UnifiedAnalysisPictureRenderVersion + "|" + pictureKey + "|" + requestedResolution + "|" + PictureSupersample + "|" +
-                string.Join("|", subjects.Select(item => item.Record.Id));
-            using (SHA256 hash = SHA256.Create())
-            {
-                return BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(source))).Replace("-", string.Empty).Substring(0, 16).ToLowerInvariant();
-            }
-        }
-
         private static SubjectPictureData BuildSubjectPictureData(TimelineSessionRecord session, AnalysisSubject subject)
         {
             if (!IsHumanoidCharacter(subject.Character))
@@ -895,10 +421,9 @@ namespace KimodoUnityBridge.Command
             var leftKnee = new Vector3[frameCount];
             var rightKnee = new Vector3[frameCount];
             var head = new Vector3[frameCount];
+            var poseBounds = new Bounds[frameCount];
             Bounds firstBounds = default;
             Bounds lastBounds = default;
-            Bounds allPoseBounds = default;
-            bool hasPoseBounds = false;
             double originalTime = session.Director.time;
             EvaluatedPosePreview posePreview = null;
             KimodoMarkerSampleResult[] samples;
@@ -929,17 +454,9 @@ namespace KimodoUnityBridge.Command
                     rightKnee[localFrame] = ReadHumanoidBonePosition(poseAnimator, HumanBodyBones.RightLowerLeg, subject.Character.Name);
                     head[localFrame] = ReadHumanoidBonePosition(poseAnimator, HumanBodyBones.Head, subject.Character.Name);
                     Bounds currentBounds = CalculateSkinnedBounds(posePreview.Root);
+                    poseBounds[localFrame] = currentBounds;
                     if (localFrame == 0) firstBounds = currentBounds;
                     if (localFrame == frameCount - 1) lastBounds = currentBounds;
-                    if (!hasPoseBounds)
-                    {
-                        allPoseBounds = currentBounds;
-                        hasPoseBounds = true;
-                    }
-                    else
-                    {
-                        allPoseBounds.Encapsulate(currentBounds);
-                    }
                 }
             }
             finally
@@ -966,16 +483,12 @@ namespace KimodoUnityBridge.Command
                 }
             }
 
-            // Keep the legacy bounds for non-test mesh evidence. The complete
-            // pose bounds are exposed separately for the test renderer.
             Bounds bounds = firstBounds;
             foreach (Vector3 point in pelvis) bounds.Encapsulate(point);
             bounds.Encapsulate(lastBounds);
             bounds.Expand(new Vector3(6f, 1f, 6f));
             if (bounds.size.x < 6f) bounds.Expand(new Vector3(6f - bounds.size.x, 0f, 0f));
             if (bounds.size.z < 6f) bounds.Expand(new Vector3(0f, 0f, 6f - bounds.size.z));
-            Bounds testBounds = hasPoseBounds ? allPoseBounds : bounds;
-            foreach (Vector3 point in pelvis) testBounds.Encapsulate(point);
             return new SubjectPictureData(
                 subject,
                 samples,
@@ -991,16 +504,17 @@ namespace KimodoUnityBridge.Command
                 head,
                 leftContacts,
                 rightContacts,
+                poseBounds,
                 firstBounds,
                 lastBounds,
-                bounds,
-                testBounds);
+                bounds);
         }
 
         private static SubjectPictureData BuildMeshSubjectPictureData(AnalysisSubject subject)
         {
             int frameCount = Math.Max(1, subject.EndFrameExclusive - subject.StartFrame);
             var positions = new Vector3[frameCount];
+            var poseBounds = new Bounds[frameCount];
             Bounds firstBounds = default;
             Bounds lastBounds = default;
             Bounds allBounds = default;
@@ -1012,6 +526,7 @@ namespace KimodoUnityBridge.Command
                 {
                     positions[localFrame] = preview.transform.position;
                     Bounds current = CalculateSkinnedBounds(preview);
+                    poseBounds[localFrame] = current;
                     if (localFrame == 0) firstBounds = current;
                     if (localFrame == frameCount - 1) lastBounds = current;
                     if (!hasBounds)
@@ -1047,9 +562,9 @@ namespace KimodoUnityBridge.Command
                 positions,
                 new bool[frameCount],
                 new bool[frameCount],
+                poseBounds,
                 firstBounds,
                 lastBounds,
-                bounds,
                 bounds);
         }
 
@@ -1073,41 +588,6 @@ namespace KimodoUnityBridge.Command
             if (renderers.Length == 0) return CalculateBounds(root);
             Bounds result = renderers[0].bounds;
             for (int index = 1; index < renderers.Length; index++) result.Encapsulate(renderers[index].bounds);
-            return result;
-        }
-
-        private static List<PictureTile> BuildPictureTiles(SubjectPictureData subject, AnalysisPictureRequest request)
-        {
-            if (!IsHumanoidCharacter(subject.Subject.Character))
-            {
-                return SelectKeyFrames(subject, subject.KeyframeCount)
-                    .Select(frame => PictureTile.MeshPose(subject, frame, "mesh_pose"))
-                    .ToList();
-            }
-
-            var result = new List<PictureTile>();
-            if (request.Includes("3d_track")) result.Add(PictureTile.TestOverview(subject, "3d_track", Vector3.up));
-            if (request.Includes("height_time_track")) result.Add(PictureTile.TestOverview(subject, "height_time_track", Vector3.up));
-            List<int> allKeyframes = GetAllAnalysisKeyframes(subject);
-            List<int> allFootEvents = GetAllFootEventFrames(subject);
-            IReadOnlyList<int?> keyframes = SelectUniformlySpacedKeyframes(subject, allKeyframes, 8);
-            IReadOnlyList<int?> steps = SelectFirstNonOverlappingFrames(subject, allFootEvents, 8);
-            if (request.Includes("3d_ghost"))
-            {
-                result.Add(PictureTile.TestSelectedOverview(subject, "3d_ghost", allKeyframes, new Vector3(1f, .75f, -1f)));
-            }
-            if (request.Includes("3d_ghost_track"))
-            {
-                result.Add(PictureTile.TestSelectedOverview(subject, "3d_ghost_track", allFootEvents, new Vector3(1f, .75f, -1f)));
-            }
-            if (request.Includes("key_pose"))
-            {
-                for (int index = 0; index < keyframes.Count; index++) result.Add(PictureTile.TestPoseSlot(subject, keyframes[index], "key_pose", index + 1));
-            }
-            if (request.Includes("step_pose"))
-            {
-                for (int index = 0; index < steps.Count; index++) result.Add(PictureTile.TestPoseSlot(subject, steps[index], "step_pose", index + 1));
-            }
             return result;
         }
 

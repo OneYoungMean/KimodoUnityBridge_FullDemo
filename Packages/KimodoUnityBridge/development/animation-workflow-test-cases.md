@@ -8,7 +8,7 @@ These are interactive acceptance tests for the Skill workflow, not Unity unit te
 - The plan selects a task route, distinguishes current commands, inspected APIs, planned capabilities, and unavailable routes, and keeps capability separate from criterion results. Check gates may be re-entered; unrelated passing work is not regenerated.
 - The request adds only supported structured constraints, validates time bases and references, and stops when an exact input cannot be resolved.
 - When a command is asynchronous, the loop saves its exact `request_id`, checks warnings, polls to a terminal state, and does not duplicate an in-flight request. Timeout preserves the pending ID for resumption.
-- Evaluated Humanoid Clips use `animation.analyze`; prop/integration checks inspect the evaluated scene. Returned image evidence is opened before visual claims, and unsupported conclusions remain unknown.
+- Evaluated Humanoid Clips use `animation.analysis`; prop/integration checks inspect the evaluated scene. Returned image evidence is opened before visual claims, and unsupported conclusions remain unknown.
 - A correction produces a distinct derived Clip and repeats only the affected loop steps; earlier Clips and their history remain available.
 - Candidate decisions cite the current scene/session, Clip, Timeline range, and matching evidence. Old images or another candidate's analysis are not reused as proof.
 - The loop records a finite budget and its stop reason. The local default is one initial candidate and two targeted revisions per failing criterion; task-specific limits take precedence. Two consecutive attempts without meaningful improvement stop that revision loop.
@@ -21,7 +21,7 @@ These are interactive acceptance tests for the Skill workflow, not Unity unit te
 
 **Setup:** Any valid humanoid character in the current scene.
 
-**Exercise:** Run the reusable loop without adding path, Pose, or loop constraints unless the live scene or user requirement establishes a need. Generate, poll, run `animation.analyze` on one Clip, and inspect its returned image.
+**Exercise:** Run the reusable loop without adding path, Pose, or loop constraints unless the live scene or user requirement establishes a need. Generate, poll, run `animation.analysis` on one Clip, and inspect its returned image.
 
 **Pass when:** the plan preserves the planted greeting and relaxed ending; no unsupported spatial constraints are submitted; the report distinguishes visible evidence from unverified playback quality.
 
@@ -29,7 +29,7 @@ These are interactive acceptance tests for the Skill workflow, not Unity unit te
 
 **Request:** “Use the analyzed path from the selected source Clip as a movement reference for this new action.”
 
-**Setup:** A valid humanoid and a source Clip whose `animation.analyze` result contains `clip.root_trajectory.path`.
+**Setup:** A valid humanoid and a source Clip whose `animation.analysis` result contains `clip.root_trajectory.path`.
 
 **Exercise:** Resolve the source Clip from current scene context, confirm its analysis result and path `{track,index}`, then construct `root_path` using that returned reference. Inspect warnings and analyze the generated result.
 

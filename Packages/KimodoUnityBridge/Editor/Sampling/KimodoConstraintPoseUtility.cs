@@ -9,6 +9,23 @@ namespace KimodoBridge.Editor
 {
     internal static class KimodoConstraintPoseUtility
     {
+        internal static bool TryCreateRestPoseSample(
+            KimodoTimelineInOutConstraintContext context,
+            out KimodoMarkerSampleResult sample,
+            out string error)
+        {
+            sample = null;
+            if (context?.Animator == null)
+            {
+                error = "Constraint rest pose requires the bound Character Animator.";
+                return false;
+            }
+            var avatar = KimodoLocalAvatarUtility.ResolveTimelineSourceAvatar(context.Track, context.Animator);
+            return KimodoInOutConstraintTools.TryCaptureOriginalScenePose(
+                context.Animator.transform.root.gameObject, context.Animator, avatar.Avatar,
+                restPose: true, characterName: context.Animator.name, out sample, out error);
+        }
+
         internal static KimodoMarkerSampleResult BuildCapturedSampleResult(
             MuscleSample sample,
             RetargetSkeleton cache,

@@ -382,15 +382,17 @@ namespace KimodoUnityBridge.Command.Tests
         }
 
         [Test]
-        public void PoseTest_HelpSeparatesMeasuredPoseFromGenerationWarnings()
+        public void PoseAnalysis_HelpDocumentsSynchronousMeasurement()
         {
             JObject manual = JObject.Parse(command_dispatcher.Invoke(
-                "kimodo.help", new JObject { ["command"] = "pose.test" }.ToString()))["manual"] as JObject;
+                "kimodo.help", new JObject { ["command"] = "pose.analysis" }.ToString()))["manual"] as JObject;
             Assert.That(manual, Is.Not.Null);
-            Assert.That(manual["inputSchema"]?["required"]?.Values<string>(), Does.Contain("pose"));
-            Assert.That(manual["inputSchema"]?["properties"]?["targets"]?["items"]?["properties"]?["tolerance_m"]?.Value<double>("default"), Is.EqualTo(0.05));
-            Assert.That(string.Join(" ", manual["documentation"]?["result_notes"]?.Values<string>() ?? Enumerable.Empty<string>()), Does.Contain("measured").IgnoreCase);
-            Assert.That(string.Join(" ", manual["documentation"]?["limits"]?.Values<string>() ?? Enumerable.Empty<string>()), Does.Contain("Generation-time pose/effector safety preflight").IgnoreCase);
+            Assert.That(manual["inputSchema"]?["required"]?.Values<string>(), Does.Contain("constraints"));
+            Assert.That(manual["inputSchema"]?["properties"]?["constraints"]?["minItems"]?.Value<int>(), Is.EqualTo(1));
+            Assert.That(manual["inputSchema"]?["properties"]?["combine"]?["default"]?.Value<bool>(), Is.False);
+            Assert.That(manual["outputSchema"]?["properties"]?["request_id"], Is.Null);
+            Assert.That(string.Join(" ", manual["documentation"]?["result_notes"]?.Values<string>() ?? Enumerable.Empty<string>()), Does.Contain("synchronous").IgnoreCase);
+            Assert.That(string.Join(" ", manual["documentation"]?["result_notes"]?.Values<string>() ?? Enumerable.Empty<string>()), Does.Contain("joint").IgnoreCase);
         }
 
         [TestCase("{'pose':{'track':'poses','index':0},'effector':{'right_hand':{'position':[1,2,3]}}}", true)]

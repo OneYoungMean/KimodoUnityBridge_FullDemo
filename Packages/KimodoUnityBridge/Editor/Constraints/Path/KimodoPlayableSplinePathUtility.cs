@@ -155,17 +155,13 @@ namespace KimodoBridge.Editor
                 }
 
                 double sampleTime = timelineClip.start + (durationSeconds * t);
-                if (!KimodoTimelineConstraintMarkerSampler.TrySampleMarker(
+                if (!KimodoConstraintPoseUtility.TryCreateRestPoseSample(
                         context,
-                        sampleTime,
-                        sampleTime,
-                        "fullbody",
-                        context.ModelName,
                         out KimodoMarkerSampleResult sample,
                         out error) || sample.rootOverride == null)
                 {
                     error = string.IsNullOrEmpty(error)
-                        ? "Spline Path could not sample the complete root transform."
+                        ? "Spline Path could not build the Avatar rest pose."
                         : error;
                     return false;
                 }
@@ -540,33 +536,11 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            if (context.Director != null && context.Animator != null)
-            {
-                double originalTime = context.Director.time;
-                try
-                {
-                    context.Director.time = context.SourceClip.start;
-                    context.Director.Evaluate();
-                    position = context.Animator.rootPosition;
-                    rotation = context.Animator.rootRotation;
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    error = $"Resolve spline path start pose failed: {ex.Message}";
-                    return false;
-                }
-                finally
-                {
-                    RestoreDirectorTime(context.Director, originalTime);
-                }
-            }
+            if (!KimodoConstraintPoseUtility.TryCreateRestPoseSample(context, out var restPose, out error))
+                return false;
 
-            KimodoTimelineTrackOffsetUtility.ResolveWorldOffset(
-                context.Track,
-                context.Animator,
-                out position,
-                out rotation);
+            position = restPose.rootOverride.t;
+            rotation = restPose.rootOverride.q;
             return true;
         }
 

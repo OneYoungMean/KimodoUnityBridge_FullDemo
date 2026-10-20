@@ -25,6 +25,9 @@ namespace KimodoUnityBridge.Command
         private sealed class AnalysisCaptureLightScope : IDisposable
         {
             private readonly List<Tuple<Light, bool>> restoredLights = new List<Tuple<Light, bool>>();
+            private readonly AmbientMode previousAmbientMode = RenderSettings.ambientMode;
+            private readonly Color previousAmbientLight = RenderSettings.ambientLight;
+            private readonly float previousAmbientIntensity = RenderSettings.ambientIntensity;
 
             private void DisableSceneLights()
             {
@@ -47,6 +50,9 @@ namespace KimodoUnityBridge.Command
             public AnalysisCaptureLightScope()
             {
                 DisableSceneLights();
+                RenderSettings.ambientMode = AmbientMode.Flat;
+                RenderSettings.ambientLight = Color.white;
+                RenderSettings.ambientIntensity = 15f;
             }
 
             public void Refresh()
@@ -63,6 +69,9 @@ namespace KimodoUnityBridge.Command
                 Shader.SetGlobalVector("_KimodoEvidenceKey", Vector4.zero);
                 Shader.SetGlobalVector("_KimodoEvidenceFill", Vector4.zero);
                 Shader.SetGlobalVector("_KimodoEvidenceRim", Vector4.zero);
+                RenderSettings.ambientMode = previousAmbientMode;
+                RenderSettings.ambientLight = previousAmbientLight;
+                RenderSettings.ambientIntensity = previousAmbientIntensity;
                 restoredLights.Clear();
             }
         }
@@ -142,7 +151,7 @@ namespace KimodoUnityBridge.Command
             }
         }
 
-        private static Texture2D RenderPictureTile(PictureTile tile, int width, int height, TrajectoryScale trajectoryScale)
+        private static Texture2D RenderPictureTile(PictureTile tile, int width, int height, TrajectoryScale trajectoryScale, CapturePosePool posePool = null)
         {
             if (tile.Presentation == "test_empty_pose")
             {
@@ -152,18 +161,18 @@ namespace KimodoUnityBridge.Command
             {
                 string type = tile.TestTileType ?? string.Empty;
                 if (type == "3d_track") return RenderRoot2DPictureTile(PictureTile.TestRoot2D(tile.Subject, tile.Direction), width, height);
-                if (type == "height_time_track") return RenderTestHeightTimeTile(tile, width, height);
-                if (type == "3d_ghost" || type == "3d_ghost_track") return RenderTestPictureTile(tile, width, height, trajectoryScale);
+                if (type == "height_time_track") return RenderTestHeightTimeTile(tile, width, height, posePool);
+                if (type == "3d_ghost" || type == "3d_ghost_track") return RenderTestPictureTile(tile, width, height, trajectoryScale, posePool);
                 PictureTile mapped = type == "3d_ghost"
                     ? PictureTile.TestKeyframes(tile.Subject, tile.Direction)
                     : type == "3d_ghost_track"
                         ? PictureTile.TestFootTransitions(tile.Subject, tile.Direction)
                         : PictureTile.TestRoot2D(tile.Subject, tile.Direction);
-                return RenderPictureTile(mapped, width, height, trajectoryScale);
+                return RenderPictureTile(mapped, width, height, trajectoryScale, posePool);
             }
             if (tile.Presentation == "test_selected_3d_ghost" || tile.Presentation == "test_selected_3d_ghost_track")
             {
-                return RenderTestPictureTile(tile, width, height, trajectoryScale);
+                return RenderTestPictureTile(tile, width, height, trajectoryScale, posePool);
             }
             if (tile.Presentation == "test_root2d")
             {
@@ -196,7 +205,7 @@ namespace KimodoUnityBridge.Command
             }
             if (tile.Presentation == "test_pose")
             {
-                return RenderTestPoseTile(tile, width, height);
+                return RenderTestPoseTile(tile, width, height, posePool);
             }
 
             int size = width;
@@ -307,7 +316,8 @@ namespace KimodoUnityBridge.Command
             return Mathf.Max(.001f, maxY - minY);
         }
 
-        private static Texture2D RenderTestHeightTimeTile(PictureTile tile, int width, int height)
+        private static Texture2D RenderTestHeightTimeTile(
+            PictureTile tile, int width, int height, CapturePosePool posePool = null)
         {
             SubjectPictureData subject = tile.Subject;
             int lastFrame = Math.Max(0, subject.Pelvis.Length - 1);
@@ -322,7 +332,8 @@ namespace KimodoUnityBridge.Command
                 curvePoints.Add(new Vector3(0f, subject.Pelvis[frame].y, z));
             }
 
-            using (TestPosePlan posePlan = BuildTestPosePlan(subject, poseFrames))
+            TestPosePlan posePlan = posePool?.GetPlan(subject) ?? BuildTestPosePlan(subject, poseFrames);
+            try
             {
                 Bounds contentBounds = new Bounds(curvePoints.Count > 0 ? curvePoints[0] : Vector3.zero, Vector3.zero);
                 foreach (Vector3 point in curvePoints) contentBounds.Encapsulate(point);
@@ -381,11 +392,13 @@ namespace KimodoUnityBridge.Command
                 {
                     int frame = poseFrames[index];
                     float alpha = GhostAlpha(index, poseFrames.Count, separated);
-                    poses.Add(CreateGhostVirtualPose(
-                        posePlan.Get(frame),
-                        ResolveGhostPoseTint(subject, frame),
-                        alpha,
-                        poseTargets[frame]));
+                        poses.Add(posePool != null
+                        ? posePool.Get(subject, frame, poseTargets[frame])
+                        : CreateTestVirtualPose(
+                            posePlan.Get(frame),
+                            ResolveGhostPoseTint(subject, frame),
+                            alpha,
+                            poseTargets[frame]));
                 }
 
                 Camera camera = CreateTestAnalysisPictureCamera(
@@ -404,9 +417,16 @@ namespace KimodoUnityBridge.Command
                 finally
                 {
                     UnityEngine.Object.DestroyImmediate(camera.gameObject);
-                    foreach (TestVirtualPose pose in poses) pose.Dispose();
+                    if (posePool == null)
+                    {
+                        foreach (TestVirtualPose pose in poses) pose.Dispose();
+                    }
                     foreach (GameObject item in environment) if (item != null) UnityEngine.Object.DestroyImmediate(item);
                 }
+            }
+            finally
+            {
+                if (posePool == null) posePlan?.Dispose();
             }
         }
 
@@ -635,7 +655,12 @@ namespace KimodoUnityBridge.Command
             }
         }
 
-        private static Texture2D RenderTestPictureTile(PictureTile tile, int width, int height, TrajectoryScale trajectoryScale)
+        private static Texture2D RenderTestPictureTile(
+            PictureTile tile,
+            int width,
+            int height,
+            TrajectoryScale trajectoryScale,
+            CapturePosePool posePool = null)
         {
             int lastFrame = Math.Max(0, tile.Subject.Pelvis.Length - 1);
             var requestedFrames = tile.TrajectoryFrames;
@@ -647,7 +672,8 @@ namespace KimodoUnityBridge.Command
             // BuildSubjectPictureData already sampled every frame. Reuse those
             // canonical poses for both trajectory points and ghost snapshots so
             // the renderer never has a second AnimationClip sampling path.
-            using (TestPosePlan posePlan = BuildTestPosePlan(tile.Subject, requestedFrames))
+            TestPosePlan posePlan = posePool?.GetPlan(tile.Subject) ?? BuildTestPosePlan(tile.Subject, requestedFrames);
+            try
             {
                 var virtualPoses = new List<TestVirtualPose>();
                 bool eventOnly = tile.Presentation == "test_selected_3d_ghost_track";
@@ -671,16 +697,21 @@ namespace KimodoUnityBridge.Command
                             alpha = Mathf.Min(MaxPromotedGhostAlpha, alpha + StationaryTrajectoryAlphaBoost);
                         }
                         alpha = Mathf.Clamp01(alpha);
-                        virtualPoses.Add(CreateTestVirtualPose(
-                            posePlan.Get(frame), tint, alpha));
+                        virtualPoses.Add(posePool != null
+                            ? posePool.Get(tile.Subject, frame)
+                            : CreateTestVirtualPose(posePlan.Get(frame), tint, alpha));
                     }
                 }
                 if (!eventOnly)
                 {
                     Color startTint = ResolveTestPoseTint(tile, 0, out _, out _);
                     Color endTint = ResolveTestPoseTint(tile, lastFrame, out _, out _);
-                    virtualPoses.Add(CreateTestVirtualPose(posePlan.Get(0), startTint, 1f));
-                    virtualPoses.Add(CreateTestVirtualPose(posePlan.Get(lastFrame), endTint, 1f));
+                    virtualPoses.Add(posePool != null
+                        ? posePool.Get(tile.Subject, 0)
+                        : CreateTestVirtualPose(posePlan.Get(0), startTint, 1f));
+                    virtualPoses.Add(posePool != null
+                        ? posePool.Get(tile.Subject, lastFrame)
+                        : CreateTestVirtualPose(posePlan.Get(lastFrame), endTint, 1f));
                 }
 
                 Bounds contentBounds = CalculateTestContentBounds(tile.Subject);
@@ -710,15 +741,19 @@ namespace KimodoUnityBridge.Command
                 finally
                 {
                     UnityEngine.Object.DestroyImmediate(camera.gameObject);
-                    foreach (TestVirtualPose pose in virtualPoses)
+                    if (posePool == null)
                     {
-                        pose.Dispose();
+                        foreach (TestVirtualPose pose in virtualPoses) pose.Dispose();
                     }
                     foreach (GameObject item in environment)
                     {
                         if (item != null) UnityEngine.Object.DestroyImmediate(item);
                     }
                 }
+            }
+            finally
+            {
+                if (posePool == null) posePlan?.Dispose();
             }
         }
 
@@ -727,12 +762,13 @@ namespace KimodoUnityBridge.Command
             int targetWidth,
             int targetHeight,
             TrajectoryScale trajectoryScale,
-            int supersample)
+            int supersample,
+            CapturePosePool posePool = null)
         {
             int scale = Mathf.Max(1, supersample);
             if (scale == 1)
             {
-                return RenderPictureTile(tile, targetWidth, targetHeight, trajectoryScale);
+                return RenderPictureTile(tile, targetWidth, targetHeight, trajectoryScale, posePool);
             }
 
             if (tile.Presentation == "test_pose")
@@ -740,7 +776,7 @@ namespace KimodoUnityBridge.Command
                 // The final tile rect is authoritative. Render the pose with
                 // that aspect so the orthographic camera fits its OBB into the
                 // target viewport; never stretch a rendered character image.
-                Texture2D source = RenderTestPoseTile(tile, targetWidth * scale, targetHeight * scale);
+                Texture2D source = RenderTestPoseTile(tile, targetWidth * scale, targetHeight * scale, posePool);
                 try
                 {
                     return ResizeTexture(source, targetWidth, targetHeight);
@@ -755,7 +791,8 @@ namespace KimodoUnityBridge.Command
                 tile,
                 Mathf.Max(1, targetWidth * scale),
                 Mathf.Max(1, targetHeight * scale),
-                trajectoryScale);
+                trajectoryScale,
+                posePool);
             try
             {
                 return ResizeTexture(highResolution, targetWidth, targetHeight);
@@ -766,7 +803,8 @@ namespace KimodoUnityBridge.Command
             }
         }
 
-        private static Texture2D RenderTestPoseTile(PictureTile tile, int targetWidth, int targetHeight)
+        private static Texture2D RenderTestPoseTile(
+            PictureTile tile, int targetWidth, int targetHeight, CapturePosePool posePool = null)
         {
             int frame = Mathf.Clamp(tile.Frame, 0, Math.Max(0, tile.Subject.Pelvis.Length - 1));
             Vector3[] viewPoints =
@@ -796,12 +834,15 @@ namespace KimodoUnityBridge.Command
             // (e.g., 1920 → 710px tiles → 2840px max render, not capped at 1024).
             int sourceHeight = Mathf.Clamp(Mathf.Max(256, targetHeight * 2), 256, targetHeight * 4);
             int sourceWidth = Math.Max(1, Mathf.RoundToInt(sourceHeight * aspect));
-            using (TestPosePlan posePlan = BuildTestPosePlan(tile.Subject, new[] { frame }))
+            TestPosePlan posePlan = posePool?.GetPlan(tile.Subject) ?? BuildTestPosePlan(tile.Subject, new[] { frame });
+            try
             {
-                TestVirtualPose pose = CreateTestVirtualPose(
-                    posePlan.Get(frame),
-                    ResolveSingleTestPoseTint(tile, frame),
-                    1f);
+                TestVirtualPose pose = posePool != null
+                    ? posePool.Get(tile.Subject, frame)
+                    : CreateTestVirtualPose(
+                        posePlan.Get(frame),
+                        ResolveSingleTestPoseTint(tile, frame),
+                        1f);
                 try
                 {
                     Bounds contentBounds = new Bounds(viewPoints[0], Vector3.zero);
@@ -839,8 +880,12 @@ namespace KimodoUnityBridge.Command
                 }
                 finally
                 {
-                    pose.Dispose();
+                    if (posePool == null) pose.Dispose();
                 }
+            }
+            finally
+            {
+                if (posePool == null) posePlan?.Dispose();
             }
         }
 
@@ -855,6 +900,59 @@ namespace KimodoUnityBridge.Command
             return RenderGpuPoseLayers(camera, environment, poses, width, height, background, true);
         }
 
+        private static Texture2D RenderCpuPoseLayers(
+            Camera camera,
+            IReadOnlyList<GameObject> environment,
+            IReadOnlyList<TestVirtualPose> poses,
+            int width,
+            int height,
+            Color background,
+            bool includeTrajectories)
+        {
+            Texture2D result = null;
+            try
+            {
+                SetEvidenceVisualsEnabled(environment, false);
+                result = RenderCamera(camera, width, height, background);
+                foreach (TestVirtualPose pose in poses ?? Array.Empty<TestVirtualPose>())
+                {
+                    Vector3 previousPosition = pose.Preview != null ? pose.Preview.transform.position : Vector3.zero;
+                    bool moved = pose.HasTargetPosition && pose.Preview != null;
+                    if (moved) pose.Preview.transform.position = pose.TargetPosition;
+                    SetPreviewRenderersEnabled(pose.Preview, true);
+                    try
+                    {
+                        Texture2D layer = RenderCamera(camera, width, height, Color.clear);
+                        try { Composite(result, layer, pose.Alpha); }
+                        finally { UnityEngine.Object.DestroyImmediate(layer); }
+                    }
+                    finally
+                    {
+                        SetPreviewRenderersEnabled(pose.Preview, false);
+                        if (moved) pose.Preview.transform.position = previousPosition;
+                    }
+                }
+
+                if (includeTrajectories)
+                {
+                    SetEvidenceVisualsEnabled(environment, true);
+                    Texture2D layer = RenderCamera(camera, width, height, Color.clear);
+                    try { Composite(result, layer, 1f); }
+                    finally { UnityEngine.Object.DestroyImmediate(layer); }
+                }
+                return result;
+            }
+            catch
+            {
+                if (result != null) UnityEngine.Object.DestroyImmediate(result);
+                throw;
+            }
+            finally
+            {
+                SetEvidenceVisualsEnabled(environment, true);
+            }
+        }
+
         private static Texture2D RenderGpuPoseLayers(
             Camera camera,
             IReadOnlyList<GameObject> environment,
@@ -864,6 +962,12 @@ namespace KimodoUnityBridge.Command
             Color background,
             bool includeTrajectories)
         {
+            if (!SystemInfo.supportsComputeShaders ||
+                !SystemInfo.SupportsRandomWriteOnRenderTextureFormat(RenderTextureFormat.ARGB32) ||
+                !SystemInfo.SupportsRandomWriteOnRenderTextureFormat(RenderTextureFormat.RFloat))
+            {
+                return RenderCpuPoseLayers(camera, environment, poses, width, height, background, includeTrajectories);
+            }
             ComputeShader composite = Resources.Load<ComputeShader>("KimodoPoseDepthComposite");
             if (composite == null) throw new InvalidOperationException("KimodoPoseDepthComposite compute shader is unavailable.");
             Shader depthShader = Shader.Find("Hidden/Kimodo/PoseDepthEncode")

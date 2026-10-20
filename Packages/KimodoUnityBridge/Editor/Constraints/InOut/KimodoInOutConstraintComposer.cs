@@ -55,6 +55,15 @@ namespace KimodoBridge.Editor
                 built.CombinedSamples.AddRange(endSamples);
             }
 
+            if (!KimodoGenerationWarningCheckService.TryValidateRootMotionConstraints(
+                    built.CombinedSamples,
+                    KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName),
+                    out error))
+            {
+                error = $"Boundary constraints violate root motion limits: {error}";
+                return false;
+            }
+
             double normalizationAnchorWindowSeconds = request.AutoBeginAnchor
                 ? AutoBeginAnchorWindowSeconds
                 : double.PositiveInfinity;
@@ -69,8 +78,19 @@ namespace KimodoBridge.Editor
             }
             else if (autoBegin != null)
             {
-                built.CombinedSamples.Insert(0, autoBegin);
-                built.HasSyntheticAutoBeginConstraint = true;
+                var withAutoBegin = new List<KimodoMarkerSampleResult>(built.CombinedSamples.Count + 1)
+                {
+                    autoBegin
+                };
+                withAutoBegin.AddRange(built.CombinedSamples);
+                if (KimodoGenerationWarningCheckService.TryValidateRootMotionConstraints(
+                        withAutoBegin,
+                        KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName),
+                        out _))
+                {
+                    built.CombinedSamples.Insert(0, autoBegin);
+                    built.HasSyntheticAutoBeginConstraint = true;
+                }
             }
 
             float generationFrameRate = KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName);
@@ -137,45 +157,15 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            KimodoLocalAvatarUtility.AvatarResolveResult avatarResult =
-                KimodoLocalAvatarUtility.ResolveTimelineSourceAvatar(context.Track, context.Animator);
-            if (!avatarResult.IsHumanoid || !KimodoRetargetCoreUtility.IsValidHumanoid(avatarResult.Avatar))
-            {
-                error = string.IsNullOrWhiteSpace(avatarResult.Error)
-                    ? "Auto Begin FullBody constraint requires a valid Humanoid Avatar."
-                    : avatarResult.Error;
+            if (!KimodoConstraintPoseUtility.TryCreateRestPoseSample(context, out sample, out error))
                 return false;
-            }
 
-            bool restorePreview = KimodoTimelinePreviewRefreshUtility.TryDisablePreview(context.Director);
-            try
-            {
-                if (!KimodoInOutConstraintTools.TryCaptureOriginalScenePose(
-                        context.Animator.transform.root.gameObject,
-                        context.Animator,
-                        avatarResult.Avatar,
-                        restPose: false,
-                        characterName: context.Animator.name,
-                        out sample,
-                        out error))
-                {
-                    return false;
-                }
-
-                sample.constraintMode = "fullbody";
-                sample.sampleTime = 0.0;
-                sample.enableMask = KimodoConstraintMask.ForType("fullbody");
-                sample.sampleValid = true;
-                sample.enabled = true;
-                return true;
-            }
-            finally
-            {
-                if (restorePreview && KimodoTimelinePreviewRefreshUtility.TryEnablePreview())
-                {
-                    KimodoTimelinePreviewRefreshUtility.RefreshEditorWorkflow(RefreshReason.SceneNeedsUpdate);
-                }
-            }
+            sample.constraintMode = "fullbody";
+            sample.sampleTime = 0.0;
+            sample.enableMask = KimodoConstraintMask.ForType("fullbody");
+            sample.sampleValid = true;
+            sample.enabled = true;
+            return true;
         }
 
     }

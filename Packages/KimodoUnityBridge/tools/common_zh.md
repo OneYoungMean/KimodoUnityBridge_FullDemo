@@ -44,9 +44,9 @@ string result = KimodoUnityBridge.Command.command_dispatcher.Invoke(commandName,
 
 坐标空间约定：
 
-- 公开命令中的位置和目标（`root`、`effector`、`pose.set` 和 `pose.test` 的目标）均使用 Unity 世界空间。
+- 公开命令中的位置和目标（`root`、`effector` 和 `pose.set`）均使用 Unity 世界空间。
 - 点约束中的 `root.rotation` 和 `effector.*.rotation` 接受以度为单位的欧拉角 `[x,y,z]`。每个 Transform 必须提供位置和／或旋转；省略的通道保留采样值。命令根据 root 选择 Root2D，根据 root + effector 选择 Effector，根据 pose 以及可选的 root／effector 选择 FullBody（通过 IK 求解）。空输入或只有 effector 的输入无效；同一命令中的重复帧会被拒绝。
-- `animation.analyze.root_trajectory` 返回世界空间数据。被分析的 Clip 从第 0 帧开始，因此其轨迹零点就是该命令使用的世界空间参考点。当 `animation.generate` 使用其 `root_path` 时，生成流程会基于目标角色在世界空间中的根位置和水平朝向，对该世界空间路径做一次解析。
+- `animation.analysis.root_trajectory` 返回世界空间数据。被分析的 Clip 从第 0 帧开始，因此其轨迹零点就是该命令使用的世界空间参考点。当 `animation.generate` 使用其 `root_path` 时，生成流程会基于目标角色在世界空间中的根位置和水平朝向，对该世界空间路径做一次解析。
 - 关节局部旋转和相机专用字段继续使用各自文档规定的空间；世界空间规则适用于位置和目标字段。
 
 任务开始时，维护一份简洁的循环状态：
@@ -112,13 +112,14 @@ schema 中存在某接口，只能证明接口存在，不能证明其产物满�
 1. 从当前场景解析参与的角色和对象。明确可见结果、动作顺序、接触点、时长和结束状态。说明假设。
 2. 识别可独立检验的动作节拍。只有局部修订或续接需要确实值得拆分时，才拆成多个 Clip；不同节拍不自动等于不同 Clip。记录角色 Clip、道具运动和 Timeline 绑定之间的依赖关系。
 3. 选择相关标准，区分必要约束和质量偏好。标准可以涉及语义、空间、时间、接触、结构、视觉或播放。说明可观察的检查方法，必要时给出容差；不要自行发明通用分数或通过阈值。
-4. 收集所需的最少证据：`scene.context`、`pose.get`、`pose.test`、`transform.capture`、已有 Clip 的分析结果，或已确认的对象 Transform。直接捕获关键帧时，向 `transform.capture` 传入 `character_path` 和绝对帧 `timeline_frame_60`；使用现有 External Pose 时，继续使用其 `{track,index}` 引用。进行视觉验收时，添加 `camera: {"mode":"scene","path":"Main Camera","auto_frame":true,"resolution":[1280,720]}`；这只在内存中克隆并调整场景相机，为捕获关闭由 HDR／Volume 引起的过曝，并恢复源相机。保留结构化四视图／位置证据作为客观补充。使用 `pose.test` 测量任意采样 Pose 中实际的 Humanoid 关节位置，并与接触目标比较；使用 Effector 约束生成后也应如此。生成时的 pose／effector 安全预检，只在同一个点约束明确同时包含 `pose` 和 `effector` 时运行；root + effector 约束跳过该检查；只有 effector 的输入无效，因为它缺少明确的 root 上下文。这类预检警告不阻断执行，也不能替代姿态实测结果。不要将每项观察都转成约束。
-5. 需要生成时，根据已确认的场景证据或明确要求，构造简短的语义提示词和受支持的结构化约束。精确的根位置、朝向、Pose、手／脚目标、循环、时长和续接数据，在支持时放入 Kimodo 字段；对象曲线、Timeline 轨道、绑定及其他资产编辑，则交给适合的 Unity 或项目 API。复用 `pose.get` 的 `{track,index}` 前，先检查其结果；未经检查的场景 T-pose 或 Clip 名称，不是已确认的续接来源。按依赖顺序生成 Clip，后续 Clip 使用已评估的前序结束状态。
-6. 只有确有需要时才生成或编辑候选，轮询异步请求，并保留 ID 和提交的设置。API 产物没有 Kimodo ID 时，保留实际资产／轨道引用。检查路径以现有产物为评估对象。
-7. 先评估相关硬性要求，再按需检查结构、场景交互和播放／质量标准。使用 `animation.analyze` 评估 Humanoid Clip；使用求值后的场景测量和适当 API 检查道具／Timeline。作出视觉结论前，先打开返回图像。接受某项标准前，核对下文规定的证据与产物对应关系。
-8. 只有存在多个候选或用户要求比较时，才进行候选比较。采用相同条件，逐项判断标准。
-9. 有证据表明某项标准失败时，只修改相关输入，并创建派生候选。缺少证据时，补充证据或报告 unknown；不要盲目重试。
-10. 应用下文的停止与交接规则。没有新证据或输入变化时，不要重复提交完全相同的请求。
+4. 收集所需的最少证据：`scene.context`、`pose.get`、`pose.analysis`、已有 Clip 的分析结果，或已确认的对象 Transform。生成前，将准备好的 point `constraints` 原样传给 `pose.analysis`，并检查每个截图中的姿势；设置 `combine=true` 可在一张 SceneView 图中以不透明角色叠加显示。命令会返回关节世界位置，以及关节到 effector 目标的距离。`pose.analysis` 与 `animation.analysis` 共用 `camera`；未显式传参时，SceneView 光照、天空盒、Gizmos 和网格沿用当前设置。生成时的 pose／effector 安全预检，只在同一个点约束明确同时包含 `pose` 和 `effector` 时运行；root + effector 约束跳过该检查；只有 effector 的输入无效，因为它缺少明确的 root 上下文。这类预检警告不阻断执行，也不能替代姿态实测结果。
+5. 当任务需要制作或修改动作 Pose 时，优先从 Clip 派生 Pose：先生成或选取一段初始 Clip，用 `pose.get` 物化目标帧，再把返回的 `{track,index}` 放入传给 `pose.analysis` 的 point constraint。检查截图确认姿势后，将同一条约束用于生成。没有动作上下文 Pose 时，或用户明确要求中性基线时，才使用 Avatar rest pose 作为默认初始化。不要用 rest pose 代替弯腰、伸手、接触等具体表演 Pose。
+6. 需要生成时，根据已确认的场景证据或明确要求，构造简短的语义提示词和受支持的结构化约束。精确的根位置、朝向、Pose、手／脚目标、循环、时长和续接数据，在支持时放入 Kimodo 字段；对象曲线、Timeline 轨道、绑定及其他资产编辑，则交给适合的 Unity 或项目 API。复用 `pose.get` 的 `{track,index}` 前，先检查其结果；未经检查的场景 T-pose 或 Clip 名称，不是已确认的续接来源。按依赖顺序生成 Clip，后续 Clip 使用已评估的前序结束状态。约束没有显式 Pose 时，可以使用 Avatar rest pose 初始化，但报告中必须将其与从 Clip 派生的动作 Pose 区分开。
+7. 只有确有需要时才生成或编辑候选，轮询异步请求，并保留 ID 和提交的设置。API 产物没有 Kimodo ID 时，保留实际资产／轨道引用。检查路径以现有产物为评估对象。
+8. 先评估相关硬性要求，再按需检查结构、场景交互和播放／质量标准。使用 `animation.analysis` 评估 Humanoid Clip；使用求值后的场景测量和适当 API 检查道具／Timeline。作出视觉结论前，先打开返回图像。接受某项标准前，核对下文规定的证据与产物对应关系。
+9. 只有存在多个候选或用户要求比较时，才进行候选比较。采用相同条件，逐项判断标准。
+10. 有证据表明某项标准失败时，只修改相关输入，并创建派生候选。缺少证据时，补充证据或报告 unknown；不要盲目重试。
+11. 应用下文的停止与交接规则。没有新证据或输入变化时，不要重复提交完全相同的请求。
 
 ## 识别约定
 

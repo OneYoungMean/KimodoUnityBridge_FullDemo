@@ -22,9 +22,9 @@ namespace KimodoUnityBridge.Command
             command_context.RegisterPrecomputedAnalysis(clip, analysis, samples);
         }
 
-        public static bool TryRenderSelectedAnalysis(TimelineClip[] selectedClips, JObject picture, int resolution, out string imagePath, out string error)
+        public static bool TryRenderSelectedAnalysis(TimelineClip[] selectedClips, int resolution, out string imagePath, out string error)
         {
-            return command_context.TryRenderSelectedAnalysis(selectedClips, picture, resolution, out imagePath, out error);
+            return command_context.TryRenderSelectedAnalysis(selectedClips, resolution, out imagePath, out error);
         }
     }
 
@@ -44,7 +44,7 @@ namespace KimodoUnityBridge.Command
             };
         }
 
-        internal static bool TryRenderSelectedAnalysis(TimelineClip[] selectedClips, JObject picture, int resolution, out string imagePath, out string error)
+        internal static bool TryRenderSelectedAnalysis(TimelineClip[] selectedClips, int resolution, out string imagePath, out string error)
         {
             imagePath = string.Empty;
             error = string.Empty;
@@ -54,7 +54,6 @@ namespace KimodoUnityBridge.Command
                 EnsureTimelineSessionsRestored();
                 TimelineSessionRecord session = currentTimelineSession;
                 if (session == null) { error = "No active scene context is available for rendering analysis pictures."; return false; }
-                AnalysisPictureRequest pictureRequest = AnalysisPictureRequest.Parse(picture);
                 var subjects = new System.Collections.Generic.List<AnalysisSubject>();
                 foreach (TimelineClip selectedClip in selectedClips ?? Array.Empty<TimelineClip>())
                 {
@@ -104,8 +103,8 @@ namespace KimodoUnityBridge.Command
                 JObject pictures = RenderAnalysisPictures(
                     session,
                     subjects,
-                    pictureRequest.ToJson(),
-                    resolution < 64 ? 1920 : resolution);
+                    resolution < 64 ? 1920 : resolution,
+                    new JObject());
                 imagePath = pictures?.Value<string>("image_path") ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(imagePath)) { error = "Analysis picture rendering completed without an image path."; return false; }
                 return true;

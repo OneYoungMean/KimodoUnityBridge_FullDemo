@@ -42,7 +42,7 @@ Runtime diagnostics are written to `NvlabKimodoQuickServer~/log/setup.log` and `
 
 Read [SKILL.md](SKILL.md) for purpose, installation, and documentation navigation; the animation workflow, task routing, tool coordination, and shared evidence rules are in [`tools/common.md`](tools/common.md). `server.install` and `animation.generate` are asynchronous and return a `request_id`; poll either with `generation.get`. Command definitions are kept in [Command/help.json](Command/help.json).
 
-The temporary `analysis.video` and `analysis.picture` commands return SMPL-X pose arrays through `generation.get`. QuickServer bundles the Mixamo LLM Mocap pipeline and its 3.54 MB `SMPLX_NEUTRAL_LITE_V437.npz` asset for pose-only analysis; the full SMPL-X model is not required for these commands. Override the bundled source with `KIMODO_MOCAP_ROOT`, or set `KIMODO_MOCAP_PYTHON` to the GVHMR Python executable. Picture analysis estimates one pose from a short repeated still-image sequence.
+The asynchronous `pose.fromvideo` and `pose.frompicture` commands return SMPL-X pose arrays through `generation.get`. QuickServer bundles the Mixamo LLM Mocap pipeline and its 3.54 MB `SMPLX_NEUTRAL_LITE_V437.npz` asset for pose-only analysis; the full SMPL-X model is not required for these commands. Override the bundled source with `KIMODO_MOCAP_ROOT`, or set `KIMODO_MOCAP_PYTHON` to the GVHMR Python executable. Picture analysis estimates one pose from a short repeated still-image sequence.
 
 ## Developers and maintenance records
 

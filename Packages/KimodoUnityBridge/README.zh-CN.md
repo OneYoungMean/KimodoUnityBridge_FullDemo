@@ -42,7 +42,7 @@ https://github.com/OneYoungMean/KimodoUnityBridge.git
 
 [SKILL.md](SKILL.md) 介绍用途、安装和文档导航；动画工作流、任务分流、工具编排和共享证据规则位于 [`tools/common.md`](tools/common.md)。`server.install` 与 `animation.generate` 均为异步命令，都会返回 `request_id`，统一通过 `generation.get` 轮询。命令定义位于 [Command/help.json](Command/help.json)。
 
-临时加入的 `analysis.video` 和 `analysis.picture` 命令会通过 `generation.get` 返回 SMPL-X pose 数组。QuickServer 包含 Mixamo LLM Mocap 的 Python pipeline 和 UniMate 骨架渲染模块；如需覆盖内置源码路径，可设置 `KIMODO_MOCAP_ROOT` 或 `KIMODO_UNIMATE_ROOT`，也可以用 `KIMODO_MOCAP_PYTHON` 指定 GVHMR Python 解释器。GVHMR 检测权重会在首次分析时下载；pose-only 分析使用随 QuickServer 提供的 3.54 MB `SMPLX_NEUTRAL_LITE_V437.npz`，不需要下载完整 SMPL-X 模型。图片分析会把静态图像重复成短视频后估计一个姿态。
+异步命令 `pose.fromvideo` 和 `pose.frompicture` 会通过 `generation.get` 返回 SMPL-X pose 数组。QuickServer 包含 Mixamo LLM Mocap 的 Python pipeline 和 UniMate 骨架渲染模块；如需覆盖内置源码路径，可设置 `KIMODO_MOCAP_ROOT` 或 `KIMODO_UNIMATE_ROOT`，也可以用 `KIMODO_MOCAP_PYTHON` 指定 GVHMR Python 解释器。GVHMR 检测权重会在首次分析时下载；pose-only 分析使用随 QuickServer 提供的 3.54 MB `SMPLX_NEUTRAL_LITE_V437.npz`，不需要下载完整 SMPL-X 模型。图片分析会把静态图像重复成短视频后估计一个姿态。
 
 ## 开发者与维护记录
 

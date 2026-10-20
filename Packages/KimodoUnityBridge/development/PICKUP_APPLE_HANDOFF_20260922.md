@@ -80,7 +80,7 @@ A 的已知 Root2D 约束（60 FPS command frame）：
 不要只看 .anim 的局部 RootT。必须同时比较：
 - 直接 PlayableDirector.Evaluate() 后 Animator.GetBoneTransform() 的世界位置
 - pose.get 返回的 pose
-- transform.capture 的世界位置
+- pose.analysis 返回的关节世界位置
 - 生成 Clip 在 Timeline 上播放时的世界位置
 - TrackOffset、Animator.applyRootMotion 和 root 曲线
 
@@ -88,7 +88,7 @@ A 的已知 Root2D 约束（60 FPS command frame）：
 1. 检查当前 git diff，确认没有隐式 PathAngle 推断重新出现。
 2. 重新编译 Unity 项目。
 3. 优先验证 A_Root2D_Stand/A_Root2D_Stop 的多个本地采样点：0、480、510、545、575（按当前命令协议换算为 Clip-local 秒，不要擅自使用 Timeline-global pose.get 协议）。
-4. 将 pose.get、transform.capture、直接 Timeline Evaluate 的 hips/right hand/left foot/right foot 世界坐标比较。
+4. 将 pose.get、pose.analysis、直接 Timeline Evaluate 的 hips/right hand/left foot/right foot 世界坐标比较。
 5. A 的 generation completed、asset connected、static analysis、pose/capture、Play Mode、visual accepted 必须分别报告。
 6. A 通过后，再生成 B：使用 A 末尾作为 In 约束，右手位置约束指向苹果世界坐标，不传右手 rotation。
 7. B 通过后，再设置苹果 ParentConstraint：抓取前苹果在桌上，抓取时切换到右手，确保桌上和手上不会同时出现；验证停止、拖动、重播和重新打开场景。

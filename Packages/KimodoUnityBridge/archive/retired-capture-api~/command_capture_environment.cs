@@ -743,10 +743,7 @@ namespace KimodoUnityBridge.Command
 
         private static void CreateEvidenceLights(List<GameObject> objects, Vector3 center)
         {
-            // Characters use an Unlit evidence material, but the floor and
-            // other environment geometry remain Lit. Isolate them from
-            // arbitrary scene lights and provide a pipeline-calibrated
-            // evidence rig for every supported rendering pipeline.
+            // Keep the capture rig to one key light plus flat environment light.
             foreach (Light light in UnityEngine.Object.FindObjectsByType<Light>(FindObjectsSortMode.None))
             {
                 if (light != null && light.gameObject != null &&
@@ -755,47 +752,24 @@ namespace KimodoUnityBridge.Command
                     UnityEngine.Object.DestroyImmediate(light.gameObject);
                 }
             }
-            CapturePipeline pipeline = GetCapturePipeline();
-            var setups = new[]
-            {
-                // Keep the evidence rig calibrated per pipeline.
-                (name: "Key", position: new Vector3(-4f, 6f, -4f), intensity: pipeline == CapturePipeline.Hdrp ? 25f : pipeline == CapturePipeline.Urp ? 3f : 10f),
-                (name: "Fill", position: new Vector3(4f, 3f, -2f), intensity: pipeline == CapturePipeline.Hdrp ? 5f : pipeline == CapturePipeline.Urp ? 1.5f : 5f),
-                (name: "Rim", position: new Vector3(0f, 5f, 5f), intensity: pipeline == CapturePipeline.Hdrp ? 3f : pipeline == CapturePipeline.Urp ? .5f : 3f)
-            };
-            var directions = new Vector4[setups.Length];
-            for (int index = 0; index < setups.Length; index++)
-            {
-                var setup = setups[index];
-                GameObject lightObject = MoveToAnalysisSessionRoot(
-                    new GameObject("Kimodo Evidence Light " + setup.name) { hideFlags = HideFlags.HideAndDontSave });
-                Light light = lightObject.AddComponent<Light>();
-                light.type = LightType.Directional;
-                light.shadows = LightShadows.None;
-                Component hdrpLightData = null;
-                if (pipeline == CapturePipeline.Hdrp)
-                {
-                    Type type = FindLoadedType("UnityEngine.Rendering.HighDefinition.HDAdditionalLightData");
-                    if (type != null)
-                    {
-                        hdrpLightData = lightObject.AddComponent(type);
-                        type.GetMethod("InitDefaultHDAdditionalLightData", BindingFlags.Public | BindingFlags.Static)
-                            ?.Invoke(null, new object[] { hdrpLightData });
-                    }
-                }
-                light.intensity = setup.intensity;
-                hdrpLightData?.GetType().GetProperty("intensity")?.SetValue(hdrpLightData, setup.intensity);
-                light.color = Color.white;
-                light.cullingMask = 1 << SessionCaptureLayer;
-                lightObject.transform.position = center + setup.position;
-                lightObject.transform.LookAt(center);
-                Vector3 direction = -lightObject.transform.forward;
-                directions[index] = new Vector4(direction.x, direction.y, direction.z, setup.intensity);
-                objects.Add(lightObject);
-            }
-            Shader.SetGlobalVector("_KimodoEvidenceKey", directions[0]);
-            Shader.SetGlobalVector("_KimodoEvidenceFill", directions[1]);
-            Shader.SetGlobalVector("_KimodoEvidenceRim", directions[2]);
+            RenderSettings.ambientMode = AmbientMode.Flat;
+            RenderSettings.ambientLight = Color.white;
+            RenderSettings.ambientIntensity = 15f;
+            GameObject lightObject = MoveToAnalysisSessionRoot(
+                new GameObject("Kimodo Evidence Light Key") { hideFlags = HideFlags.HideAndDontSave });
+            Light keyLight = lightObject.AddComponent<Light>();
+            keyLight.type = LightType.Directional;
+            keyLight.shadows = LightShadows.None;
+            keyLight.intensity = 3f;
+            keyLight.color = Color.white;
+            keyLight.cullingMask = 1 << SessionCaptureLayer;
+            lightObject.transform.position = center + new Vector3(-4f, 6f, -4f);
+            lightObject.transform.LookAt(center);
+            Vector3 direction = -lightObject.transform.forward;
+            objects.Add(lightObject);
+            Shader.SetGlobalVector("_KimodoEvidenceKey", new Vector4(direction.x, direction.y, direction.z, 3f));
+            Shader.SetGlobalVector("_KimodoEvidenceFill", Vector4.zero);
+            Shader.SetGlobalVector("_KimodoEvidenceRim", Vector4.zero);
         }
 
         private static void CreateWorldLine(List<GameObject> objects, Vector3 from, Vector3 to, float width, Color color, bool unlit = false)

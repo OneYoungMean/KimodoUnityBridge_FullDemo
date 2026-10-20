@@ -24,6 +24,60 @@ namespace KimodoBridge.Editor
         private const float RootYJumpWarningMeters = 0.25f;
         private const string RootMotionLimitSuggestion = " Try splitting the action into multiple animation generations. For each following clip, use an In constraint (constraints[].inout.in) referencing the preceding clip.";
 
+        internal static bool TryValidateRootMotionConstraints(
+            IReadOnlyList<KimodoMarkerSampleResult> samples,
+            float frameRate,
+            out string error)
+        {
+            error = string.Empty;
+            var observations = (samples ?? Array.Empty<KimodoMarkerSampleResult>())
+                .Where(sample => sample?.sampleValid == true && sample.rootOverride != null)
+                .OrderBy(sample => sample.sampleTime)
+                .ToList();
+            Vector3 previousVelocity = Vector3.zero;
+            bool hasPreviousVelocity = false;
+            KimodoMarkerSampleResult previous = null;
+
+            for (int i = 0; i < observations.Count; i++)
+            {
+                KimodoMarkerSampleResult current = observations[i];
+                if (previous == null)
+                {
+                    previous = current;
+                    continue;
+                }
+
+                float dt = (float)(current.sampleTime - previous.sampleTime);
+                if (dt <= 1e-6f)
+                {
+                    previous = current;
+                    continue;
+                }
+
+                Vector3 velocity = (current.rootOverride.t - previous.rootOverride.t) / dt;
+                float speed = velocity.magnitude;
+                float acceleration = (velocity - (hasPreviousVelocity ? previousVelocity : Vector3.zero)).magnitude / dt;
+                if (speed > MaxSpeedMetersPerSecond)
+                {
+                    error = $"Root motion between frames {previous.sampleTime * frameRate:F0} and {current.sampleTime * frameRate:F0} " +
+                        $"reaches {speed:F3} m/s, exceeding the {MaxSpeedMetersPerSecond:F1} m/s constraint limit.";
+                    return false;
+                }
+                if (acceleration > MaxAccelerationMetersPerSecondSquared)
+                {
+                    error = $"Root motion near frame {current.sampleTime * frameRate:F0} reaches {acceleration:F3} m/s², " +
+                        $"exceeding the {MaxAccelerationMetersPerSecondSquared:F1} m/s² constraint limit.";
+                    return false;
+                }
+
+                previousVelocity = velocity;
+                hasPreviousVelocity = true;
+                previous = current;
+            }
+
+            return true;
+        }
+
         public static JObject Build(
             JObject arguments,
             int durationFrames,

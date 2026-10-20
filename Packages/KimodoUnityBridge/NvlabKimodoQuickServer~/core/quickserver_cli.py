@@ -74,12 +74,12 @@ def _build_protocol_help(kimodo_root: str = "") -> dict[str, Any]:
                 ],
             },
             {
-                "cmd": "analysis.video",
+                "cmd": "pose.fromvideo",
                 "description": "Estimate SMPL-X pose arrays from a local video using the configured Mixamo LLM Mocap checkout.",
                 "fields": ["media_path", "person"],
             },
             {
-                "cmd": "analysis.picture",
+                "cmd": "pose.frompicture",
                 "description": "Estimate one SMPL-X pose from a local picture using the configured Mixamo LLM Mocap checkout.",
                 "fields": ["media_path"],
             },
@@ -2066,8 +2066,8 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                                     close_session_locked(session, "Session closed.")
                                 reply({"status": "done", "session_id": bound_session_id})
                             return
-                        elif cmd in ("analysis.video", "analysis.picture"):
-                            kind = "video" if cmd == "analysis.video" else "picture"
+                        elif cmd in ("pose.fromvideo", "pose.frompicture"):
+                            kind = "video" if cmd == "pose.fromvideo" else "picture"
                             result = mocap_analysis.analyze_media(
                                 kind,
                                 request.get("media_path"),
@@ -2176,7 +2176,7 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                     except Exception as exc:
                         logger.log(f"[ERROR] Command '{cmd}' failed: {exc}")
                         error = {"status": "error", "message": str(exc)}
-                        if cmd in ("analysis.video", "analysis.picture"):
+                        if cmd in ("pose.fromvideo", "pose.frompicture"):
                             error["error_code"] = mocap_analysis.error_code_for_exception(exc)
                         reply(error)
             finally:

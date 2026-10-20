@@ -23,11 +23,11 @@ namespace KimodoBridge.Editor
             SerializedProperty autoSample = so.FindProperty("autoSample");
             if (autoSample != null)
             {
-                EditorGUILayout.PropertyField(autoSample, new GUIContent("Auto Sample"));
+                EditorGUILayout.PropertyField(autoSample, new GUIContent("Use Rest Pose"));
                 if (!autoSample.boolValue)
                 {
                     EditorGUILayout.HelpBox(
-                        "Enabling Auto Sample will overwrite the current effectors and motion.",
+                        "Enabling Use Rest Pose resets the current pose, root and effectors to the Avatar rest pose.",
                         MessageType.Info);
                 }
             }

@@ -107,6 +107,79 @@ namespace KimodoBridge.Editor.Tests
         }
 
 
+        [Test]
+        public void GenerateCommand_ImplicitPoseUsesAvatarRestPoseOnEmptyTrack(
+            [Values(0.0, 1.25, 100.0)] double sampleTime,
+            [Values] bool withEffector,
+            [Values] bool withSourceCharacter)
+        {
+            const string model = KimodoMotionModelProfiles.DefaultModelName;
+            Assert.That(KimodoRuntimeAvatarSkeletonBuilder.TryLoadAvatarByModelName(
+                model, out var avatar, out var error), Is.True, error);
+            Assert.That(KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(
+                avatar, "ImplicitConstraintRestPose", out var skeleton, out error), Is.True, error);
+            var timeline = ScriptableObject.CreateInstance<UnityEngine.Timeline.TimelineAsset>();
+            try
+            {
+                var track = timeline.CreateTrack<UnityEngine.Timeline.AnimationTrack>(null, "EmptyCharacter");
+                var character = new command_context.TimelineCharacterRecord("rest-test", skeleton.root,
+                    skeleton.animator, avatar, track, null, string.Empty);
+                var resolve = typeof(command_context).GetMethod("ResolveConstraintPose",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                var build = typeof(command_context).GetMethod("BuildCanonicalConstraint",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                Assert.That(KimodoInOutConstraintTools.TryCaptureOriginalScenePose(
+                    skeleton.root, skeleton.animator, avatar, true, character.Name,
+                    out var expected, out error), Is.True, error);
+
+                skeleton.root.transform.position = new Vector3(3f, -2f, 5f);
+                skeleton.animator.GetBoneTransform(HumanBodyBones.RightUpperArm).localRotation *= Quaternion.Euler(0, 0, 45);
+                var input = JObject.Parse(@"{'root':{'rotation':[0,35,0]}}");
+                if (withEffector)
+                    input["effector"] = JObject.Parse(@"{'right_hand':{'position':[1,1.2,0.5]}}");
+                var support = (KimodoMarkerSampleResult)resolve.Invoke(null, new object[]
+                {
+                    input, "point", skeleton, skeleton.root, withSourceCharacter ? character : null, new List<string>(), 0
+                });
+                Assert.That(support.sampleValid, Is.True);
+                Assert.That(Vector3.Distance(support.rootOverride.t, expected.rootOverride.t), Is.LessThan(0.001f));
+                Assert.That(Quaternion.Angle(support.rootOverride.q, expected.rootOverride.q), Is.LessThan(0.1f));
+                Assert.That(JToken.DeepEquals(KimodoConstraintPoseUtility.BuildPoseJson(support),
+                    KimodoConstraintPoseUtility.BuildPoseJson(expected)), Is.True);
+
+                var anchor = typeof(command_context).GetMethod("ResolveRootPathWorldAnchor",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                var anchorArguments = new object[]
+                {
+                    withSourceCharacter ? character : null, skeleton.root, avatar, 0f, null, null
+                };
+                anchor.Invoke(null, anchorArguments);
+                Assert.That(Vector3.Distance((Vector3)anchorArguments[4], expected.rootOverride.t), Is.LessThan(0.001f),
+                    "Root path initialization must not inherit the scene's current root transform.");
+                Assert.That(Quaternion.Angle((Quaternion)anchorArguments[5],
+                    KimodoMotionMath.ResolvePlanarHeading(expected.rootOverride.q)), Is.LessThan(0.1f));
+
+                var sample = (KimodoMarkerSampleResult)build.Invoke(null, new object[]
+                {
+                    input, skeleton, model, 30f, sampleTime, 0, skeleton.root,
+                    withSourceCharacter ? character : null, new List<string>()
+                });
+                Assert.That(sample.sampleTime, Is.EqualTo(sampleTime));
+                Assert.That(sample.constraintMode, Is.EqualTo(withEffector ? "effector" : "root2d"));
+                Assert.That(sample.rootOverride.t.y, Is.EqualTo(expected.rootOverride.t.y).Within(0.001f));
+                Assert.That(Quaternion.Angle(sample.rootOverride.q, Quaternion.Euler(0, 35, 0)), Is.LessThan(0.1f));
+                if (withEffector)
+                    Assert.That(sample.effectors.rightHand.t, Is.EqualTo(new Vector3(1, 1.2f, 0.5f)));
+                Assert.That(track.GetClips(), Is.Empty, "Implicit constraints must not create Timeline animation.");
+            }
+            finally
+            {
+                foreach (var track in timeline.GetRootTracks()) Object.DestroyImmediate(track);
+                Object.DestroyImmediate(timeline);
+                skeleton.Dispose();
+            }
+        }
+
         [TestCase(false), TestCase(true)]
         public void GenerateCommand_Root2DConstraintMatchesCanonicalSampleExport(bool withEffect)
         {

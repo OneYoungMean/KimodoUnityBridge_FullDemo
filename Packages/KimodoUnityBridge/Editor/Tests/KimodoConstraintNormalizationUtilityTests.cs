@@ -117,14 +117,130 @@ namespace KimodoBridge.Editor.Tests
                 Assert.That(result.CombinedSamples[0].constraintMode, Is.EqualTo("fullbody"));
                 Assert.That(result.CombinedSamples[0].sampleTime, Is.EqualTo(0.0).Within(1e-6));
                 Assert.That(result.CombinedSamples[0].sampleData.IsValid, Is.True);
-                Transform sceneHips = fixture.Skeleton.animator.GetBoneTransform(HumanBodyBones.Hips);
-                Assert.That(sceneHips, Is.Not.Null);
+                Assert.That(KimodoConstraintPoseUtility.TryCreateRestPoseSample(
+                    CreateAutoBeginRequest(fixture).TimelineContext, out var restPose, out var error), Is.True, error);
                 Assert.That(
-                    Vector3.Distance(result.CombinedSamples[0].rootOverride.t, sceneHips.position),
+                    Vector3.Distance(result.CombinedSamples[0].rootOverride.t, restPose.rootOverride.t),
                     Is.LessThan(0.01f),
-                    "AutoBegin must capture the bound Animator pose even when the Animator is nested under a scene root.");
+                    "AutoBegin must use Avatar rest pose even when the scene Animator has offsets.");
                 Assert.That(result.ConstraintsJson, Does.Contain("\"type\": \"fullbody\""));
                 Assert.That(result.HasSyntheticAutoBeginConstraint, Is.True);
+            }
+        }
+
+        [Test]
+        public void AutoBegin_IsSkippedWhenItWouldExceedRootMotionLimits()
+        {
+            using (AutoBeginSceneFixture fixture = CreateAutoBeginSceneFixture())
+            {
+                var fastBoundary = new KimodoMarkerSampleResult
+                {
+                    sampleValid = true,
+                    constraintMode = "root2d",
+                    sampleTime = 1.1,
+                    rootOverride = new KimodoUnityBridge.KimodoRigidTransform
+                    {
+                        t = new Vector3(9f, 0.8879f, 0f),
+                        q = Quaternion.identity
+                    },
+                    enableMask = KimodoConstraintMask.ForType("root2d")
+                };
+
+                Assert.That(KimodoInOutConstraintComposer.TryBuild(
+                    CreateAutoBeginRequest(fixture, fastBoundary),
+                    out var result, out _, out var error), Is.True, error);
+                Assert.That(result.HasSyntheticAutoBeginConstraint, Is.False);
+                Assert.That(result.CombinedSamples, Has.Count.EqualTo(1));
+                Assert.That(result.CombinedSamples[0].sampleTime, Is.EqualTo(1.1));
+            }
+        }
+
+        [Test]
+        public void ConstraintComposer_RejectsBoundaryMotionAboveSpeedLimit()
+        {
+            using (AutoBeginSceneFixture fixture = CreateAutoBeginSceneFixture())
+            {
+                var request = CreateAutoBeginRequest(fixture,
+                    new KimodoMarkerSampleResult
+                    {
+                        sampleValid = true, sampleTime = 0.0,
+                        rootOverride = new KimodoUnityBridge.KimodoRigidTransform { t = Vector3.zero }
+                    },
+                    new KimodoMarkerSampleResult
+                    {
+                        sampleValid = true, sampleTime = 0.5,
+                        rootOverride = new KimodoUnityBridge.KimodoRigidTransform { t = new Vector3(5f, 0f, 0f) }
+                    });
+                request.AutoBeginAnchor = false;
+
+                Assert.That(KimodoInOutConstraintComposer.TryBuild(request,
+                    out _, out _, out string error), Is.False);
+                StringAssert.Contains("Boundary constraints", error);
+                StringAssert.Contains("7.0 m/s", error);
+            }
+        }
+
+        [Test]
+        public void BoundaryConstraints_AreRejectedWhenTheyExceedAccelerationLimit()
+        {
+            var samples = new List<KimodoMarkerSampleResult>
+            {
+                new KimodoMarkerSampleResult
+                {
+                    sampleValid = true, sampleTime = 0.0,
+                    rootOverride = new KimodoUnityBridge.KimodoRigidTransform { t = Vector3.zero }
+                },
+                new KimodoMarkerSampleResult
+                {
+                    sampleValid = true, sampleTime = 1.0,
+                    rootOverride = new KimodoUnityBridge.KimodoRigidTransform { t = new Vector3(2f, 0f, 2f) }
+                }
+            };
+
+            Assert.That(KimodoGenerationWarningCheckService.TryValidateRootMotionConstraints(
+                samples, 60f, out string error), Is.False);
+            StringAssert.Contains("10.0 m/s²", error);
+        }
+
+        [TestCase(KimodoConstraintMode.FullBody)]
+        [TestCase(KimodoConstraintMode.Root2D)]
+        [TestCase(KimodoConstraintMode.Effector)]
+        public void ConstraintInitialization_UsesRestPoseForPreviewAndExport(KimodoConstraintMode mode)
+        {
+            using (AutoBeginSceneFixture fixture = CreateAutoBeginSceneFixture())
+            {
+                var context = CreateAutoBeginRequest(fixture).TimelineContext;
+                Assert.That(KimodoConstraintPoseUtility.TryCreateRestPoseSample(context,
+                    out var expected, out var error), Is.True, error);
+                var marker = fixture.Track.CreateMarker<KimodoConstraintMarker>(100.0);
+                marker.ConstraintMode = mode;
+                if (mode == KimodoConstraintMode.Effector) marker.SampleData.enableMask.rightHand = true;
+                fixture.Skeleton.animator.GetBoneTransform(HumanBodyBones.RightUpperArm).localRotation *= Quaternion.Euler(0, 0, 45);
+                fixture.Director.time = 50.0;
+
+                Assert.That(KimodoConstraintMarkerSampling.TryUpdateAutoSampleMarkerData(marker, out error), Is.True, error);
+                Assert.That(Newtonsoft.Json.Linq.JToken.DeepEquals(
+                    KimodoConstraintPoseUtility.BuildPoseJson(marker.SampleData),
+                    KimodoConstraintPoseUtility.BuildPoseJson(expected)), Is.True,
+                    "Root, hands, feet and muscles must all start from rest pose on an empty Timeline.");
+
+                Assert.That(KimodoTimelineConstraintMarkerSampler.TryBuildMarkerSamplesForExport(
+                    context, out var exported, out error), Is.True, error);
+                Assert.That(exported, Has.Count.EqualTo(1));
+                Assert.That(exported[0].constraintMode, Is.EqualTo(marker.SampleData.constraintMode));
+                Assert.That(exported[0].sampleTime, Is.EqualTo(100.0));
+                Assert.That(Newtonsoft.Json.Linq.JToken.DeepEquals(
+                    KimodoConstraintPoseUtility.BuildPoseJson(exported[0]),
+                    KimodoConstraintPoseUtility.BuildPoseJson(expected)), Is.True);
+                Assert.That(fixture.Director.time, Is.EqualTo(50.0), "Initialization must not evaluate Timeline time.");
+
+                marker.autoSample = false;
+                marker.SampleData.rootOverride.t += Vector3.up;
+                marker.SampleData.effectors.rightHand.t += Vector3.forward;
+                Assert.That(KimodoTimelineConstraintMarkerSampler.TryBuildMarkerSamplesForExport(
+                    context, out exported, out error), Is.True, error);
+                Assert.That(exported[0].rootOverride.t, Is.EqualTo(marker.SampleData.rootOverride.t));
+                Assert.That(exported[0].effectors.rightHand.t, Is.EqualTo(marker.SampleData.effectors.rightHand.t));
             }
         }
 

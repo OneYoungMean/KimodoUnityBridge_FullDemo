@@ -38,6 +38,41 @@ namespace KimodoUnityBridge.Command
             objects.Add(lineObject);
         }
 
+        private static Color MetricColor(float value, float redThreshold)
+        {
+            float yellowThreshold = redThreshold * .5f;
+            if (value >= redThreshold) return new Color(.95f, .08f, .08f, 1f);
+            if (value >= yellowThreshold) return new Color(1f, .9f, .04f, 1f);
+            return new Color(.1f, .85f, .25f, 1f);
+        }
+
+        private static void CreateMetricLine(
+            List<GameObject> objects,
+            IReadOnlyList<Vector3> points,
+            IReadOnlyList<float> metrics,
+            float redThreshold,
+            float width)
+        {
+            if (points == null || metrics == null || points.Count < 2) return;
+            int segmentCount = Mathf.Min(points.Count - 1, metrics.Count);
+            if (segmentCount < 1) return;
+
+            var run = new List<Vector3> { points[0] };
+            Color runColor = MetricColor(Mathf.Abs(metrics[0]), redThreshold);
+            for (int segment = 0; segment < segmentCount; segment++)
+            {
+                Color color = MetricColor(Mathf.Abs(metrics[segment]), redThreshold);
+                if (segment > 0 && color != runColor)
+                {
+                    CreateWorldLine(objects, run, runColor, width);
+                    run = new List<Vector3> { points[segment] };
+                    runColor = color;
+                }
+                run.Add(points[segment + 1]);
+            }
+            if (run.Count >= 2) CreateWorldLine(objects, run, runColor, width);
+        }
+
         private static void CreateGroundMarker(
             List<GameObject> objects,
             Vector3 position,
@@ -62,11 +97,11 @@ namespace KimodoUnityBridge.Command
             if (flat.sqrMagnitude < .0001f) flat = Vector3.forward;
             flat.Normalize();
             Vector3 tip = origin + flat * length;
-            CreateWorldLine(objects, origin + Vector3.up * .07f, tip + Vector3.up * .07f, .035f, color, true);
+            CreateWorldLine(objects, origin + Vector3.up * .07f, tip + Vector3.up * .07f, .035f, color);
             Quaternion left = Quaternion.AngleAxis(150f, Vector3.up);
             Quaternion right = Quaternion.AngleAxis(-150f, Vector3.up);
-            CreateWorldLine(objects, tip + Vector3.up * .07f, tip + left * flat * .16f + Vector3.up * .07f, .035f, color, true);
-            CreateWorldLine(objects, tip + Vector3.up * .07f, tip + right * flat * .16f + Vector3.up * .07f, .035f, color, true);
+            CreateWorldLine(objects, tip + Vector3.up * .07f, tip + left * flat * .16f + Vector3.up * .07f, .035f, color);
+            CreateWorldLine(objects, tip + Vector3.up * .07f, tip + right * flat * .16f + Vector3.up * .07f, .035f, color);
         }
 
         private static Vector3 SampleRootForward(SubjectPictureData subject, int frame)
@@ -82,23 +117,32 @@ namespace KimodoUnityBridge.Command
             }
         }
 
-        private static TestPosePlan BuildTestPosePlan(SubjectPictureData subject, IReadOnlyList<int> frames)
+        private static AnalysisPosePlan BuildAnalysisPosePlan(SubjectPictureData subject, IReadOnlyList<int> frames)
         {
             EvaluatedPosePreview source = CreatePipelinePosePreview(subject.Subject.Character, subject.GetSample(0));
-            var snapshots = new Dictionary<int, TestPoseSnapshot>();
+            var snapshots = new Dictionary<int, AnalysisPoseSnapshot>();
             try
             {
+                // The retarget preview factory owns material copies; analysis poses use the source references.
+                Transform originalRoot = subject.Subject.Character.Animator.transform;
+                foreach (Renderer original in originalRoot.GetComponentsInChildren<Renderer>(true))
+                {
+                    string path = AnimationUtility.CalculateTransformPath(original.transform, originalRoot);
+                    Transform target = string.IsNullOrEmpty(path) ? source.Root.transform : source.Root.transform.Find(path);
+                    Renderer renderer = target != null ? target.GetComponent(original.GetType()) as Renderer : null;
+                    if (renderer != null) renderer.sharedMaterials = original.sharedMaterials;
+                }
                 foreach (int frame in frames.Distinct().OrderBy(item => item))
                 {
                     KimodoMarkerSampleResult sample = subject.GetSample(frame);
                     source.Apply(sample);
-                    snapshots[frame] = TestPoseSnapshot.Capture(source.Root);
+                    snapshots[frame] = AnalysisPoseSnapshot.Capture(source.Root);
                 }
                 // The source is only a transform snapshot template. Keep it
                 // out of the capture layer so each pose is rendered exactly
                 // once by its dedicated virtual-pose instance.
                 SetPreviewRenderersEnabled(source.Root, false);
-                return new TestPosePlan(source, snapshots);
+                return new AnalysisPosePlan(source, snapshots);
             }
             catch
             {
@@ -107,40 +151,7 @@ namespace KimodoUnityBridge.Command
             }
         }
 
-        private static TestVirtualPose CreateTestVirtualPose(
-            TestPoseSnapshot snapshot,
-            Color tint,
-            float alpha)
-        {
-            // Test poses use the resolved tint while retaining the source material and textures.
-            return CreateSnapshotVirtualPose(snapshot, tint, alpha, null, true);
-        }
-
-        private static TestVirtualPose CreateTestVirtualPose(
-            TestPoseSnapshot snapshot,
-            Color tint,
-            float alpha,
-            Vector3? targetPosition)
-        {
-            // Test poses use the resolved tint while retaining the source material and textures.
-            return CreateSnapshotVirtualPose(snapshot, tint, alpha, targetPosition, true);
-        }
-
-        private static TestVirtualPose CreateGhostVirtualPose(
-            TestPoseSnapshot snapshot,
-            Color tint,
-            float alpha,
-            Vector3 targetPosition)
-        {
-            return CreateSnapshotVirtualPose(snapshot, tint, alpha, targetPosition, true);
-        }
-
-        private static TestVirtualPose CreateSnapshotVirtualPose(
-            TestPoseSnapshot snapshot,
-            Color tint,
-            float alpha,
-            Vector3? targetPosition,
-            bool useGhostMaterial)
+        private static AnalysisPreviewPose CreatePooledOriginalMaterialPose(AnalysisPoseSnapshot snapshot)
         {
             GameObject preview = MoveToAnalysisSessionRoot(UnityEngine.Object.Instantiate(snapshot.SourcePrefab));
             preview.name = "Kimodo Test Virtual Pose";
@@ -153,31 +164,8 @@ namespace KimodoUnityBridge.Command
                 animator.enabled = false;
             }
             snapshot.Apply(preview);
-            var transientMaterials = new List<Material>();
-            var originalMaterials = new List<Tuple<Renderer, Material[]>>();
-            ApplyPoseMaterials(preview, tint, useGhostMaterial, transientMaterials, originalMaterials);
             SetPreviewRenderersEnabled(preview, false);
-            TestVirtualPose result = targetPosition.HasValue
-                ? new TestVirtualPose(preview, transientMaterials, alpha, targetPosition.Value)
-                : new TestVirtualPose(preview, transientMaterials, alpha);
-            result.SetOriginalMaterials(originalMaterials);
-            return result;
-        }
-
-        private static TestVirtualPose CreateGhostVirtualPose(
-            SubjectPictureData subject,
-            int frame,
-            Color tint,
-            float alpha)
-        {
-            EvaluatedPosePreview preview = CreateAnalysisPosePreview(subject, frame);
-            var transientMaterials = new List<Material>();
-            var originalMaterials = new List<Tuple<Renderer, Material[]>>();
-            ApplyPoseMaterials(preview.Root, tint, true, transientMaterials, originalMaterials);
-            SetPreviewRenderersEnabled(preview.Root, false);
-            TestVirtualPose result = new TestVirtualPose(preview, transientMaterials, alpha);
-            result.SetOriginalMaterials(originalMaterials);
-            return result;
+            return new AnalysisPreviewPose(preview);
         }
 
         private static void SetPreviewRenderersEnabled(GameObject preview, bool enabled)
@@ -188,7 +176,6 @@ namespace KimodoUnityBridge.Command
                 if (renderer is SkinnedMeshRenderer skinned)
                 {
                     skinned.updateWhenOffscreen = true;
-                    skinned.localBounds = new Bounds(Vector3.zero, Vector3.one * 100f);
                 }
                 renderer.enabled = enabled;
             }
@@ -209,10 +196,8 @@ namespace KimodoUnityBridge.Command
 
         private static Bounds CalculateRawPreviewPoseBounds(SubjectPictureData subject, int localFrame)
         {
-            using (EvaluatedPosePreview preview = CreateAnalysisPosePreview(subject, localFrame))
-            {
-                return CalculateSkinnedBounds(preview.Root);
-            }
+            // Bounds were sampled with these same poses before layout began.
+            return subject.PoseBounds[Mathf.Clamp(localFrame, 0, subject.PoseBounds.Length - 1)];
         }
 
         private static EvaluatedPosePreview CreateAnalysisPosePreview(SubjectPictureData subject, int localFrame)
@@ -259,7 +244,6 @@ namespace KimodoUnityBridge.Command
             foreach (SkinnedMeshRenderer renderer in preview.GetComponentsInChildren<SkinnedMeshRenderer>(true))
             {
                 renderer.updateWhenOffscreen = true;
-                renderer.localBounds = new Bounds(Vector3.zero, Vector3.one * 100f);
             }
             return preview;
         }
@@ -297,23 +281,10 @@ namespace KimodoUnityBridge.Command
             return new EvaluatedPosePreview(preview, poseRig, ResolveModelName(null));
         }
 
-        private static List<int> BuildGhostFrames(SubjectPictureData subject, out HashSet<int> promotedFrames)
-        {
-            // Ghost3D and Track3D share the same temporal sampling rule:
-            // preserve every authored event and insert auxiliary poses only
-            // when a gap exceeds twenty session frames.
-            return BuildTestSampleFrames(
-                subject,
-                new HashSet<int>(subject.KeyFrameSet).Concat(FootTransitionFrames(subject)),
-                preserveAllPrimaryFrames: true,
-                out promotedFrames);
-        }
-
-        private static List<int> BuildTestSampleFrames(
+        private static List<int> BuildAnalysisSampleFrames(
             SubjectPictureData subject,
             IEnumerable<int> primaryFrames,
-            bool preserveAllPrimaryFrames,
-            out HashSet<int> promotedFrames)
+            bool preserveAllSelectedFrames)
         {
             int lastFrame = Math.Max(0, subject.Pelvis.Length - 1);
             var events = (primaryFrames ?? Enumerable.Empty<int>())
@@ -324,22 +295,19 @@ namespace KimodoUnityBridge.Command
                 .OrderBy(frame => frame)
                 .ToList();
 
-            List<int> result = InsertTestGhostFrames(events);
+            List<int> result = InsertIntermediateFrames(events);
             var protectedFrames = new HashSet<int>((primaryFrames ?? Enumerable.Empty<int>())
                 .Select(frame => Mathf.Clamp(frame, 0, lastFrame)))
             {
                 0,
                 lastFrame
             };
-            if (preserveAllPrimaryFrames)
-            {
-                promotedFrames = new HashSet<int>();
-                return FilterOverlappingGhostFrames(subject.Pelvis, result, protectedFrames);
-            }
-            return FilterStationaryBlankFrames(subject, result, protectedFrames, out promotedFrames);
+            return preserveAllSelectedFrames
+                ? FilterOverlappingFrames(subject.Pelvis, result, protectedFrames)
+                : FilterStationaryFrames(subject, result, protectedFrames);
         }
 
-        private static List<int> InsertTestGhostFrames(IReadOnlyList<int> events)
+        private static List<int> InsertIntermediateFrames(IReadOnlyList<int> events)
         {
             var result = new List<int>();
             if (events == null || events.Count == 0) return result;
@@ -356,7 +324,7 @@ namespace KimodoUnityBridge.Command
             return result;
         }
 
-        private static List<int> FilterOverlappingGhostFrames(Vector3[] pelvis, IReadOnlyList<int> frames, ISet<int> protectedFrames)
+        private static List<int> FilterOverlappingFrames(Vector3[] pelvis, IReadOnlyList<int> frames, ISet<int> protectedFrames)
         {
             var result = new List<int>();
             foreach (int frame in (frames ?? Array.Empty<int>()).Distinct().OrderBy(item => item))
@@ -382,18 +350,16 @@ namespace KimodoUnityBridge.Command
             return result;
         }
 
-        private static List<int> FilterStationaryBlankFrames(
+        private static List<int> FilterStationaryFrames(
             SubjectPictureData subject,
             IReadOnlyList<int> frames,
-            ISet<int> protectedFrames,
-            out HashSet<int> promotedFrames)
+            ISet<int> protectedFrames)
         {
             var ordered = (frames ?? Array.Empty<int>())
                 .Distinct()
                 .OrderBy(frame => frame)
                 .ToList();
             var removed = new HashSet<int>();
-            promotedFrames = new HashSet<int>();
             for (int index = 1; index < ordered.Count - 1;)
             {
                 int frame = ordered[index];
@@ -418,10 +384,6 @@ namespace KimodoUnityBridge.Command
                     {
                         removed.Add(ordered[removeIndex]);
                     }
-                    if (runEnd < ordered.Count - 1)
-                    {
-                        promotedFrames.Add(ordered[runEnd]);
-                    }
                     index = runEnd;
                 }
                 else
@@ -433,33 +395,8 @@ namespace KimodoUnityBridge.Command
             return ordered.Where(frame => !removed.Contains(frame)).ToList();
         }
 
-        private static float GhostAlpha(int index, int count, bool separated)
+        private static bool TryGetContactTint(SubjectPictureData subject, int frame, out Color tint)
         {
-            if (count <= 1) return 1f;
-            if (index == 0) return separated ? 1f : .3f;
-            if (index == count - 2) return .7f;
-            if (index == count - 1) return 1f;
-            return Mathf.Lerp(separated ? 1f : .3f, 1f, index / (float)(count - 1));
-        }
-
-        private static IReadOnlyList<int> FootTransitionFrames(SubjectPictureData subject)
-        {
-            // Use only QuickServer events here. The KMB contact channel has a
-            // different timebase in some clips and must not be used as a
-            // fallback or merged into the rendered markers.
-            return (subject.Subject.Record.Analysis?["foot_contacts"] as JArray ?? new JArray())
-                .OfType<JObject>()
-                .Where(IsFootLandingEvent)
-                .Select(item => Mathf.Clamp(item.Value<int?>("frame") ?? 0, 0, Math.Max(0, subject.Pelvis.Length - 1)))
-                .Distinct()
-                .OrderBy(frame => frame)
-                .ToArray();
-        }
-
-        private static bool TryGetFootTransitionTint(SubjectPictureData subject, int frame, out Color tint)
-        {
-            // Keep marker colors on the same QuickServer analysis timebase as
-            // FootTransitionFrames; do not fall back to KMB contact samples.
             bool left = false;
             bool right = false;
             foreach (JObject item in (subject.Subject.Record.Analysis?["foot_contacts"] as JArray ?? new JArray()).OfType<JObject>())
@@ -483,47 +420,16 @@ namespace KimodoUnityBridge.Command
             return left;
         }
 
-        private static bool IsKeyframe(SubjectPictureData subject, int frame)
-        {
-            return subject.KeyFrameSet.Contains(frame);
-        }
-
-        private static Color ResolveGhostPoseTint(SubjectPictureData subject, int frame)
-        {
-            int lastFrame = Math.Max(0, subject.Pelvis.Length - 1);
-            if (frame == 0) return TestStartFrameTint;
-            if (frame == lastFrame) return TestEndFrameTint;
-            if (IsKeyframe(subject, frame)) return TestKeyframeTint;
-            return TryGetFootTransitionTint(subject, frame, out Color footTint) ? footTint : Color.gray;
-        }
-
-        private static Color ResolveTestPoseTint(PictureTile tile, int frame, out bool keyframe, out bool footTransition)
-        {
-            SubjectPictureData subject = tile.Subject;
-            int lastFrame = Math.Max(0, subject.Pelvis.Length - 1);
-            // The two test panels intentionally color only their own event
-            // type: keyframe samples never inherit foot colors, and vice versa.
-            keyframe = (tile.Presentation == "test_keyframes" || tile.Presentation == "test_selected_3d_ghost") && tile.PrimaryFrames.Contains(frame);
-            footTransition = (tile.Presentation == "test_foot_transitions" || tile.Presentation == "test_selected_3d_ghost_track") &&
-                tile.PrimaryFrames.Contains(frame) && TryGetFootTransitionTint(subject, frame, out _);
-            if (frame == 0) return TestStartFrameTint;
-            if (frame == lastFrame) return TestEndFrameTint;
-            if (keyframe) return TestKeyframeTint;
-            return footTransition && TryGetFootTransitionTint(subject, frame, out Color footTint)
-                ? footTint
-                : Color.gray;
-        }
-
-        private static Color ResolveSingleTestPoseTint(PictureTile tile, int frame)
+        private static Color ResolveAnalysisPoseTint(PictureTile tile, int frame)
         {
             int lastFrame = Math.Max(0, tile.Subject.Pelvis.Length - 1);
-            if (frame == 0) return TestStartFrameTint;
-            if (frame == lastFrame) return TestEndFrameTint;
+            if (frame == 0) return AnalysisStartFrameTint;
+            if (frame == lastFrame) return AnalysisEndFrameTint;
             if (string.Equals(tile.PoseKind, "keyframe", StringComparison.Ordinal) ||
-                string.Equals(tile.PoseKind, "key_pose", StringComparison.Ordinal)) return TestKeyframeTint;
+                string.Equals(tile.PoseKind, "key_pose", StringComparison.Ordinal)) return AnalysisKeyframeTint;
             if ((string.Equals(tile.PoseKind, "foot_transition", StringComparison.Ordinal) ||
                  string.Equals(tile.PoseKind, "step_pose", StringComparison.Ordinal)) &&
-                TryGetFootTransitionTint(tile.Subject, frame, out Color footTint))
+                TryGetContactTint(tile.Subject, frame, out Color footTint))
             {
                 return footTint;
             }

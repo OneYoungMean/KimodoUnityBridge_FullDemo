@@ -29,7 +29,7 @@
 
 ## 当前产品边界
 
-- 自动场景上下文和 `animation.analyze` 支持可渲染 Mesh 的分析路径。
+- 自动场景上下文和 `animation.analysis` 支持可渲染 Mesh 的分析路径。
 - 生成和 Pose 采样仍要求有效 Humanoid Avatar。
 - 已完成 Clip 不可变；修正、Retarget 和生成都会追加派生 Clip。
 - 静态图片不能单独证明播放连续性、滑步、跳变、加速度或速度连续性。

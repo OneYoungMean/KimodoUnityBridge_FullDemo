@@ -17,16 +17,16 @@ namespace KimodoUnityBridge.Command
                     Example("Read the scene and current Session identity.", @"{}"),
                     Example("Include the compact Session artifact history when needed.", @"{'include_history':true}"));
                 case InstallServerCommand: return Examples("Install the local server, then poll the returned request_id.", @"{}");
-                case MocapVideoAnalysisCommand: return Examples("Estimate SMPL-X poses from a video, then poll for the pose array.",
+                case PoseFromVideoCommand: return Examples("Estimate SMPL-X poses from a video, then poll for the pose array.",
                     @"{'video_path':'C:/data/mocap.mp4','person':'left'}");
-                case MocapPictureAnalysisCommand: return Examples("Estimate one SMPL-X pose from a still image, then poll for the pose array.",
+                case PoseFromPictureCommand: return Examples("Estimate one SMPL-X pose from a still image, then poll for the pose array.",
                     @"{'image_path':'C:/data/pose.jpg'}");
-                case AnimationAnalyzeCommand: return Examples("Analyze one returned Clip; open the returned image to inspect it.",
-                    @"{'clips':[{'character':'<character>','clip':'<clip>'}],'picture':{'output':'composite'},'resolution':512}");
+                case AnimationAnalysisCommand: return Examples("Analyze one returned Clip; open the returned image to inspect it.",
+                    @"{'clips':[{'character':'<character>','clip':'<clip>'}],'resolution':1920,'camera':{'resolution':[1280,720]}}");
+                case PoseAnalysisCommand: return Examples("Preview the same point constraints before sending them to animation.generate.",
+                    @"{'character':'<character>','constraints':[{'frame':90,'pose':{'track':'<track>','index':0},'root':{'position':[1.1,0,2.4]},'effector':{'right_hand':{'position':[1.2,0.9,2.4]}}}],'combine':false,'camera':{'resolution':[1280,720]}}");
                 case RetargetAnimationCommand: return Examples("Retarget a loaded Clip to another scene character.",
                     @"{'source_character':'<source character>','animation':'<clip>','target_character':'<target character>','output':{'name':'RetargetedMotion'}}");
-                case TransformCaptureCommand: return Examples("Capture the External Pose returned by pose.get together with scene objects, without moving the scene character.",
-                    @"{'pose':{'track':'<returned pose track>','index':0},'transforms':['@pose','<table hierarchy path>','<apple hierarchy path>'],'resolution':768}");
                 case GenerateAnimationCommand: return new JArray(
                     Example("Submit one Clip request; use the returned request_id with generation.get.",
                         @"{'character':'<character>','prompt':'<short action for one Clip>','duration_frames':120}"),
@@ -47,11 +47,6 @@ namespace KimodoUnityBridge.Command
                         @"{'source':{'character':'<character>','mode':'scene_pose'},'full_data':true}"),
                     Example("Capture the Humanoid Avatar's stored skeleton rest pose.",
                         @"{'source':{'character':'<character>','mode':'skeleton_rest_pose'},'full_data':true}"));
-                case PoseTestCommand: return new JArray(
-                    Example("Measure the actual world-space hand positions in a sampled Timeline pose.",
-                        @"{'pose':{'track':'<pose track returned by pose.get>','index':0},'joints':['RightHand','LeftHand']}"),
-                    Example("Check whether the sampled right hand reaches a world-space contact point within 5 cm.",
-                        @"{'pose':{'track':'<pose track returned by pose.get>','index':0},'targets':[{'joint':'RightHand','position':[1.2,0.9,2.4],'tolerance_m':0.05}]}"));
                 case PoseSetCommand: return Examples("Edit the root of the Pose slot returned by pose.get; position is in Character world space.",
                     @"{'pose':{'track':'<returned pose track>','index':0},'root':{'position':[0,1,0],'rotation':[0,0,0,1]}}");
                 case GetGenerationCommand: return Examples("Poll using the exact request_id returned by generation or installation.",

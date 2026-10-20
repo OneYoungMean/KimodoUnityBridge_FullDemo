@@ -15,7 +15,7 @@ using UnityEngine.TestTools;
 
 namespace KimodoUnityBridge.Command.Tests
 {
-    public sealed class AnimationAnalyzeCommandIntegrationTests
+    public sealed class AnimationAnalysisCommandIntegrationTests
     {
         private const string PackageRoot = "Packages/com.unity.kimodo_unity_motion_tools";
         private const string ModelPath = PackageRoot + "/Editor/Model/Armature.fbx";
@@ -45,7 +45,7 @@ namespace KimodoUnityBridge.Command.Tests
         }
 
         [UnityTest]
-        public IEnumerator AnimationAnalyze_ArcWalkFixture_WritesCompositePng()
+        public IEnumerator AnimationAnalysis_ArcWalkFixture_WritesCompositePng()
         {
             GameObject source = AssetDatabase.LoadAssetAtPath<GameObject>(ModelPath);
             AnimationClip clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(ArcWalkPath);
@@ -68,26 +68,27 @@ namespace KimodoUnityBridge.Command.Tests
                 animator.Rebind();
 
                 testSession = CreateCurrentTestContext(character, animator);
-                JObject analysis = Require("animation.analyze", new JObject
+                EnsureTestSceneView();
+                JObject analysis = Require("animation.analysis", new JObject
                 {
                     ["clips"] = new JArray(new JObject
                     {
                         ["character"] = character.name,
                         ["clip"] = ArcWalkPath
                     }),
-                    ["picture"] = new JObject { ["output"] = "composite" },
                     ["resolution"] = TestAnalysisResolution
                 });
 
+                Assert.That(analysis["request_id"], Is.Null);
                 Assert.That(analysis.Value<string>("analysis_schema_version"), Is.EqualTo("5-command-60-single-clip-v1"));
                 Assert.That(analysis["picture"], Is.Null);
                 Assert.That(analysis["clips"], Is.Null);
                 Assert.That(analysis["pictures"]?.Value<string>("aspect"), Is.EqualTo("16:9"));
                 Assert.That(analysis["pictures"]?.Value<int>("tile_count"), Is.EqualTo(20));
-                Assert.That(analysis["pictures"]?.Value<string>("render_version"), Is.EqualTo("63-height-time-ratio5-dim-hdrp-lights"));
-                Assert.That(analysis["pictures"]?["title"], Is.Null);
-                Assert.That(analysis["pictures"]?["header"], Is.Null);
-                Assert.That(analysis["pictures"]?["headers"], Is.Null);
+                Assert.That(analysis["pictures"]?.Value<string>("render_version"), Is.EqualTo("animation.analysis.20-sceneview-headers-metrics"));
+                Assert.That(analysis["pictures"]?.Value<string>("title"), Is.Not.Empty);
+                Assert.That(analysis["pictures"]?.Value<int?>("header_height"), Is.GreaterThan(0));
+                Assert.That(analysis["pictures"]?["images"]?.Count(), Is.EqualTo(20));
 
                 JObject compactContext = Require("scene.context", new JObject());
                 Assert.That(compactContext["history"], Is.Null, "History should be omitted from the default scene context response.");
@@ -136,6 +137,59 @@ namespace KimodoUnityBridge.Command.Tests
                 Assert.That(Math.Abs(clipAnalysis["motion_profile"]?.Value<float>("heading_change_degrees") ?? 0f),
                     Is.GreaterThan(45f));
 
+                JObject poseCapture = Require("pose.analysis", new JObject
+                {
+                    ["character"] = character.name,
+                    ["constraints"] = new JArray(
+                        new JObject
+                        {
+                            ["frame"] = 0,
+                            ["root"] = new JObject { ["position"] = new JArray(0, 0, 0) },
+                            ["effector"] = new JObject
+                            {
+                                ["right_hand"] = new JObject { ["position"] = new JArray(0, 0, 0) }
+                            }
+                        },
+                        new JObject
+                        {
+                            ["frame"] = 15,
+                            ["root"] = new JObject { ["position"] = new JArray(1, 0, 0) }
+                        }),
+                    ["combine"] = false,
+                    ["joints"] = new JArray("Hips", "RightHand"),
+                    ["camera"] = new JObject { ["resolution"] = new JArray(960, 540) }
+                });
+                Assert.That(poseCapture["request_id"], Is.Null);
+                JObject poseConstraint = (JObject)poseCapture["constraints"]?.First;
+                Assert.That(poseCapture.Value<bool>("combine"), Is.False);
+                Assert.That(poseCapture["constraints"]?.Count(), Is.EqualTo(2));
+                Assert.That(poseCapture["constraints"]?.Values<JObject>().Select(item => item.Value<string>("image_path")).Distinct().Count(), Is.EqualTo(2));
+                Assert.That(poseConstraint.Value<string>("image_path"), Does.StartWith("Assets/KimodoGeneratedClips/PoseAnalysis/"));
+                Assert.That(poseConstraint["pose_analysis"]?["joints"]?.Count(), Is.EqualTo(2));
+                Assert.That(poseConstraint["pose_analysis"]?["joints"]?.Values<JObject>()
+                    .Single(item => item.Value<string>("joint") == "RightHand")["distance_m"]?.Type, Is.EqualTo(JTokenType.Float));
+
+                JObject combinedPoseCapture = Require("pose.analysis", new JObject
+                {
+                    ["character"] = character.name,
+                    ["constraints"] = new JArray(
+                        new JObject
+                        {
+                            ["frame"] = 0,
+                            ["root"] = new JObject { ["position"] = new JArray(0, 0, 0) }
+                        },
+                        new JObject
+                        {
+                            ["frame"] = 30,
+                            ["root"] = new JObject { ["position"] = new JArray(1, 0, 0) }
+                        }),
+                    ["combine"] = true,
+                    ["camera"] = new JObject { ["resolution"] = new JArray(960, 540) }
+                });
+                Assert.That(combinedPoseCapture.Value<bool>("combine"), Is.True);
+                Assert.That(combinedPoseCapture.Value<string>("image_path"), Does.StartWith("Assets/KimodoGeneratedClips/PoseAnalysis/"));
+                Assert.That(combinedPoseCapture["constraints"]?.Count(), Is.EqualTo(2));
+
                 yield return null;
 
                 string relativePng = analysis["pictures"]?.Value<string>("image_path");
@@ -143,9 +197,16 @@ namespace KimodoUnityBridge.Command.Tests
                     ? string.Empty
                     : Path.GetFullPath(Path.Combine(Application.dataPath, "..", relativePng));
                 Assert.That(relativePng, Is.Not.Null.And.EndsWith(".png"));
-                Assert.That(relativePng.Replace('\\', '/'), Does.StartWith("Library/KimodoData/"));
-                Assert.That(File.Exists(absolutePng), Is.True, "animation.analyze did not write its composite PNG.");
+                Assert.That(relativePng.Replace('\\', '/'), Does.StartWith("Assets/KimodoGeneratedClips/SceneCaptures/"));
+                Assert.That(File.Exists(absolutePng), Is.True, "animation.analysis did not write its composite PNG.");
                 Assert.That(new FileInfo(absolutePng).Length, Is.GreaterThan(0));
+
+                string posePng = Path.GetFullPath(Path.Combine(Application.dataPath, "..", poseConstraint.Value<string>("image_path")));
+                Assert.That(File.Exists(posePng), Is.True, "pose.analysis did not write its frame PNG.");
+                Assert.That(new FileInfo(posePng).Length, Is.GreaterThan(0));
+                string combinedPng = Path.GetFullPath(Path.Combine(Application.dataPath, "..", combinedPoseCapture.Value<string>("image_path")));
+                Assert.That(File.Exists(combinedPng), Is.True, "pose.analysis did not write its combined opaque PNG.");
+                Assert.That(new FileInfo(combinedPng).Length, Is.GreaterThan(0));
             }
             finally
             {
@@ -239,7 +300,7 @@ namespace KimodoUnityBridge.Command.Tests
             TimelineAsset timeline = ScriptableObject.CreateInstance<TimelineAsset>();
             timeline.editorSettings.frameRate = 60.0;
             var metadata = ScriptableObject.CreateInstance(metadataType);
-            string sessionName = "AnimationAnalyze_ArcWalkFixture_CurrentCommand";
+            string sessionName = "AnimationAnalysis_ArcWalkFixture_CurrentCommand";
             metadataType.GetField("schemaVersion").SetValue(metadata, "vNext.transition_clip.1");
             metadataType.GetField("sessionId").SetValue(metadata, Guid.NewGuid().ToString("D"));
             metadataType.GetField("sessionName").SetValue(metadata, sessionName);
@@ -292,6 +353,15 @@ namespace KimodoUnityBridge.Command.Tests
             JObject response = JObject.Parse(command_dispatcher.Invoke(command, arguments.ToString()));
             Assert.That(response.Value<bool?>("ok"), Is.True, command + " failed: " + response["error"]);
             return response;
+        }
+
+        private static SceneView EnsureTestSceneView()
+        {
+            SceneView sceneView = SceneView.lastActiveSceneView ?? EditorWindow.GetWindow<SceneView>();
+            sceneView.Show();
+            sceneView.Focus();
+            Assert.That(sceneView.camera, Is.Not.Null, "The integration test requires a SceneView camera.");
+            return sceneView;
         }
     }
 }

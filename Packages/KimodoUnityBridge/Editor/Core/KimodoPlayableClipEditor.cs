@@ -456,11 +456,11 @@ namespace KimodoBridge.Editor
                 if (method == null) { error = "Analysis picture bridge is unavailable until the Command assembly is loaded."; return false; }
                 object[] args =
                 {
-                    results.Select(item => item.TimelineClip).ToArray(), null, resolution, null, null
+                    results.Select(item => item.TimelineClip).ToArray(), resolution, null, null
                 };
                 bool success = (bool)method.Invoke(null, args);
-                imagePath = args[3] as string ?? string.Empty;
-                error = args[4] as string ?? string.Empty;
+                imagePath = args[2] as string ?? string.Empty;
+                error = args[3] as string ?? string.Empty;
                 return success;
             }
             catch (Exception ex)
@@ -960,7 +960,7 @@ namespace KimodoBridge.Editor
             {
                 EditorGUILayout.PropertyField(
                     autoBeginAnchor,
-                    new GUIContent("Auto Begin Anchor", "When the first second has no effective constraint anchor, capture the scene character pose as a FullBody frame-0 constraint."));
+                    new GUIContent("Auto Begin Anchor", "When the first second has no effective constraint anchor, use the Avatar skeleton rest pose as a FullBody frame-0 constraint."));
             }
 
             if (KimodoGenerationInspectorGui.IsArdy(bridgeModelName?.stringValue) &&

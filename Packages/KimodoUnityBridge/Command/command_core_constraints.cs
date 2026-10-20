@@ -45,8 +45,6 @@ namespace KimodoUnityBridge.Command
             var samples = new List<KimodoMarkerSampleResult>(constraints.Count);
             var pathSamples = new List<KimodoMarkerSampleResult>();
             RetargetSkeleton targetCache = null;
-            TimelineSessionRecord session = RequireCurrentTimelineSession();
-            double originalSessionTime = session.Director.time;
             try
             {
                 if (constraints.Count > 0 &&
@@ -74,11 +72,9 @@ namespace KimodoUnityBridge.Command
                 if (constraints.OfType<JObject>().Any(item => item["root_path"] is JObject))
                 {
                     ResolveRootPathWorldAnchor(
-                        session,
                         sourceCharacter,
                         sceneCharacterRoot,
                         targetAvatar,
-                        originalSessionTime,
                         targetRootHeight,
                         out rootPathAnchorPosition,
                         out rootPathAnchorRotation);
@@ -169,8 +165,6 @@ namespace KimodoUnityBridge.Command
             }
             finally
             {
-                session.Director.time = originalSessionTime;
-                session.Director.Evaluate();
                 targetCache?.Dispose();
             }
             return samples;
@@ -281,7 +275,7 @@ namespace KimodoUnityBridge.Command
         {
             KimodoMarkerSampleResult source = ResolveConstraintPose(
                 value, "point", targetCache, sceneCharacterRoot, sourceCharacter,
-                poseWarnings, constraintIndex, sampleTime);
+                poseWarnings, constraintIndex);
             KimodoMarkerSampleResult result = BuildModelNativeConstraintSample(
                 source, "fullbody", targetCache, modelName, frameRate, sampleTime);
             ApplyPointConstraintData(value, result, sampleTime, constraintIndex);
@@ -493,11 +487,9 @@ namespace KimodoUnityBridge.Command
         }
 
         private static void ResolveRootPathWorldAnchor(
-            TimelineSessionRecord session,
             TimelineCharacterRecord sourceCharacter,
             GameObject sceneCharacterRoot,
             Avatar targetAvatar,
-            double sceneTime,
             float targetRootHeight,
             out Vector3 position,
             out Quaternion rotation)
@@ -507,7 +499,10 @@ namespace KimodoUnityBridge.Command
             string anchorError = string.Empty;
             if (sourceCharacter != null)
             {
-                KimodoMarkerSampleResult sample = CaptureSampleResult(session, sourceCharacter, sceneTime);
+                if (!KimodoConstraintPoseUtility.TryCreateRestPoseSample(
+                    new KimodoTimelineInOutConstraintContext { Track = sourceCharacter.Track, Animator = sourceCharacter.Animator },
+                    out var sample, out anchorError))
+                    throw new InvalidOperationException($"Root Path generation could not resolve its rest pose: {anchorError}");
                 GetRootTransform(sample, out position, out rotation);
                 rotation = KimodoMotionMath.ResolvePlanarHeading(rotation);
                 return;
@@ -525,7 +520,7 @@ namespace KimodoUnityBridge.Command
                     if (!TryCreateAvatarRestPoseSample(
                         anchorCache,
                         sceneCharacterRoot,
-                        alignToSceneRoot: true,
+                        alignToSceneRoot: false,
                         out KimodoMarkerSampleResult restPose,
                         out anchorError))
                     {
@@ -646,8 +641,7 @@ namespace KimodoUnityBridge.Command
             GameObject sceneCharacterRoot,
             TimelineCharacterRecord sourceCharacter,
             List<string> poseWarnings,
-            int constraintIndex,
-            double sampleTime)
+            int constraintIndex)
         {
             if (value?["pose"] is JObject poseReference)
             {
@@ -658,20 +652,18 @@ namespace KimodoUnityBridge.Command
 
             if (sourceCharacter != null)
             {
-                // A command point without an explicit Pose is still created
-                // from a complete scene-time support sample. This is the same
-                // sampling boundary used by pose.get; the concrete mode below
-                // expresses the channels authored by this command.
-                return CaptureSampleResult(
-                    RequireCurrentTimelineSession(),
-                    sourceCharacter,
-                    sampleTime);
+                // Match pose.get(skeleton_rest_pose); empty Timeline ranges are not valid support poses.
+                if (!KimodoConstraintPoseUtility.TryCreateRestPoseSample(
+                    new KimodoTimelineInOutConstraintContext { Track = sourceCharacter.Track, Animator = sourceCharacter.Animator },
+                    out var sourceRestPose, out string restError))
+                    throw new InvalidOperationException($"constraints[{constraintIndex}].{constraintType} rest pose could not be created: {restError}");
+                return sourceRestPose;
             }
 
             if (!TryCreateAvatarRestPoseSample(
                 targetCache,
                 sceneCharacterRoot,
-                    alignToSceneRoot: sceneCharacterRoot != null,
+                    alignToSceneRoot: false,
                     out KimodoMarkerSampleResult restPose,
                     out string error))
             {

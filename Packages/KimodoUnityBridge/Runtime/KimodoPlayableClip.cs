@@ -132,7 +132,7 @@ namespace KimodoBridge
         public float ardyTargetMaxAcceleration = DefaultArdyTargetMaxAcceleration;
         [Tooltip("Show all constraint pose previews for this clip when selected in Timeline/Inspector.")]
         public bool showConstraint = true;
-        [Tooltip("When the first second has no effective constraint anchor, capture the scene character pose as a FullBody frame-0 anchor.")]
+        [Tooltip("When the first second has no effective constraint anchor, use the Avatar skeleton rest pose as a FullBody frame-0 anchor.")]
         public bool autoBeginAnchor = true;
         public bool isGenerated;
         public string lastGeneratedPrompt;

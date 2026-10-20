@@ -190,7 +190,7 @@ namespace KimodoBridge
             }
             var request = new JObject
             {
-                ["cmd"] = normalizedKind == "video" ? "analysis.video" : "analysis.picture",
+                ["cmd"] = normalizedKind == "video" ? "pose.fromvideo" : "pose.frompicture",
                 ["media_path"] = mediaPath ?? string.Empty
             };
             if (normalizedKind == "video" && !string.IsNullOrWhiteSpace(person))

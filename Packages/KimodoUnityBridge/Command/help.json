@@ -221,7 +221,7 @@
         ],
         "related_commands": [
           "animation.generate",
-          "animation.analyze",
+          "animation.analysis",
           "pose.get"
         ]
       },
@@ -620,16 +620,17 @@
       ]
     },
     {
-      "name": "animation.analyze",
-      "description": "Analyze one animation clip at 60 FPS and render graph-space picture evidence. Pass a clips array containing exactly one scene character and one loaded Clip name or Assets/Packages Clip path. The result contains one clip analysis and one pictures evidence object; temporal positions use absolute Timeline-global 60 FPS frames. External Clips are appended to the character's Kimodo Timeline and never modified.",
+      "name": "animation.analysis",
+      "description": "Analyze one animation clip at 60 FPS and render the fixed 20-tile SceneView picture evidence. Pass a clips array containing exactly one scene character and one loaded Clip name or Assets/Packages Clip path. The result contains one clip analysis and one pictures evidence object; temporal positions use absolute Timeline-global 60 FPS frames. External Clips are appended to the character's Kimodo Timeline and never modified.",
       "documentation": {
-        "when_to_use": "Analyze one loaded animation Clip and produce structured motion data with renderable image evidence.",
+        "when_to_use": "Analyze one loaded animation Clip and produce structured motion data with the fixed 20-tile SceneView image evidence.",
         "behavior": [
           "Use the scene character and a loaded Clip name or an Assets/Packages asset path.",
           "Open returned pictures before making visual claims; use structured fields for measurements and temporal positions."
         ],
         "result_notes": [
-          "Returns one clip analysis and one pictures object; analysis frame positions use Timeline-global 60 FPS coordinates."
+          "Returns one clip analysis and one 20-tile pictures object from the synchronous SceneView renderer; analysis frame positions use Timeline-global 60 FPS coordinates.",
+          "Accepts the same camera object as pose.analysis. SceneView lighting, skybox, gizmos, and grid keep their current state unless explicitly set."
         ],
         "scene_effects": [
           "An external Clip asset is appended to the character's Kimodo Timeline for analysis; the source asset is not modified."
@@ -641,7 +642,7 @@
         "related_commands": [
           "scene.context",
           "pose.get",
-          "transform.capture"
+          "pose.analysis"
         ]
       },
       "inputSchema": {
@@ -669,15 +670,81 @@
               ]
             }
           },
-          "picture": {
-            "type": "object",
-            "description": "Unified graph-space picture request with tiles and output mode."
-          },
           "resolution": {
             "type": "integer",
             "minimum": 64,
             "maximum": 4096,
-            "description": "Final picture tile resolution in pixels; accepts 64 through 4096. Rendering uses a 2x supersample and downsamples to this size. Defaults to 1920."
+            "default": 1920,
+            "description": "Final 16:9 composite width in pixels; accepts 64 through 4096. Defaults to 1920."
+          },
+          "camera": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "SceneView camera controls shared by pose.analysis and animation.analysis.",
+            "properties": {
+              "direction": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                  "type": "number"
+                },
+                "description": "Optional camera-to-target direction [x,y,z]. animation.analysis keeps each tile's direction when omitted."
+              },
+              "orthographic": {
+                "type": "boolean",
+                "default": true
+              },
+              "padding": {
+                "type": "number",
+                "minimum": 0.01,
+                "default": 1.1
+              },
+              "near_clip": {
+                "type": "number",
+                "minimum": 0.001
+              },
+              "far_clip": {
+                "type": "number",
+                "minimum": 0.01
+              },
+              "resolution": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "integer",
+                  "minimum": 64,
+                  "maximum": 4096
+                },
+                "description": "SceneView render size [width,height]. Defaults to the current SceneView camera size."
+              },
+              "scene_lighting": {
+                "type": "boolean",
+                "description": "Set SceneView scene lighting when explicitly supplied; otherwise keep its current setting."
+              },
+              "show_skybox": {
+                "type": "boolean",
+                "description": "Set SceneView skybox visibility when explicitly supplied; otherwise keep its current setting."
+              },
+              "show_gizmos": {
+                "type": "boolean",
+                "description": "Set SceneView gizmo visibility when explicitly supplied; otherwise keep its current setting."
+              },
+              "show_grid": {
+                "type": "boolean",
+                "description": "Set SceneView grid visibility when explicitly supplied; otherwise keep its current setting."
+              },
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "targets",
+                  "scene"
+                ],
+                "default": "targets",
+                "description": "Render only the requested objects, or include the active scene around the sampled pose."
+              }
+            }
           }
         },
         "required": [
@@ -766,24 +833,6 @@
           "pictures": {
             "type": "object",
             "properties": {
-              "picture": {
-                "type": "object",
-                "properties": {
-                  "tiles": {
-                    "type": "array"
-                  },
-                  "output": {
-                    "type": "string"
-                  },
-                  "environment": {
-                    "type": "object"
-                  }
-                },
-                "additionalProperties": true
-              },
-              "level": {
-                "type": "string"
-              },
               "aspect": {
                 "type": "string"
               },
@@ -802,26 +851,54 @@
               "height": {
                 "type": "integer"
               },
-              "resolution": {
-                "type": "integer"
-              },
-              "supersample": {
-                "type": "integer"
-              },
               "images": {
-                "type": "array"
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "object"
+                    },
+                    "tile": {
+                      "type": "string"
+                    },
+                    "rect": {
+                      "type": "object"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "header": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "object"
+                        },
+                        "color": {
+                          "type": "object"
+                        },
+                        "height": {
+                          "type": "integer"
+                        },
+                        "character_count": {
+                          "type": "object"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  },
+                  "additionalProperties": true
+                }
               },
-              "tile_paths": {
-                "type": "array"
+              "title": {
+                "type": "string"
               },
-              "cached": {
-                "type": "boolean"
+              "screenshot_generated_at": {
+                "type": "string",
+                "format": "date-time"
               },
               "header_height": {
                 "type": "integer"
-              },
-              "screenshot_generated_at": {
-                "type": "string"
               }
             },
             "additionalProperties": true
@@ -842,16 +919,619 @@
                 "clip": "<clip>"
               }
             ],
-            "picture": {
-              "output": "composite"
-            },
-            "resolution": 512
+            "resolution": 1920,
+            "camera": {
+              "resolution": [
+                1280,
+                720
+              ]
+            }
           }
         }
       ]
     },
     {
-      "name": "analysis.video",
+      "name": "pose.analysis",
+      "description": "Preview one or more animation point constraints as Humanoid poses through the real SceneView camera and return measured joint positions.",
+      "documentation": {
+        "when_to_use": "Preview the generation point constraints for one scene character, capture the sampled Humanoid poses, and measure world-space joints and effector target distances.",
+        "behavior": [
+          "Pass the same point constraints array that will be sent to animation.generate. Every entry is previewed in isolation by default; combine=true renders all opaque pose previews together.",
+          "Use transforms only when additional scene objects need to be framed with each pose."
+        ],
+        "result_notes": [
+          "Returns one image per constraint by default, or one shared image with per-constraint measured joint positions when combine=true.",
+          "Effector target distances use a 0.05 m default tolerance; the call is synchronous and returns no request_id."
+        ],
+        "scene_effects": [
+          "SceneView lighting, skybox, gizmos, and grid keep their current state unless explicitly set. Renderer visibility is restored after capture."
+        ],
+        "limits": [
+          "Requires an active Scene View and a valid Humanoid character. Only point constraints are supported; inout and root_path do not describe a single sampled pose."
+        ],
+        "related_commands": [
+          "pose.get",
+          "animation.analysis",
+          "animation.generate"
+        ]
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "character": {
+            "type": "string",
+            "description": "Scene character that will receive the constraints in animation.generate."
+          },
+          "constraints": {
+            "type": "array",
+            "description": "Point constraints to preview through pose.analysis before submitting the same payload to animation.generate.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "frame": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "pose": {
+                  "type": "object",
+                  "description": "External Pose slot in the current scene context.",
+                  "additionalProperties": false,
+                  "properties": {
+                    "track": {
+                      "type": "string"
+                    },
+                    "index": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "track",
+                    "index"
+                  ]
+                },
+                "root": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "position": {
+                      "type": "array",
+                      "minItems": 3,
+                      "maxItems": 3,
+                      "items": {
+                        "type": "number"
+                      },
+                      "description": "World-space target position [x,y,z]. Omitted channels retain sampled values."
+                    },
+                    "rotation": {
+                      "type": "array",
+                      "minItems": 3,
+                      "maxItems": 3,
+                      "items": {
+                        "type": "number"
+                      },
+                      "description": "Rotation in Euler degrees [x,y,z], converted with Unity Quaternion.Euler. Omitted channels retain sampled values."
+                    }
+                  },
+                  "anyOf": [
+                    {
+                      "required": [
+                        "position"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "rotation"
+                      ]
+                    }
+                  ]
+                },
+                "effector": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "left_hand": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "position": {
+                          "type": "array",
+                          "minItems": 3,
+                          "maxItems": 3,
+                          "items": {
+                            "type": "number"
+                          },
+                          "description": "World-space target position [x,y,z]. Omitted channels retain sampled values."
+                        },
+                        "rotation": {
+                          "type": "array",
+                          "minItems": 3,
+                          "maxItems": 3,
+                          "items": {
+                            "type": "number"
+                          },
+                          "description": "Rotation in Euler degrees [x,y,z], converted with Unity Quaternion.Euler. Omitted channels retain sampled values."
+                        }
+                      },
+                      "anyOf": [
+                        {
+                          "required": [
+                            "position"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "rotation"
+                          ]
+                        }
+                      ]
+                    },
+                    "right_hand": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "position": {
+                          "type": "array",
+                          "minItems": 3,
+                          "maxItems": 3,
+                          "items": {
+                            "type": "number"
+                          },
+                          "description": "World-space target position [x,y,z]. Omitted channels retain sampled values."
+                        },
+                        "rotation": {
+                          "type": "array",
+                          "minItems": 3,
+                          "maxItems": 3,
+                          "items": {
+                            "type": "number"
+                          },
+                          "description": "Rotation in Euler degrees [x,y,z], converted with Unity Quaternion.Euler. Omitted channels retain sampled values."
+                        }
+                      },
+                      "anyOf": [
+                        {
+                          "required": [
+                            "position"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "rotation"
+                          ]
+                        }
+                      ]
+                    },
+                    "left_foot": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "position": {
+                          "type": "array",
+                          "minItems": 3,
+                          "maxItems": 3,
+                          "items": {
+                            "type": "number"
+                          },
+                          "description": "World-space target position [x,y,z]. Omitted channels retain sampled values."
+                        },
+                        "rotation": {
+                          "type": "array",
+                          "minItems": 3,
+                          "maxItems": 3,
+                          "items": {
+                            "type": "number"
+                          },
+                          "description": "Rotation in Euler degrees [x,y,z], converted with Unity Quaternion.Euler. Omitted channels retain sampled values."
+                        }
+                      },
+                      "anyOf": [
+                        {
+                          "required": [
+                            "position"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "rotation"
+                          ]
+                        }
+                      ]
+                    },
+                    "right_foot": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "position": {
+                          "type": "array",
+                          "minItems": 3,
+                          "maxItems": 3,
+                          "items": {
+                            "type": "number"
+                          },
+                          "description": "World-space target position [x,y,z]. Omitted channels retain sampled values."
+                        },
+                        "rotation": {
+                          "type": "array",
+                          "minItems": 3,
+                          "maxItems": 3,
+                          "items": {
+                            "type": "number"
+                          },
+                          "description": "Rotation in Euler degrees [x,y,z], converted with Unity Quaternion.Euler. Omitted channels retain sampled values."
+                        }
+                      },
+                      "anyOf": [
+                        {
+                          "required": [
+                            "position"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "rotation"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "anyOf": [
+                    {
+                      "required": [
+                        "left_hand"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "right_hand"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "left_foot"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "right_foot"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "frame"
+              ],
+              "description": "Use the explicit External Pose, or the Avatar skeleton rest pose when pose is omitted; never implicitly sample the Timeline. Select concrete type from explicit inputs, then overlay data. root is Root2D; pose with optional root/effector is FullBody after IK; root + effector without pose is Effector. effector alone is invalid. Transforms accept position and/or Euler rotation; omitted channels retain sampled values. Empty transforms are invalid.",
+              "oneOf": [
+                {
+                  "required": [
+                    "pose"
+                  ]
+                },
+                {
+                  "required": [
+                    "root",
+                    "effector"
+                  ],
+                  "not": {
+                    "required": [
+                      "pose"
+                    ]
+                  }
+                },
+                {
+                  "required": [
+                    "root"
+                  ],
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "pose"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "effector"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "minItems": 1
+          },
+          "combine": {
+            "type": "boolean",
+            "default": false,
+            "description": "Render all constrained poses together in one opaque SceneView image; defaults to false, which returns one image per constraint."
+          },
+          "transforms": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "Scene hierarchy paths to frame and render. Defaults to @pose; use @pose/<relative bone path> for part of the sampled character."
+          },
+          "joints": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "Hips",
+                "Head",
+                "LeftHand",
+                "RightHand",
+                "LeftFoot",
+                "RightFoot",
+                "LeftUpperArm",
+                "RightUpperArm",
+                "LeftLowerArm",
+                "RightLowerArm",
+                "LeftUpperLeg",
+                "RightUpperLeg",
+                "LeftLowerLeg",
+                "RightLowerLeg"
+              ]
+            },
+            "description": "Humanoid joints to measure. Defaults to hips, head, hands, and feet; effector-constrained joints are included automatically."
+          },
+          "camera": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "SceneView camera controls shared by pose.analysis and animation.analysis.",
+            "properties": {
+              "direction": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                  "type": "number"
+                },
+                "description": "Optional camera-to-target direction [x,y,z]. animation.analysis keeps each tile's direction when omitted."
+              },
+              "orthographic": {
+                "type": "boolean",
+                "default": true
+              },
+              "padding": {
+                "type": "number",
+                "minimum": 0.01,
+                "default": 1.1
+              },
+              "near_clip": {
+                "type": "number",
+                "minimum": 0.001
+              },
+              "far_clip": {
+                "type": "number",
+                "minimum": 0.01
+              },
+              "resolution": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "integer",
+                  "minimum": 64,
+                  "maximum": 4096
+                },
+                "description": "SceneView render size [width,height]. Defaults to the current SceneView camera size."
+              },
+              "scene_lighting": {
+                "type": "boolean",
+                "description": "Set SceneView scene lighting when explicitly supplied; otherwise keep its current setting."
+              },
+              "show_skybox": {
+                "type": "boolean",
+                "description": "Set SceneView skybox visibility when explicitly supplied; otherwise keep its current setting."
+              },
+              "show_gizmos": {
+                "type": "boolean",
+                "description": "Set SceneView gizmo visibility when explicitly supplied; otherwise keep its current setting."
+              },
+              "show_grid": {
+                "type": "boolean",
+                "description": "Set SceneView grid visibility when explicitly supplied; otherwise keep its current setting."
+              },
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "targets",
+                  "scene"
+                ],
+                "default": "targets",
+                "description": "Render only the requested objects, or include the active scene around the sampled pose."
+              }
+            }
+          }
+        },
+        "required": [
+          "character",
+          "constraints"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "additionalProperties": true
+          },
+          "image_path": {
+            "type": "string"
+          },
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "combine": {
+            "type": "boolean"
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": {
+                  "type": "integer"
+                },
+                "frame": {
+                  "type": "integer"
+                },
+                "source": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "character": {
+                      "type": "string"
+                    },
+                    "frame": {
+                      "type": "integer"
+                    },
+                    "constraint": {
+                      "type": "object",
+                      "properties": {
+                        "frame": {
+                          "type": "integer"
+                        },
+                        "pose": {
+                          "type": "object"
+                        },
+                        "root": {
+                          "type": "object"
+                        },
+                        "effector": {
+                          "type": "object"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                "transforms": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string"
+                      },
+                      "world_position": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        }
+                      }
+                    },
+                    "additionalProperties": true
+                  }
+                },
+                "pose_analysis": {
+                  "type": "object",
+                  "properties": {
+                    "overall": {
+                      "type": "object"
+                    },
+                    "joints": {
+                      "type": "object"
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                "image_path": {
+                  "type": "string"
+                },
+                "width": {
+                  "type": "integer"
+                },
+                "height": {
+                  "type": "integer"
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": true
+      },
+      "examples": [
+        {
+          "description": "Preview the same point constraints before sending them to animation.generate.",
+          "arguments": {
+            "character": "<character>",
+            "constraints": [
+              {
+                "frame": 90,
+                "pose": {
+                  "track": "<track>",
+                  "index": 0
+                },
+                "root": {
+                  "position": [
+                    1.1,
+                    0,
+                    2.4
+                  ]
+                },
+                "effector": {
+                  "right_hand": {
+                    "position": [
+                      1.2,
+                      0.9,
+                      2.4
+                    ]
+                  }
+                }
+              }
+            ],
+            "combine": false,
+            "camera": {
+              "resolution": [
+                1280,
+                720
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "pose.fromvideo",
       "description": "Estimate a per-frame SMPL-X pose sequence from a local video. This starts an asynchronous analysis job; poll generation.get with its request_id. The result includes raw SMPL-X poses and matching FullBody constraints in the existing raw constraint format; it does not create or apply a Unity animation.",
       "documentation": {
         "when_to_use": "Use when a video file should be converted into a time-ordered SMPL-X pose array for downstream retargeting or analysis.",
@@ -874,7 +1554,7 @@
           "The request can fail if QuickServer's GVHMR runtime, checkpoints, or the SMPL-X Avatar asset are unavailable."
         ],
         "related_commands": [
-          "analysis.picture",
+          "pose.frompicture",
           "generation.get",
           "animation.retarget"
         ]
@@ -957,7 +1637,7 @@
       ]
     },
     {
-      "name": "analysis.picture",
+      "name": "pose.frompicture",
       "description": "Estimate one SMPL-X pose from a local still image. This starts an asynchronous analysis job; poll generation.get with its request_id. The result includes raw SMPL-X pose data and a FullBody constraint in the existing raw constraint format; it does not create or apply a Unity animation.",
       "documentation": {
         "when_to_use": "Use when a still image should be converted into a single SMPL-X pose sample for downstream retargeting or analysis.",
@@ -980,7 +1660,7 @@
           "The request can fail if QuickServer's GVHMR runtime, checkpoints, or the SMPL-X Avatar asset are unavailable."
         ],
         "related_commands": [
-          "analysis.video",
+          "pose.fromvideo",
           "generation.get",
           "animation.retarget"
         ]
@@ -1054,345 +1734,6 @@
       ]
     },
     {
-      "name": "transform.capture",
-      "description": "Capture the current scene or an External Pose returned by pose.get together with scene objects, in world space. Optionally sample one absolute Timeline-global 60 FPS frame directly with timeline_frame_60. Returns a four-view image by default, or a single scene-camera image when camera.mode is scene; restores the original Timeline time and never saves temporary camera changes.",
-      "documentation": {
-        "when_to_use": "Render a four-view image or a temporary scene-camera image and world-space joint measurements for a scene character or a sampled External Pose, optionally framed with scene objects.",
-        "behavior": [
-          "Use character_path for the current scene character, a Pose reference returned by pose.get, or character_path plus timeline_frame_60 for direct single-frame sampling.",
-          "Use @pose or @pose/<relative bone path> to include the evaluated Pose in the capture."
-        ],
-        "result_notes": [
-          "Returns image_path, view/tile metadata, target references, and evaluated joint positions in world space. camera.mode=scene clones the requested camera in memory and never saves its temporary framing."
-        ],
-        "scene_effects": [
-          "Creates image evidence but does not change scene poses. A direct timeline_frame_60 capture temporarily evaluates and then restores the Timeline time."
-        ],
-        "limits": [
-          "timeline_frame_60 and pose are mutually exclusive; transforms must resolve in the current scene or Pose."
-        ],
-        "related_commands": [
-          "pose.get",
-          "scene.context"
-        ]
-      },
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "character_path": {
-            "type": "string",
-            "description": "Active-scene character hierarchy path; required unless pose is supplied."
-          },
-          "pose": {
-            "type": "object",
-            "description": "External Pose slot in the current scene context.",
-            "additionalProperties": false,
-            "properties": {
-              "track": {
-                "type": "string"
-              },
-              "index": {
-                "type": "integer",
-                "minimum": 0
-              }
-            },
-            "required": [
-              "track",
-              "index"
-            ]
-          },
-          "timeline_frame_60": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "Optional absolute Timeline-global frame at 60 FPS. Requires character_path; mutually exclusive with pose. The Timeline and scene objects are evaluated at this frame for the capture, then restored."
-          },
-          "transforms": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "string"
-            },
-            "description": "Scene hierarchy paths or character-relative paths. With pose, use @pose for the evaluated character or @pose/<relative bone path>. Include environment paths to frame them together."
-          },
-          "resolution": {
-            "type": "integer",
-            "description": "Per-view pixel size for the default four-view capture, 64 through 4096; defaults to 1024. Scene-camera captures use camera.resolution."
-          },
-          "camera": {
-            "type": "object",
-            "additionalProperties": false,
-            "description": "Optional temporary scene-camera capture. The source camera is cloned, adjusted in memory, rendered, and discarded; the scene camera is never saved.",
-            "properties": {
-              "mode": {
-                "type": "string",
-                "enum": [
-                  "auto",
-                  "scene"
-                ],
-                "default": "auto",
-                "description": "Use the existing four-view renderer (auto) or a scene camera (scene)."
-              },
-              "path": {
-                "type": "string",
-                "description": "Active-scene camera hierarchy path; defaults to Main Camera when mode is scene."
-              },
-              "auto_frame": {
-                "type": "boolean",
-                "default": true,
-                "description": "Temporarily frame the requested transforms while preserving the source camera's viewing direction."
-              },
-              "resolution": {
-                "type": "array",
-                "minItems": 2,
-                "maxItems": 2,
-                "items": {
-                  "type": "integer",
-                  "minimum": 64,
-                  "maximum": 4096
-                },
-                "description": "Scene-camera output [width,height]."
-              },
-              "position": {
-                "type": "array",
-                "minItems": 3,
-                "maxItems": 3,
-                "items": {
-                  "type": "number"
-                },
-                "description": "Optional temporary world position [x,y,z]."
-              },
-              "rotation": {
-                "type": "array",
-                "minItems": 4,
-                "maxItems": 4,
-                "items": {
-                  "type": "number"
-                },
-                "description": "Optional temporary world rotation quaternion [x,y,z,w]."
-              },
-              "field_of_view": {
-                "type": "number",
-                "minimum": 1,
-                "maximum": 179,
-                "description": "Optional temporary perspective field of view."
-              },
-              "near_clip": {
-                "type": "number",
-                "minimum": 0.001,
-                "description": "Optional temporary near clip plane."
-              },
-              "far_clip": {
-                "type": "number",
-                "minimum": 0.01,
-                "description": "Optional temporary far clip plane."
-              },
-              "orthographic": {
-                "type": "boolean",
-                "description": "Optional temporary projection mode."
-              },
-              "orthographic_size": {
-                "type": "number",
-                "minimum": 0.01,
-                "description": "Optional temporary orthographic size."
-              },
-              "background": {
-                "type": "array",
-                "minItems": 3,
-                "maxItems": 4,
-                "items": {
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 1
-                },
-                "description": "Temporary clear color [r,g,b] or [r,g,b,a]."
-              }
-            }
-          }
-        },
-        "required": [
-          "transforms"
-        ],
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          },
-          "error": {
-            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
-            "type": "object",
-            "properties": {
-              "code": {
-                "type": "string"
-              },
-              "message": {
-                "type": "string"
-              },
-              "details": {
-                "type": "object"
-              }
-            },
-            "required": [
-              "code",
-              "message"
-            ],
-            "additionalProperties": true
-          },
-          "image_path": {
-            "type": "string"
-          },
-          "width": {
-            "type": "integer"
-          },
-          "height": {
-            "type": "integer"
-          },
-          "tile_size": {
-            "oneOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "tile_border_px": {
-            "oneOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "camera_mode": {
-            "type": "string",
-            "enum": [
-              "auto",
-              "scene"
-            ]
-          },
-          "tiles": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "tile": {
-                  "type": "string"
-                },
-                "view": {
-                  "type": "string"
-                },
-                "projection": {
-                  "type": "string"
-                },
-                "transforms": {
-                  "type": "array"
-                },
-                "bounds": {
-                  "type": "object"
-                }
-              },
-              "additionalProperties": true
-            }
-          },
-          "source": {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string"
-              },
-              "character": {
-                "type": "string"
-              },
-              "character_path": {
-                "type": "object"
-              },
-              "pose": {
-                "type": "object"
-              },
-              "clip": {
-                "oneOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "frame": {
-                "oneOf": [
-                  {
-                    "type": "integer"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "timeline_frame_60": {
-                "type": "integer"
-              },
-              "mode": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
-          },
-          "targets": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "key": {
-                  "type": "string"
-                },
-                "world_position": {
-                  "type": "array",
-                  "items": {
-                    "type": "number"
-                  }
-                }
-              },
-              "additionalProperties": true
-            }
-          },
-          "evaluated_joints_world": {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": true
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "additionalProperties": true
-      },
-      "examples": [
-        {
-          "description": "Capture the External Pose returned by pose.get together with scene objects, without moving the scene character.",
-          "arguments": {
-            "pose": {
-              "track": "<returned pose track>",
-              "index": 0
-            },
-            "transforms": [
-              "@pose",
-              "<table hierarchy path>",
-              "<apple hierarchy path>"
-            ],
-            "resolution": 768
-          }
-        }
-      ]
-    },
-    {
       "name": "animation.retarget",
       "description": "Retarget one loaded animation to another current scene context character and append the result.",
       "documentation": {
@@ -1411,7 +1752,7 @@
         ],
         "related_commands": [
           "scene.context",
-          "animation.analyze"
+          "animation.analysis"
         ]
       },
       "inputSchema": {
@@ -1549,25 +1890,26 @@
     },
     {
       "name": "animation.generate",
-      "description": "Start asynchronous generation for a character in the current scene context. Root speed above 7 m/s produces a warning; above 10 m/s blocks generation. Root acceleration above 10 m/s² produces a warning; above 15 m/s² blocks generation. After generation, the same Timeline Clip is analyzed once with the full animation.analyze pipeline and returned under post_analysis; analysis failure does not invalidate the generated Clip. Command-created Timeline Clips enable AutoBegin anchoring automatically; explicit first-frame or In/Out samples take precedence. The accepted response contains request_id, status, and request/constraint diagnostics. Pose/effector safety preflight runs only when the same point constraint explicitly contains both pose and effector; effector requires pose or root as explicit root context. These diagnostics are not measured joint positions in the generated motion; use pose.get then pose.test to measure sampled joint positions and contact reach after generation. Supply trajectory settings only when the requested path is known from explicit requirements or confirmed scene/analysis evidence; prompt wording never selects path options.",
+      "description": "Start asynchronous generation for a character in the current scene context. Root speed above 7 m/s produces a warning; above 10 m/s blocks generation. Root acceleration above 10 m/s² produces a warning; above 15 m/s² blocks generation. After generation, the same Timeline Clip is analyzed once with the full animation.analysis pipeline and returned under post_analysis; analysis failure does not invalidate the generated Clip. Command-created Timeline Clips enable AutoBegin anchoring automatically; explicit first-frame or In/Out samples take precedence. The accepted response contains request_id, status, and request/constraint diagnostics. Pose/effector safety preflight runs only when the same point constraint explicitly contains both pose and effector; effector requires pose or root as explicit root context. These diagnostics are not measured joint positions in the generated motion; use pose.analysis to capture the sampled pose and measure joint positions after generation. Supply trajectory settings only when the requested path is known from explicit requirements or confirmed scene/analysis evidence; prompt wording never selects path options.",
       "documentation": {
         "when_to_use": "Submit one animation generation request for a character in the current scene context.",
         "behavior": [
           "Describe one simple semantic action in prompt; aim for 25 words or fewer.",
           "Represent exact body pose, root position, effector targets, duration, path, loop, and Clip windows in their explicit fields when required.",
+          "Point constraints without an explicit pose use the Avatar skeleton rest pose, as in pose.get mode=skeleton_rest_pose; they never implicitly sample the Timeline. Explicit Pose references and In/Out source Clip sampling are preserved.",
           "Save request_id and use generation.get to poll; do not resubmit a running request."
         ],
         "result_notes": [
           "The accepted response contains request_id, status, preflight check results, and warnings. Root speed above 7 m/s warns; above 10 m/s blocks generation. Root acceleration above 10 m/s² warns; above 15 m/s² blocks generation. Pose/effector safety preflight runs only when the same point constraint explicitly contains both pose and effector; effector requires pose or root as explicit root context.",
-          "On completion, generation.get returns the generated Clip metadata, asset path, animation_id, generation diagnostics, and one full animation.analyze result under post_analysis. Analysis failure is reported separately and does not invalidate the generated Clip."
+          "On completion, generation.get returns the generated Clip metadata, asset path, animation_id, generation diagnostics, and one full animation.analysis result under post_analysis. Analysis failure is reported separately and does not invalidate the generated Clip."
         ],
         "scene_effects": [
           "A completed result is appended as a Timeline Clip; existing completed Clips are retained.",
-          "The first scene pose is used as the automatic starting anchor unless explicit first-frame or In/Out samples take precedence."
+          "The Avatar skeleton rest pose is used as the automatic starting anchor unless explicit first-frame or In/Out samples take precedence."
         ],
         "limits": [
           "Trajectory overrides require an explicit requirement or confirmed scene/analysis evidence; prompt words do not select path options.",
-          "analysis_option is lightweight generation-time analysis, not the full animation.analyze command.",
+          "analysis_option is lightweight generation-time analysis, not the full animation.analysis command.",
           "Command checks validate supported request boundaries; they do not judge semantic or artistic quality."
         ],
         "related_commands": [
@@ -1575,7 +1917,7 @@
           "pose.get",
           "generation.get",
           "generation.cancel",
-          "animation.analyze"
+          "animation.analysis"
         ]
       },
       "inputSchema": {
@@ -1709,7 +2051,7 @@
           },
           "analysis_option": {
             "type": "object",
-            "description": "Optional generation-time lightweight analysis. When enabled, generation returns sparse salient keyframe markers and foot-contact changes; it does not run the full animation.analyze command."
+            "description": "Optional generation-time lightweight analysis. When enabled, generation returns sparse salient keyframe markers and foot-contact changes; it does not run the full animation.analysis command."
           },
           "constraints": {
             "type": "array",
@@ -1954,7 +2296,7 @@
                   "required": [
                     "frame"
                   ],
-                  "description": "Sample, assert concrete type from explicit inputs, then overlay data. root is Root2D; pose with optional root/effector is FullBody after IK; root + effector without pose is Effector. effector alone is invalid. Transforms accept position and/or Euler rotation; omitted channels retain sampled values. Empty transforms are invalid.",
+                  "description": "Use the explicit External Pose, or the Avatar skeleton rest pose when pose is omitted; never implicitly sample the Timeline. Select concrete type from explicit inputs, then overlay data. root is Root2D; pose with optional root/effector is FullBody after IK; root + effector without pose is Effector. effector alone is invalid. Transforms accept position and/or Euler rotation; omitted channels retain sampled values. Empty transforms are invalid.",
                   "oneOf": [
                     {
                       "required": [
@@ -2001,7 +2343,7 @@
                       "type": "integer",
                       "minimum": 0,
                       "default": 0,
-                      "description": "First path frame; defaults to the clip start. animation.analyze returns this path in World coordinates because the analyzed Clip begins at frame zero; generation resolves it once against the target character's World anchor. Use a confirmed path for the intended character and motion; root_path generates only start and end Root2D constraints, not intermediate route enforcement."
+                      "description": "First path frame; defaults to the clip start. animation.analysis returns this path in World coordinates because the analyzed Clip begins at frame zero; generation resolves it once against the target character's rest-pose World anchor. Use a confirmed path for the intended character and motion; root_path generates only start and end Root2D constraints, not intermediate route enforcement."
                     },
                     "root_path": {
                       "type": "object",
@@ -2009,7 +2351,7 @@
                       "properties": {
                         "path": {
                           "type": "object",
-                          "description": "Confirmed analyzed Root Path slot for the intended character and motion, returned by animation.analyze at clip.root_trajectory.path.",
+                          "description": "Confirmed analyzed Root Path slot for the intended character and motion, returned by animation.analysis at clip.root_trajectory.path.",
                           "additionalProperties": false,
                           "properties": {
                             "track": {
@@ -2398,8 +2740,8 @@
         ],
         "related_commands": [
           "scene.context",
-          "animation.analyze",
-          "transform.capture",
+          "animation.analysis",
+          "pose.analysis",
           "pose.set"
         ]
       },
@@ -2426,7 +2768,7 @@
               "timeline_frame_60": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "Absolute Timeline-global frame at 60 FPS. Use animation.analyze to find the selected Clip's start frame, then add the clip-local frame offset."
+                "description": "Absolute Timeline-global frame at 60 FPS. Use animation.analysis to find the selected Clip's start frame, then add the clip-local frame offset."
               }
             },
             "required": [
@@ -2534,43 +2876,14 @@
           "source": {
             "type": "object",
             "properties": {
-              "type": {
-                "type": "string"
-              },
               "character": {
                 "type": "string"
               },
-              "character_path": {
-                "type": "object"
-              },
-              "pose": {
-                "type": "object"
-              },
-              "clip": {
-                "oneOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
               "frame": {
-                "oneOf": [
-                  {
-                    "type": "integer"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "timeline_frame_60": {
                 "type": "integer"
               },
-              "mode": {
-                "type": "string"
+              "constraint": {
+                "type": "object"
               }
             },
             "additionalProperties": true
@@ -2648,320 +2961,6 @@
               "mode": "skeleton_rest_pose"
             },
             "full_data": true
-          }
-        }
-      ]
-    },
-    {
-      "name": "pose.test",
-      "description": "Measure actual Humanoid joint world positions after evaluating any External Pose, including a pose sampled from an Effector-constrained result. Optionally compare selected joints with world-space target positions; this is an explicit pose measurement, separate from generation-time non-blocking warnings.",
-      "documentation": {
-        "when_to_use": "Measure the actual world-space positions of Humanoid joints in an External Pose, optionally checking them against expected contact targets.",
-        "behavior": [
-          "Call pose.get for the desired scene or Timeline frame first, then pass its returned pose reference.",
-          "Use targets when a contact or reach criterion needs a numerical pass/fail check; target positions and tolerances are in meters in world space."
-        ],
-        "result_notes": [
-          "Returns measured joint world positions, optional target distances and tolerance results, and an overall status.",
-          "This samples the evaluated Pose rig; it does not judge whether the pose looks natural or whether a generated Clip plays smoothly."
-        ],
-        "scene_effects": [
-          "Read-only with respect to the scene, Timeline, Pose slot, and animation assets; evaluation uses a transient preview rig."
-        ],
-        "limits": [
-          "pose.test explicitly measures the actual joints in any sampled Pose, including after Effector-constrained generation. Generation-time pose/effector safety preflight is separate and runs only when the same constraint explicitly includes both pose and effector.",
-          "Requires a valid Humanoid character and a Pose reference from the current context."
-        ],
-        "related_commands": [
-          "pose.get",
-          "transform.capture",
-          "animation.generate"
-        ]
-      },
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "pose": {
-            "type": "object",
-            "description": "External Pose slot in the current scene context.",
-            "additionalProperties": false,
-            "properties": {
-              "track": {
-                "type": "string"
-              },
-              "index": {
-                "type": "integer",
-                "minimum": 0
-              }
-            },
-            "required": [
-              "track",
-              "index"
-            ]
-          },
-          "joints": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "Hips",
-                "Head",
-                "LeftHand",
-                "RightHand",
-                "LeftFoot",
-                "RightFoot",
-                "LeftUpperArm",
-                "RightUpperArm",
-                "LeftLowerArm",
-                "RightLowerArm",
-                "LeftUpperLeg",
-                "RightUpperLeg",
-                "LeftLowerLeg",
-                "RightLowerLeg"
-              ]
-            },
-            "description": "Humanoid joints to measure. Defaults to hips, head, hands, and feet; joints named in targets are included automatically."
-          },
-          "targets": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "joint": {
-                  "type": "string",
-                  "enum": [
-                    "Hips",
-                    "Head",
-                    "LeftHand",
-                    "RightHand",
-                    "LeftFoot",
-                    "RightFoot",
-                    "LeftUpperArm",
-                    "RightUpperArm",
-                    "LeftLowerArm",
-                    "RightLowerArm",
-                    "LeftUpperLeg",
-                    "RightUpperLeg",
-                    "LeftLowerLeg",
-                    "RightLowerLeg"
-                  ]
-                },
-                "position": {
-                  "type": "array",
-                  "minItems": 3,
-                  "maxItems": 3,
-                  "items": {
-                    "type": "number"
-                  }
-                },
-                "tolerance_m": {
-                  "type": "number",
-                  "minimum": 0,
-                  "default": 0.05
-                }
-              },
-              "required": [
-                "joint",
-                "position"
-              ]
-            },
-            "description": "Optional expected world-space joint positions and per-target tolerances in meters."
-          }
-        },
-        "required": [
-          "pose"
-        ],
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          },
-          "error": {
-            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
-            "type": "object",
-            "properties": {
-              "code": {
-                "type": "string"
-              },
-              "message": {
-                "type": "string"
-              },
-              "details": {
-                "type": "object"
-              }
-            },
-            "required": [
-              "code",
-              "message"
-            ],
-            "additionalProperties": true
-          },
-          "pose": {
-            "type": "object",
-            "properties": {
-              "track": {
-                "type": "string"
-              },
-              "index": {
-                "type": "integer"
-              }
-            },
-            "additionalProperties": true
-          },
-          "source": {
-            "type": "object",
-            "properties": {
-              "type": {
-                "type": "string"
-              },
-              "character": {
-                "type": "string"
-              },
-              "character_path": {
-                "type": "object"
-              },
-              "pose": {
-                "type": "object"
-              },
-              "clip": {
-                "oneOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "frame": {
-                "oneOf": [
-                  {
-                    "type": "integer"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "timeline_frame_60": {
-                "type": "integer"
-              },
-              "mode": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
-          },
-          "overall": {
-            "type": "string",
-            "enum": [
-              "passed",
-              "failed",
-              "not_tested"
-            ]
-          },
-          "joints": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "joint": {
-                  "type": "string"
-                },
-                "world_position": {
-                  "type": "array",
-                  "items": {
-                    "type": "number"
-                  }
-                },
-                "target_position": {
-                  "oneOf": [
-                    {
-                      "type": "array",
-                      "items": {
-                        "type": "number"
-                      }
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "distance_m": {
-                  "oneOf": [
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "tolerance_m": {
-                  "oneOf": [
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "status": {
-                  "type": "string",
-                  "enum": [
-                    "passed",
-                    "failed",
-                    "not_tested"
-                  ]
-                }
-              },
-              "additionalProperties": true
-            }
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "additionalProperties": true
-      },
-      "examples": [
-        {
-          "description": "Measure the actual world-space hand positions in a sampled Timeline pose.",
-          "arguments": {
-            "pose": {
-              "track": "<pose track returned by pose.get>",
-              "index": 0
-            },
-            "joints": [
-              "RightHand",
-              "LeftHand"
-            ]
-          }
-        },
-        {
-          "description": "Check whether the sampled right hand reaches a world-space contact point within 5 cm.",
-          "arguments": {
-            "pose": {
-              "track": "<pose track returned by pose.get>",
-              "index": 0
-            },
-            "targets": [
-              {
-                "joint": "RightHand",
-                "position": [
-                  1.2,
-                  0.9,
-                  2.4
-                ],
-                "tolerance_m": 0.05
-              }
-            ]
           }
         }
       ]
@@ -3290,7 +3289,7 @@
     },
     {
       "name": "generation.get",
-      "description": "Get status and results for install, generation, or Mocap analysis requests. A completed generation includes post_analysis with the full animation.analyze result for the generated Timeline Clip; analysis failure is reported separately and does not invalidate generation. A completed Mocap analysis returns poses and SMPL-X coordinate metadata at the top level. include_request_json explicitly opts into the submitted generation payload.",
+      "description": "Get status and results for install, generation, or Mocap analysis requests. A completed generation includes post_analysis with the full animation.analysis result for the generated Timeline Clip; analysis failure is reported separately and does not invalidate generation. A completed Mocap analysis returns poses and SMPL-X coordinate metadata at the top level. include_request_json explicitly opts into the submitted generation payload.",
       "documentation": {
         "when_to_use": "Read progress, terminal status, and results for an installation or generation request.",
         "behavior": [
@@ -3318,7 +3317,7 @@
         "properties": {
           "request_id": {
             "type": "string",
-            "description": "Request id returned by server.install, animation.generate, analysis.video, or analysis.picture."
+            "description": "Request id returned by server.install, animation.generate, pose.fromvideo, or pose.frompicture."
           },
           "include_request_json": {
             "type": "boolean",

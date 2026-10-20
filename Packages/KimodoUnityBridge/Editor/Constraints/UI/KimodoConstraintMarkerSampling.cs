@@ -55,23 +55,15 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            TimelineClip referenceClip = FindReferenceClip(track, marker.time, activeClip: null);
             double sampleTime = marker.time;
             var timelineContext = new KimodoTimelineInOutConstraintContext
             {
-                SourceClip = null,
                 Track = track,
                 Director = director,
-                Animator = animator,
-                ModelName = ResolveModelName(referenceClip)
+                Animator = animator
             };
-            string samplingType = "fullbody";
-            if (!KimodoTimelineConstraintSampler.TrySampleMarker(
+            if (!KimodoConstraintPoseUtility.TryCreateRestPoseSample(
                     timelineContext,
-                    sampleTime,
-                    sampleTime,
-                    samplingType,
-                    ResolveModelName(referenceClip),
                     out KimodoMarkerSampleResult sample,
                     out error))
             {

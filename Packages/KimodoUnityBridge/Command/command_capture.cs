@@ -2,18 +2,14 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
 using KimodoUnityBridge;
 using KimodoBridge;
 using TimelineInject;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
-using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 
 namespace KimodoUnityBridge.Command
@@ -37,86 +33,11 @@ namespace KimodoUnityBridge.Command
             public KimodoMarkerSampleResult[] Samples;
         }
 
-        private const string AnalysisPictureRenderVersion = "21-humanbodybones-mesh";
-        private const string UnifiedAnalysisPictureRenderVersion = "70-test-analysis-picture-pipeline-calibrated-lights";
-        private const string TestAnalysisPicture20TileRenderVersion = "63-height-time-ratio5-dim-hdrp-lights";
-        private const int TestAnalysisCanvasWidth = 1920;
-        private const int TestAnalysisCanvasHeight = 1080;
-        private const int PictureSupersample = 2;
-        private const float TestPoseJointCameraOffsetMeters = .2f;
-        private const float TestPoseFootForwardCameraOffsetMeters = .3f;
-        private const float TestPoseHeadCameraOffsetMeters = .3f;
-        private const float TestCameraMarginMeters = .5f;
-        private const float TestCameraFitScale = 1f;
-        private const float TestGhostAlphaMin = .1f;
-        private const float TestGhostAlphaMax = .5f;
         private const float StationaryTrajectoryRange = .25f;
         private const int StationaryTrajectoryMinFrames = 10;
-        private const float StationaryTrajectoryAlphaBoost = .1f;
-        private const float MaxPromotedGhostAlpha = .75f;
-        private const float HeightTimePoseGapMeters = .06f;
-        private static readonly Color TestStartFrameTint = new Color(.05f, .90f, .85f, 1f);
-        private static readonly Color TestEndFrameTint = new Color(.95f, .08f, .08f, 1f);
-        private static readonly Color TestKeyframeTint = new Color(1f, 1f, .02f, 1f);
+        private static readonly Color AnalysisStartFrameTint = new Color(.05f, .90f, .85f, 1f);
+        private static readonly Color AnalysisEndFrameTint = new Color(.95f, .08f, .08f, 1f);
+        private static readonly Color AnalysisKeyframeTint = new Color(1f, 1f, .02f, 1f);
         private static GameObject captureSessionRoot;
-
-        private enum CapturePipeline
-        {
-            BuiltIn,
-            Urp,
-            Hdrp,
-            OtherSrp
-        }
-
-        private static CapturePipeline GetCapturePipeline()
-        {
-            RenderPipelineAsset pipeline = GraphicsSettings.currentRenderPipeline;
-            if (pipeline == null) return CapturePipeline.BuiltIn;
-            string name = pipeline.GetType().FullName ?? string.Empty;
-            if (name.IndexOf("HighDefinition", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                name.IndexOf("HDRP", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                return CapturePipeline.Hdrp;
-            }
-            if (name.IndexOf("Universal", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                name.IndexOf("URP", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                return CapturePipeline.Urp;
-            }
-            return CapturePipeline.OtherSrp;
-        }
-
-        private static Shader FindAnalysisShader(string hdrpName, string urpName, string builtInName)
-        {
-            string[] orderedNames;
-            switch (GetCapturePipeline())
-            {
-                case CapturePipeline.Hdrp:
-                    orderedNames = new[] { hdrpName, urpName, builtInName };
-                    break;
-                case CapturePipeline.Urp:
-                    orderedNames = new[] { urpName, hdrpName, builtInName };
-                    break;
-                case CapturePipeline.BuiltIn:
-                    orderedNames = new[] { builtInName, urpName, hdrpName };
-                    break;
-                default:
-                    orderedNames = new[] { urpName, hdrpName, builtInName };
-                    break;
-            }
-
-            foreach (string name in orderedNames)
-            {
-                if (string.IsNullOrEmpty(name)) continue;
-                Shader shader = Shader.Find(name);
-                if (shader != null) return shader;
-            }
-            return null;
-        }
-
-        private static bool IsBuiltInCapturePipeline()
-        {
-            return GetCapturePipeline() == CapturePipeline.BuiltIn;
-        }
     }
 }

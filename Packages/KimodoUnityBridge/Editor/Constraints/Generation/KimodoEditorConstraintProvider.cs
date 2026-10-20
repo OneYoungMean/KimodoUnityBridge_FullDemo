@@ -81,6 +81,25 @@ namespace KimodoBridge.Editor
                 }
             }
 
+            if (!KimodoGenerationWarningCheckService.TryValidateRootMotionConstraints(
+                    result.CombinedSamples,
+                    frameRate,
+                    out string rootMotionError))
+            {
+                if (result.HasSyntheticAutoBeginConstraint && result.CombinedSamples.Count > 0)
+                {
+                    result.CombinedSamples.RemoveAt(0);
+                    result.HasSyntheticAutoBeginConstraint = false;
+                }
+                if (!KimodoGenerationWarningCheckService.TryValidateRootMotionConstraints(
+                        result.CombinedSamples,
+                        frameRate,
+                        out rootMotionError))
+                {
+                    throw new InvalidOperationException($"Generation boundary constraints violate root motion limits: {rootMotionError}");
+                }
+            }
+
             if (includeTimeline || result.CombinedSamples.Count > 0)
             {
                 result.ConstraintsJson = KimodoConstraintJsonExporter.ToConstraintsJson(
