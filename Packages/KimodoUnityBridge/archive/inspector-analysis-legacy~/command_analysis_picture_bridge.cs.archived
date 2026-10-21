@@ -79,7 +79,7 @@ namespace KimodoUnityBridge.Command
                         if (record == null)
                         {
                             string precomputedId = CacheAnalysisResult(session, character, startFrame / SessionFrameRate, endFrame / SessionFrameRate,
-                                new JArray(), precomputedAnalysis, null, animation, inputSignature);
+                                precomputedAnalysis, null, animation, inputSignature);
                             record = GetCachedAnalysis(session, precomputedId);
                         }
                         else
@@ -94,7 +94,7 @@ namespace KimodoUnityBridge.Command
                         JObject analysis = AnalyzeAnimation(session, animation, options, out byte[] motionBytes);
                         NormalizeAnalysisContract(analysis, startFrame, endFrame);
                         string id = CacheAnalysisResult(session, character, startFrame / SessionFrameRate, endFrame / SessionFrameRate,
-                            new JArray(), analysis, motionBytes, animation, inputSignature);
+                            analysis, motionBytes, animation, inputSignature);
                         record = GetCachedAnalysis(session, id);
                     }
                     subjects.Add(new AnalysisSubject(character, animation, record, startFrame, endFrame));

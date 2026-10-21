@@ -816,7 +816,12 @@ namespace KimodoBridge.Editor
             string prompt = clip.motionPrompt ?? string.Empty;
             if (KimodoPlayableClipGenerationHostService.IsLoopGenerationEnabled(clip, timelineClipOverride) ||
                 clip.overridePathAngle ||
-                clip.overrideHeading)
+                clip.overrideHeading ||
+                (clip.postApplyOutConstraint &&
+                    ((clip.enableOutConstraint &&
+                      clip.inOutConstraintMode != KimodoInOutConstraintMode.None) ||
+                     (externalConstraint?.Enabled == true &&
+                      externalConstraint.DeferredOutConstraintSamples?.Count > 0))))
             {
                 return await GenerateTrajectoryAndFinalizeAsync(
                     clip,
@@ -1072,7 +1077,8 @@ namespace KimodoBridge.Editor
                     externalConstraint,
                     token,
                     timelineClipOverride: timelineClipOverride,
-                    generateLoopOverride: false);
+                    generateLoopOverride: false,
+                    deferOutConstraint: clip.postApplyOutConstraint);
                 firstRequest.AnalysisOptionsJson = string.Empty;
                 firstRequest.Progress = (stage, message) =>
                     progress?.Invoke(stage, $"Trajectory pass 1/2: {message}");
@@ -1105,7 +1111,8 @@ namespace KimodoBridge.Editor
                     effectiveSeedOverride: effectiveSeed,
                     timelineClipOverride: timelineClipOverride,
                     enableAutoBeginAnchor: false,
-                    generateLoopOverride: generateLoop);
+                    generateLoopOverride: generateLoop,
+                    deferOutConstraint: clip.postApplyOutConstraint);
                 KimodoRawMotionData motion = ParseFirstPassMotion(firstRequest, firstResult, "Trajectory");
                 string combinedConstraints = ShiftConstraintFrames(
                     firstRequest.Constraints.json,
@@ -1171,6 +1178,23 @@ namespace KimodoBridge.Editor
                         headingConstraintJson);
                 }
                 finalRequest.Constraints.json = combinedConstraints;
+                if (clip.postApplyOutConstraint &&
+                    !string.IsNullOrWhiteSpace(finalRequest.DeferredOutConstraintJson))
+                {
+                    int? syntheticAutoBeginFrame = firstRequest.HasSyntheticAutoBeginConstraint &&
+                        firstRequest.ConstraintSamples != null && firstRequest.ConstraintSamples.Count > 0
+                            ? Mathf.RoundToInt((float)(firstRequest.ConstraintSamples[0].sampleTime * finalRequest.TargetFrameRate))
+                            : (int?)null;
+                    finalRequest.Constraints.json = KimodoPostApplyOutConstraintUtility.Apply(
+                        combinedConstraints,
+                        finalRequest.DeferredOutConstraintJson,
+                        motion,
+                        modelName,
+                        finalRequest.TargetFrameRate,
+                        finalRequest.RuntimeTrimStartFrame,
+                        finalRequest.TimelineContextSnapshot,
+                        syntheticAutoBeginFrame);
+                }
                 firstRequest = null;
 
                 finalRequest.Progress = (stage, message) =>

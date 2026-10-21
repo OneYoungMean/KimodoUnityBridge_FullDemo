@@ -1,0 +1,16 @@
+// Archived during command-layer cleanup on 2026-10-20.
+// animation.analysis has no public analysis_option schema field; generation
+// retains its own parser. This legacy validation was unreachable through the
+// public command contract and is preserved here for traceability.
+//
+// private static JObject BuildEffectiveAnalysisOptions(JObject requested)
+// {
+//     JObject result = requested != null ? (JObject)requested.DeepClone() : new JObject();
+//     if (result.Property("keyframe_count") != null)
+//         throw new InvalidOperationException("analysis_option.keyframe_count is no longer supported.");
+//     if (result["keyframes"] is JObject keyframes &&
+//         (keyframes.Property("max_count") != null || keyframes.Property("enabled") != null))
+//         throw new InvalidOperationException(
+//             "analysis_option.keyframes.max_count and analysis_option.keyframes.enabled are no longer supported.");
+//     return result;
+// }

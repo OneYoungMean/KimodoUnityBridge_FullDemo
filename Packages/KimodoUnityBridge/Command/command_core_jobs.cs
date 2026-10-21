@@ -63,8 +63,8 @@ namespace KimodoUnityBridge.Command
             {
                 throw new InvalidOperationException($"Character '{sessionCharacter.Name}' has no resolvable scene source.");
             }
-            KimodoTimelinePreviewRefreshUtility.InitializeSceneOffset(sessionCharacter.Track, animator);
             return new ResolvedCharacter(root, animator, sessionCharacter.Avatar, sessionCharacter.Name);
+            KimodoTimelinePreviewRefreshUtility.InitializeSceneOffset(sessionCharacter.Track, animator);
         }
 
         private static bool BindingMatches(UnityEngine.Object binding, Animator animator)
@@ -129,14 +129,90 @@ namespace KimodoUnityBridge.Command
         {
             lock (JobsLock)
             {
-                if (Jobs.Count >= MaxRememberedJobs)
+                if (!Jobs.ContainsKey(session.RequestId))
                 {
-                    Guid oldest = Jobs.OrderBy(pair => pair.Value.Session.StartedAtUtc).First().Key;
-                    Jobs.Remove(oldest);
+                    TrimTerminalGenerationJobsLocked();
                 }
                 Jobs[session.RequestId] = new JobRecord(target, session, timelineGenerationTrace);
             }
             PersistGenerationJobStatus(session);
+        }
+
+        private static void TrimTerminalGenerationJobsLocked()
+        {
+            while (Jobs.Count >= MaxRememberedJobs)
+            {
+                bool found = false;
+                Guid oldestRequestId = default;
+                DateTime oldestStartedAtUtc = DateTime.MaxValue;
+                foreach (KeyValuePair<Guid, JobRecord> pair in Jobs)
+                {
+                    KimodoEditorGenerationJobStatus status = pair.Value?.Session?.Status ?? KimodoEditorGenerationJobStatus.None;
+                    if (status != KimodoEditorGenerationJobStatus.Completed &&
+                        status != KimodoEditorGenerationJobStatus.Failed &&
+                        status != KimodoEditorGenerationJobStatus.Canceled)
+                    {
+                        continue;
+                    }
+
+                    DateTime startedAtUtc = pair.Value.Session.StartedAtUtc;
+                    if (!found || startedAtUtc < oldestStartedAtUtc)
+                    {
+                        found = true;
+                        oldestRequestId = pair.Key;
+                        oldestStartedAtUtc = startedAtUtc;
+                    }
+                }
+
+                // Active jobs must remain addressable so status, cancellation, persistence,
+                // and Timeline range locking continue to work. The cap is a soft limit when
+                // all remembered generations are still running.
+                if (!found) return;
+                Jobs.Remove(oldestRequestId);
+            }
+        }
+
+        private static bool TryRemoveOldestTerminalTaskLocked(
+            Dictionary<string, JObject> tasks,
+            string firstTerminalStatus,
+            string secondTerminalStatus)
+        {
+            string oldestTerminalKey = null;
+            DateTime oldestStartedAtUtc = DateTime.MaxValue;
+            foreach (KeyValuePair<string, JObject> pair in tasks)
+            {
+                string status = pair.Value?.Value<string>("status");
+                if (string.Equals(status, firstTerminalStatus, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(status, secondTerminalStatus, StringComparison.OrdinalIgnoreCase))
+                {
+                    DateTime startedAtUtc = DateTime.MinValue;
+                    string startedAtValue = pair.Value?.Value<string>("started_at_utc")
+                        ?? pair.Value?.Value<string>("retention_started_at_utc");
+                    DateTime.TryParse(
+                        startedAtValue,
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.RoundtripKind,
+                        out startedAtUtc);
+                    if (oldestTerminalKey == null || startedAtUtc < oldestStartedAtUtc)
+                    {
+                        oldestTerminalKey = pair.Key;
+                        oldestStartedAtUtc = startedAtUtc;
+                    }
+                }
+            }
+            return oldestTerminalKey != null && tasks.Remove(oldestTerminalKey);
+        }
+
+        private static void TrimTerminalTasksLocked(
+            Dictionary<string, JObject> tasks,
+            int maximumCount,
+            string firstTerminalStatus,
+            string secondTerminalStatus)
+        {
+            while (tasks.Count > maximumCount &&
+                   TryRemoveOldestTerminalTaskLocked(tasks, firstTerminalStatus, secondTerminalStatus))
+            {
+            }
         }
 
         internal static void ClearRememberedJobsForTests()
@@ -147,17 +223,6 @@ namespace KimodoUnityBridge.Command
             }
         }
 
-        private static JobRecord GetJob(Guid requestId)
-        {
-            lock (JobsLock)
-            {
-                if (!Jobs.TryGetValue(requestId, out JobRecord record))
-                {
-                    throw new InvalidOperationException($"Unknown or expired request_id '{requestId}'.");
-                }
-                return record;
-            }
-        }
 
         private static JObject BuildStatus(JobRecord record, bool includeBackendRequestJson = false)
         {
@@ -307,6 +372,7 @@ namespace KimodoUnityBridge.Command
             string message = result.Value<string>("message") ?? string.Empty;
             result["request_id"] = requestId;
             result.Remove("task_id");
+            result.Remove("retention_started_at_utc");
             result.Remove("progress");
             result["status"] = status.ToLowerInvariant() switch
             {
@@ -405,22 +471,47 @@ namespace KimodoUnityBridge.Command
         {
             try
             {
-                JObject arguments = string.IsNullOrWhiteSpace(argumentsJson)
-                    ? new JObject()
-                    : JObject.Parse(argumentsJson);
-                return action(arguments);
+                JObject arguments = ParseCommandArguments(argumentsJson);
+                return Execute(arguments, action);
             }
             catch (Exception ex)
             {
-                if (ex is GenerationRangeLockedException locked)
+                return Error(ex);
+            }
+        }
+
+        private static string Execute(JObject arguments, Func<JObject, string> action)
+        {
+            try
+            {
+                return action(arguments ?? new JObject());
+            }
+            catch (Exception ex)
+            {
+                return Error(ex);
+            }
+        }
+
+        private static string Error(Exception ex)
+        {
+            if (ex is GenerationRangeLockedException locked) return Error(locked);
+            if (ex is CommandException command) return Error(command.Code, command.Message);
+            return Error("invalid_argument", ex.Message);
+        }
+
+        private static JObject ParseCommandArguments(string argumentsJson)
+        {
+            if (string.IsNullOrWhiteSpace(argumentsJson)) return new JObject();
+
+            using (var textReader = new StringReader(argumentsJson))
+            using (var jsonReader = new JsonTextReader(textReader) { DateParseHandling = DateParseHandling.None })
+            {
+                JObject arguments = JObject.Load(jsonReader);
+                if (jsonReader.Read())
                 {
-                    return Error(locked);
+                    throw new FormatException("Additional content after the command arguments object.");
                 }
-                if (ex is CommandException command)
-                {
-                    return Error(command.Code, command.Message);
-                }
-                return Error("invalid_argument", ex.Message);
+                return arguments;
             }
         }
 
@@ -484,26 +575,6 @@ namespace KimodoUnityBridge.Command
             return value;
         }
 
-        private static Vector2 RequiredVector2(JObject value, string name)
-        {
-            JArray array = value?[name] as JArray;
-            if (array == null || array.Count != 2)
-            {
-                throw new InvalidOperationException($"{name} must be [x,z].");
-            }
-            if ((array[0].Type != JTokenType.Integer && array[0].Type != JTokenType.Float) ||
-                (array[1].Type != JTokenType.Integer && array[1].Type != JTokenType.Float))
-            {
-                throw new InvalidOperationException($"{name} must contain finite numbers.");
-            }
-            float x = array[0].Value<float>();
-            float y = array[1].Value<float>();
-            if (float.IsNaN(x) || float.IsInfinity(x) || float.IsNaN(y) || float.IsInfinity(y))
-            {
-                throw new InvalidOperationException($"{name} must contain finite numbers.");
-            }
-            return new Vector2(x, y);
-        }
 
         private static Guid RequiredRequestId(JObject arguments)
         {
@@ -598,12 +669,16 @@ namespace KimodoUnityBridge.Command
         private static JObject EnsureRegisteredModel(string modelName, KimodoTextEncoderMode textEncoderMode)
         {
             KimodoPlayableClipGenerationSettings settings = KimodoPlayableClipGenerationSettings.instance;
-            JObject response = KimodoBridgeService.Shared.ListModelConfigurationsAsync(
-                modelName,
-                KimodoTextEncoderModeProtocol.ToProtocolValue(textEncoderMode),
-                settings.LocalModelsPath?.Trim() ?? string.Empty,
-                null,
-                CancellationToken.None).GetAwaiter().GetResult();
+            JObject response;
+            using (var timeout = new CancellationTokenSource(CommandBridgeQueryTimeoutMs))
+            {
+                response = KimodoBridgeService.Shared.ListModelConfigurationsAsync(
+                    modelName,
+                    KimodoTextEncoderModeProtocol.ToProtocolValue(textEncoderMode),
+                    settings.LocalModelsPath?.Trim() ?? string.Empty,
+                    null,
+                    timeout.Token).GetAwaiter().GetResult();
+            }
             JObject found = (response["configs"] as JArray)?.Values<JObject>().FirstOrDefault(config =>
                 string.Equals(config.Value<string>("model"), modelName, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(
@@ -675,33 +750,12 @@ namespace KimodoUnityBridge.Command
             return supplied.HasValue ? Mathf.Clamp(supplied.Value, 1, 1000) : 100;
         }
 
-        private static float PositiveFloat(JObject arguments, string name, float fallback)
-        {
-            double value = PositiveDouble(arguments, name, fallback);
-            return (float)value;
-        }
 
-        private static double PositiveDouble(JObject arguments, string name, double fallback)
-        {
-            double value = arguments.Value<double?>(name) ?? fallback;
-            if (double.IsNaN(value) || double.IsInfinity(value) || value <= 0.0)
-            {
-                throw new InvalidOperationException($"{name} must be positive and finite.");
-            }
-            return value;
-        }
+        private static void EnsureCanGenerate() => EnsureEditorIsIdle("Kimodo animation asset generation");
 
-        private static double NonNegativeDouble(JObject arguments, string name, double fallback)
-        {
-            double value = arguments.Value<double?>(name) ?? fallback;
-            if (double.IsNaN(value) || double.IsInfinity(value) || value < 0.0)
-            {
-                throw new InvalidOperationException($"{name} must be non-negative and finite.");
-            }
-            return value;
-        }
+        private static void EnsureCanManageServer() => EnsureEditorIsIdle("Kimodo server maintenance");
 
-        private static void EnsureCanGenerate()
+        private static void EnsureEditorIsIdle(string operation)
         {
             if (EditorApplication.isCompiling || EditorApplication.isUpdating)
             {
@@ -709,19 +763,7 @@ namespace KimodoUnityBridge.Command
             }
             if (EditorApplication.isPlayingOrWillChangePlaymode)
             {
-                throw new InvalidOperationException("Kimodo animation asset generation is available in Edit Mode only.");
-            }
-        }
-
-        private static void EnsureCanManageServer()
-        {
-            if (EditorApplication.isCompiling || EditorApplication.isUpdating)
-            {
-                throw new InvalidOperationException("Unity is compiling or importing assets. Retry when the Editor is ready.");
-            }
-            if (EditorApplication.isPlayingOrWillChangePlaymode)
-            {
-                throw new InvalidOperationException("Kimodo server maintenance is available in Edit Mode only.");
+                throw new InvalidOperationException($"{operation} is available in Edit Mode only.");
             }
         }
 

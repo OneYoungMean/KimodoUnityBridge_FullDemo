@@ -16,13 +16,10 @@ namespace KimodoUnityBridge.Command
             int requestedResolution,
             JObject cameraOptions)
         {
-            SceneView sceneView = SceneView.lastActiveSceneView;
-            if (sceneView == null || sceneView.camera == null)
-                throw new InvalidOperationException("No active Scene View camera is available.");
+            SceneView sceneView = GetOrOpenSceneView();
 
             cameraOptions = cameraOptions ?? new JObject();
             int outputWidth = Mathf.Max(64, requestedResolution);
-            ConfigureSceneView(sceneView, cameraOptions);
             SceneAnalysisLayout layout = CreateSceneAnalysisLayout(session, subject, outputWidth, cameraOptions);
             string folder = Path.Combine(Application.dataPath, "KimodoGeneratedClips", "SceneCaptures");
             Directory.CreateDirectory(folder);
@@ -60,6 +57,20 @@ namespace KimodoUnityBridge.Command
             {
                 layout.Dispose();
             }
+        }
+
+        private static SceneView GetOrOpenSceneView()
+        {
+            SceneView sceneView = SceneView.lastActiveSceneView;
+            if (sceneView == null || sceneView.camera == null)
+            {
+                sceneView = EditorWindow.GetWindow<SceneView>();
+            }
+            if (sceneView == null || sceneView.camera == null)
+            {
+                throw new InvalidOperationException("A Scene View could not be opened for image capture.");
+            }
+            return sceneView;
         }
 
         private static void ConfigureSceneView(SceneView view, JObject cameraOptions)

@@ -18,6 +18,8 @@ namespace KimodoBridge.Editor
         public const float MaxBlockingSpeedMetersPerSecond = 10f;
         public const float MaxAccelerationMetersPerSecondSquared = 10f;
         public const float MaxBlockingAccelerationMetersPerSecondSquared = 15f;
+        public const float GenerationDurationWarningSeconds = 3f;
+        public const float MinimumGenerationDurationSeconds = 1.5f;
         private const float PositionToleranceMeters = 0.05f;
         private const float HeadingToleranceDegrees = 5f;
         private const float HeadingJumpWarningDegrees = 45f;
@@ -88,17 +90,20 @@ namespace KimodoBridge.Editor
         {
             try
             {
+                JObject duration = BuildDurationCheck(durationFrames, frameRate);
                 JObject rootTrajectory = BuildRootTrajectory(arguments, durationFrames, frameRate, generatedSamples);
                 JObject overlap = BuildConstraintOverlap(arguments, frameRate, generatedSamples);
                 JObject effectors = BuildEffectorChecks(
                     arguments, characterName, modelName, frameRate, generatedSamples);
-                bool blocking = rootTrajectory.Value<float>("max_speed_mps") > MaxBlockingSpeedMetersPerSecond
+                bool blocking = duration.Value<bool>("blocking")
+                    || rootTrajectory.Value<float>("max_speed_mps") > MaxBlockingSpeedMetersPerSecond
                     || rootTrajectory.Value<float>("max_acceleration_mps2") > MaxBlockingAccelerationMetersPerSecondSquared;
-                bool warning = HasWarning(rootTrajectory) || HasWarning(overlap) || HasWarning(effectors);
+                bool warning = HasWarning(duration) || HasWarning(rootTrajectory) || HasWarning(overlap) || HasWarning(effectors);
                 return new JObject
                 {
                     ["blocking"] = blocking,
                     ["overall"] = blocking ? "error" : warning ? "warning" : "ok",
+                    ["duration"] = duration,
                     ["root_trajectory"] = rootTrajectory,
                     ["constraint_overlap"] = overlap,
                     ["effectors"] = effectors
@@ -114,6 +119,41 @@ namespace KimodoBridge.Editor
                     ["message"] = error.Message
                 };
             }
+        }
+
+        private static JObject BuildDurationCheck(int durationFrames, float frameRate)
+        {
+            float safeFrameRate = Mathf.Max(1f, frameRate);
+            float durationSeconds = Mathf.Max(0f, durationFrames) / safeFrameRate;
+            JArray issues = new JArray();
+            if (durationSeconds < MinimumGenerationDurationSeconds)
+            {
+                issues.Add(new JObject
+                {
+                    ["code"] = "duration_below_minimum",
+                    ["message"] = $"Requested generation duration is {durationSeconds:F3} seconds, below the minimum of {MinimumGenerationDurationSeconds:F1} seconds. Generate at least {MinimumGenerationDurationSeconds:F1} seconds."
+                });
+            }
+            else if (durationSeconds < GenerationDurationWarningSeconds)
+            {
+                issues.Add(new JObject
+                {
+                    ["code"] = "duration_short_warning",
+                    ["message"] = $"Requested generation duration is {durationSeconds:F3} seconds. Durations shorter than {GenerationDurationWarningSeconds:F1} seconds may reduce motion quality."
+                });
+            }
+
+            return new JObject
+            {
+                ["status"] = durationSeconds < MinimumGenerationDurationSeconds
+                    ? "error"
+                    : durationSeconds < GenerationDurationWarningSeconds ? "warning" : "ok",
+                ["duration_seconds"] = durationSeconds,
+                ["warning_threshold_seconds"] = GenerationDurationWarningSeconds,
+                ["minimum_seconds"] = MinimumGenerationDurationSeconds,
+                ["blocking"] = durationSeconds < MinimumGenerationDurationSeconds,
+                ["issues"] = issues
+            };
         }
 
         private sealed class RootObservation

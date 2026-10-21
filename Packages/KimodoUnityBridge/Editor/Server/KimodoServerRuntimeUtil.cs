@@ -421,10 +421,6 @@ namespace KimodoBridge.Editor
             }
         }
 
-        private static void ClearRuntimeRootExceptModels(string runtimeRoot)
-        {
-            ClearRuntimeRootPreserving(runtimeRoot, keepModels: true, keepVenv: false);
-        }
 
         private static void ClearRuntimeRootPreserving(string runtimeRoot, bool keepModels, bool keepVenv)
         {

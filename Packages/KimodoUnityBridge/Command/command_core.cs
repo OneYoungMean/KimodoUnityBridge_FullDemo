@@ -36,6 +36,8 @@ namespace KimodoUnityBridge.Command
         internal const string HelpAssetPath = "Packages/com.unity.kimodo_unity_motion_tools/Command/help.json";
 
         private const int MaxRememberedJobs = 128;
+        private const int CommandBridgeQueryTimeoutMs = 5000;
+        private const int GenerationStatusQueryTimeoutMs = 1500;
         private static readonly Dictionary<Guid, JobRecord> Jobs = new Dictionary<Guid, JobRecord>();
         private static readonly Dictionary<string, JObject> InstallTasks = new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, JObject> MocapAnalysisTasks = new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase);
@@ -233,29 +235,33 @@ namespace KimodoUnityBridge.Command
             return Error("unknown_command", $"Unknown Kimodo command '{toolName ?? string.Empty}'.");
         }
 
-        public static string ListModels(string argumentsJson = "{}")
+        public static string ListModels(string argumentsJson = "{}") => Execute(argumentsJson, ListModels);
+
+        private static string ListModels(JObject arguments)
         {
-            return Execute(argumentsJson, _ =>
-            {
                 EnsureCanManageServer();
                 KimodoPlayableClipGenerationSettings settings = KimodoPlayableClipGenerationSettings.instance;
-                JObject response = KimodoBridgeService.Shared.ListModelConfigurationsAsync(
-                    ResolveModelName(null),
-                    KimodoTextEncoderModeProtocol.ToProtocolValue(settings.DefaultTextEncoderMode),
-                    settings.LocalModelsPath?.Trim() ?? string.Empty,
-                    null,
-                    CancellationToken.None).GetAwaiter().GetResult();
+                JObject response;
+                using (var timeout = new CancellationTokenSource(CommandBridgeQueryTimeoutMs))
+                {
+                    response = KimodoBridgeService.Shared.ListModelConfigurationsAsync(
+                        ResolveModelName(null),
+                        KimodoTextEncoderModeProtocol.ToProtocolValue(settings.DefaultTextEncoderMode),
+                        settings.LocalModelsPath?.Trim() ?? string.Empty,
+                        null,
+                        timeout.Token).GetAwaiter().GetResult();
+                }
                 var result = new JObject(response);
                 result.Remove("status");
                 result["count"] = (result["configs"] as JArray)?.Count ?? 0;
                 return Ok(result);
-            });
+
         }
 
-        public static string GetCommandHelp(string argumentsJson = "{}")
+        public static string GetCommandHelp(string argumentsJson = "{}") => Execute(argumentsJson, GetCommandHelp);
+
+        private static string GetCommandHelp(JObject arguments)
         {
-            return Execute(argumentsJson, arguments =>
-            {
                 string section = (arguments.Value<string>("section") ?? "commands").Trim().ToLowerInvariant();
                 string command = arguments.Value<string>("command")?.Trim();
                 if (!string.IsNullOrWhiteSpace(command))
@@ -272,7 +278,7 @@ namespace KimodoUnityBridge.Command
                 }
                 if (section == "models")
                 {
-                    return ListModels("{}");
+                    return ListModels(new JObject());
                 }
                 if (section == "constraints")
                 {
@@ -335,7 +341,7 @@ namespace KimodoUnityBridge.Command
                     ["constraints"] = constraintManual["constraints"].DeepClone(),
                     ["constraint_rules"] = constraintManual["rules"].DeepClone()
                 });
-            });
+
         }
 
         private static JObject BuildConstraintManual()
@@ -392,10 +398,10 @@ namespace KimodoUnityBridge.Command
             };
         }
 
-        public static string InstallServer(string argumentsJson = "{}")
+        public static string InstallServer(string argumentsJson = "{}") => Execute(argumentsJson, InstallServer);
+
+        private static string InstallServer(JObject arguments)
         {
-            return Execute(argumentsJson, _ =>
-            {
                 EnsureCanManageServer();
                 string requestId = "install:" + Guid.NewGuid().ToString("N");
                 lock (JobsLock)
@@ -404,14 +410,12 @@ namespace KimodoUnityBridge.Command
                     {
                         ["status"] = "queued",
                         ["task_id"] = requestId,
+                        ["retention_started_at_utc"] = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture),
                         ["progress"] = "0/0",
                         ["eta_seconds"] = 60.0,
                         ["message"] = "Server installation waiting to start."
                     };
-                    while (InstallTasks.Count > MaxRememberedJobs)
-                    {
-                        InstallTasks.Remove(InstallTasks.Keys.First());
-                    }
+                    TrimTerminalTasksLocked(InstallTasks, MaxRememberedJobs, "done", "error");
                 }
                 EditorApplication.delayCall += async () =>
                 {
@@ -422,7 +426,7 @@ namespace KimodoUnityBridge.Command
                     ["request_id"] = requestId,
                     ["status"] = "accepted"
                 });
-            });
+
         }
 
         private static async Task RunInstallServerTaskAsync(string requestId)
@@ -474,10 +478,10 @@ namespace KimodoUnityBridge.Command
             }
         }
 
-        public static string GetGeneration(string argumentsJson)
+        public static string GetGeneration(string argumentsJson) => Execute(argumentsJson, GetGeneration);
+
+        private static string GetGeneration(JObject arguments)
         {
-            return Execute(argumentsJson, arguments =>
-            {
                 string requestValue = RequiredStringValue(arguments, "request_id");
                 bool includeRequestJson = arguments.Value<bool?>("include_request_json") == true;
                 if (requestValue.StartsWith("install:", StringComparison.OrdinalIgnoreCase))
@@ -508,37 +512,46 @@ namespace KimodoUnityBridge.Command
                 }
                 EnsureGenerationBelongsToSession(record, session);
                 JObject status = BuildStatus(record, includeRequestJson);
-                try
+                // The command API is synchronous, so never let an optional backend
+                // status enrichment inherit the bridge's long generation I/O timeout.
+                // The local Unity job remains the lifecycle source of truth.
+                if (record.Session.IsRunning)
                 {
-                    JObject serverStatus = KimodoBridgeService.Shared
-                        .GetStatusAsync(requestId.ToString("N"), CancellationToken.None)
-                        .GetAwaiter().GetResult();
-                    string serverState = serverStatus?.Value<string>("status");
-                    if (serverStatus != null && !string.IsNullOrWhiteSpace(serverState) &&
-                        !string.Equals(serverState, "idle", StringComparison.OrdinalIgnoreCase))
+                    try
                     {
-                        status["request_id"] = requestValue;
-                        // Keep the Unity job status as the public lifecycle source of truth.
-                        // QuickServer's `done` only means the backend response is ready; the
-                        // Unity-side asset write/bake may still be running.
-                        status["backend_progress"] = serverStatus["progress"]?.DeepClone() ?? "0/0";
-                        status["eta_seconds"] = serverStatus["eta_seconds"]?.DeepClone() ?? JValue.CreateNull();
-                        status["message"] = serverStatus["message"]?.DeepClone() ?? string.Empty;
+                        using (var timeout = new CancellationTokenSource(GenerationStatusQueryTimeoutMs))
+                        {
+                            JObject serverStatus = KimodoBridgeService.Shared
+                                .GetStatusAsync(requestId.ToString("N"), timeout.Token)
+                                .GetAwaiter().GetResult();
+                            string serverState = serverStatus?.Value<string>("status");
+                            if (serverStatus != null && !string.IsNullOrWhiteSpace(serverState) &&
+                                !string.Equals(serverState, "idle", StringComparison.OrdinalIgnoreCase))
+                            {
+                                status["request_id"] = requestValue;
+                                // Keep the Unity job status as the public lifecycle source of truth.
+                                // QuickServer's `done` only means the backend response is ready; the
+                                // Unity-side asset write/bake may still be running.
+                                status["backend_progress"] = serverStatus["progress"]?.DeepClone() ?? "0/0";
+                                status["eta_seconds"] = serverStatus["eta_seconds"]?.DeepClone() ?? JValue.CreateNull();
+                                status["message"] = serverStatus["message"]?.DeepClone() ?? string.Empty;
+                            }
+                        }
                     }
-                }
-                catch
-                {
-                    // Preserve the local completed result if the server has already exited.
+                    catch
+                    {
+                        // Preserve local progress if the backend is slow, disconnected, or has exited.
+                    }
                 }
                 status["target_alive"] = record.Target != null;
                 return Ok(NormalizeGenerationStatus(status, requestValue, includeRequestJson));
-            });
+
         }
 
-        public static string CancelGeneration(string argumentsJson)
+        public static string CancelGeneration(string argumentsJson) => Execute(argumentsJson, CancelGeneration);
+
+        private static string CancelGeneration(JObject arguments)
         {
-            return Execute(argumentsJson, arguments =>
-            {
                 TimelineSessionRecord session = RequireCurrentTimelineSession();
                 Guid requestId = RequiredRequestId(arguments);
                 if (!TryGetJob(requestId, out JobRecord record))
@@ -562,7 +575,7 @@ namespace KimodoUnityBridge.Command
                     NormalizeGenerationStatus(status, requestId.ToString("D")),
                     requestId.ToString("D"),
                     canceled));
-            });
+
         }
 
         private static JObject BuildCancellationStatus(JObject normalized, string requestId, bool canceled)
@@ -586,10 +599,10 @@ namespace KimodoUnityBridge.Command
             return result;
         }
 
-        public static string GenerateAnimationAsset(string argumentsJson)
+        public static string GenerateAnimationAsset(string argumentsJson) => Execute(argumentsJson, GenerateAnimationAsset);
+
+        private static string GenerateAnimationAsset(JObject arguments)
         {
-            return Execute(argumentsJson, arguments =>
-            {
                 EnsureCanGenerate();
                 TimelineSessionRecord session = RequireCurrentTimelineSession();
                 string prompt = RequiredStringValue(arguments, "prompt");
@@ -675,22 +688,21 @@ namespace KimodoUnityBridge.Command
                     ResolveSessionCharacterByReference(session, character.Name, addIfMissing: false),
                     out List<string> poseWarnings);
 
-                if (outputMode != "model_bone" && !KimodoRetargetCoreUtility.IsValidHumanoid(character.Avatar))
-                {
-                    throw new InvalidOperationException($"Character '{character.Name}' does not provide a valid target humanoid Avatar for output_mode '{outputMode}'.");
-                }
-
                 JObject generationCheck = BuildGenerationCheck(
                     arguments, character, durationFrames, (float)SessionFrameRate, modelName, poseConstraints);
                 if (generationCheck.Value<bool>("blocking"))
                 {
-                    string blockingMessage = generationCheck["root_trajectory"]?["issues"]?
+                    string blockingMessage = generationCheck["duration"]?["issues"]?
+                        .OfType<JObject>()
+                        .FirstOrDefault(issue => string.Equals(issue.Value<string>("code"), "duration_below_minimum", StringComparison.OrdinalIgnoreCase))?
+                        .Value<string>("message")
+                        ?? generationCheck["root_trajectory"]?["issues"]?
                         .OfType<JObject>()
                         .FirstOrDefault(issue => string.Equals(issue.Value<string>("code"), "speed_hard_limit", StringComparison.OrdinalIgnoreCase)
                             || string.Equals(issue.Value<string>("code"), "acceleration_hard_limit", StringComparison.OrdinalIgnoreCase))?
                         .Value<string>("message");
                     throw new InvalidOperationException(string.IsNullOrWhiteSpace(blockingMessage)
-                        ? "Generation preflight failed because the requested root speed or acceleration exceeds a hard limit."
+                        ? "Generation preflight failed because the requested duration or root speed/acceleration exceeds a hard limit."
                         : blockingMessage);
                 }
                 TimelineGenerationTrace trace = PrepareGenerationTrace(arguments, character, duration);
@@ -766,10 +778,19 @@ namespace KimodoUnityBridge.Command
                 Remember(character.Target, generation, trace);
                 PersistGenerationJobStatus(generation);
                 var accepted = new JObject { ["check"] = generationCheck };
-                if (poseWarnings != null && poseWarnings.Count > 0)
-                    accepted["warnings"] = new JArray(poseWarnings);
+                var warnings = new JArray();
+                if (poseWarnings != null)
+                    foreach (string warning in poseWarnings)
+                        warnings.Add(warning);
+                foreach (JObject issue in generationCheck["duration"]?["issues"]?.OfType<JObject>() ?? Enumerable.Empty<JObject>())
+                {
+                    if (!string.Equals(issue.Value<string>("code"), "duration_below_minimum", StringComparison.OrdinalIgnoreCase))
+                        warnings.Add(issue.Value<string>("message"));
+                }
+                if (warnings.Count > 0)
+                    accepted["warnings"] = warnings;
                 return Started(generation, accepted);
-            });
+
         }
 
         private static async Task<KimodoEditorGenerationResult> ExecutePlayableClipGenerationAsync(

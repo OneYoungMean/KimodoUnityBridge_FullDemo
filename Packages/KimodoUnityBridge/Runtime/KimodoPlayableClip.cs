@@ -1,6 +1,5 @@
 using UnityEngine;
 using UnityEngine.Timeline;
-using UnityEngine.Serialization;
 using TimelineInject;
 
 namespace KimodoBridge
@@ -57,7 +56,6 @@ namespace KimodoBridge
     {
         [Header("Kimodo Bridge")]
         public string bridgeModelName = KimodoMotionModelProfiles.DefaultModelName;
-        [FormerlySerializedAs("bridgeVramMode")]
         [Tooltip("Choose a text-encoder profile. Runtime platforms are selected automatically.")]
         public KimodoTextEncoderMode textEncoderMode = KimodoTextEncoderMode.HighPerformance;
 
@@ -85,7 +83,6 @@ namespace KimodoBridge
         public bool overridePathAngle;
         [Tooltip("Absolute Unity yaw for the PathAngle Bezier start tangent.")]
         public float pathBeginAngleDegrees;
-        [FormerlySerializedAs("pathAngleDegrees")]
         [Tooltip("Absolute Unity yaw for the PathAngle Bezier end tangent.")]
         public float pathEndAngleDegrees;
         [Tooltip("When overriding Path Angle, replace the measured path length with this value.")]
@@ -111,6 +108,8 @@ namespace KimodoBridge
         public bool enableInConstraint = true;
         [Tooltip("Generate the Out boundary constraint when InOut Constraint is Inside or Outside.")]
         public bool enableOutConstraint = true;
+        [Tooltip("Defer the Out constraint until after the first trajectory generation, align it in SOMA Root2D space, then use it for the second generation pass.")]
+        public bool postApplyOutConstraint;
         [Min(1), Tooltip("Number of model-rate frames covered by the In constraint window.")]
         public int inConstraintWindowFrames = 1;
         [Min(1), Tooltip("Number of evenly spaced FullBody samples in the In window, including its endpoints.")]
@@ -124,12 +123,6 @@ namespace KimodoBridge
         [Range(0f, 1f)]
         [Tooltip("0 uses one motion token of history; 1 uses the largest history window allowed by the model context.")]
         public float ardyHistoryWeight = 1f;
-        [Min(0.01f)]
-        [Tooltip("Maximum root speed used to plan ARDY Full-Body root targets.")]
-        public float ardyTargetMaxSpeed = DefaultArdyTargetMaxSpeed;
-        [Min(0.01f)]
-        [Tooltip("Maximum root acceleration used to plan ARDY Full-Body root targets.")]
-        public float ardyTargetMaxAcceleration = DefaultArdyTargetMaxAcceleration;
         [Tooltip("Show all constraint pose previews for this clip when selected in Timeline/Inspector.")]
         public bool showConstraint = true;
         [Tooltip("When the first second has no effective constraint anchor, use the Avatar skeleton rest pose as a FullBody frame-0 anchor.")]
@@ -157,8 +150,6 @@ namespace KimodoBridge
         public int ConstraintPreviewPriority => 1;
         public string ConstraintPreviewName => "Clip";
 
-        public const float DefaultArdyTargetMaxSpeed = 1.25f;
-        public const float DefaultArdyTargetMaxAcceleration = 1.5f;
 
         public void ResetGeneration()
         {

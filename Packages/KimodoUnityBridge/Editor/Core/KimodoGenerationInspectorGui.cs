@@ -152,7 +152,8 @@ namespace KimodoBridge.Editor
             SerializedProperty generationFrames,
             float minSeconds,
             float maxSeconds,
-            string tooltip)
+            string tooltip,
+            bool generatesAndTrims = true)
         {
             int oldFrames = generationFrames.intValue;
             bool previousShowMixedValue = EditorGUI.showMixedValue;
@@ -165,12 +166,32 @@ namespace KimodoBridge.Editor
                 maxSeconds);
             bool changed = EditorGUI.EndChangeCheck();
             EditorGUI.showMixedValue = previousShowMixedValue;
+            DrawDurationWarning(duration, generatesAndTrims);
             if (!changed)
             {
                 return false;
             }
             generationFrames.intValue = KimodoInOutConstraintTools.DurationSecondsToFrameCount(duration);
             return true;
+        }
+
+        internal static void DrawDurationWarning(float durationSeconds, bool generatesAndTrims = true)
+        {
+            if (durationSeconds < KimodoGenerationWarningCheckService.MinimumGenerationDurationSeconds)
+            {
+                string message = generatesAndTrims
+                    ? $"This duration is below {KimodoGenerationWarningCheckService.MinimumGenerationDurationSeconds:F1}s. It will be generated at {KimodoGenerationWarningCheckService.MinimumGenerationDurationSeconds:F1}s and truncated to the requested duration."
+                    : $"This duration is below {KimodoGenerationWarningCheckService.MinimumGenerationDurationSeconds:F1}s. Runtime generation will use {KimodoGenerationWarningCheckService.MinimumGenerationDurationSeconds:F1}s segments.";
+                EditorGUILayout.HelpBox(
+                    message,
+                    MessageType.Warning);
+            }
+            else if (durationSeconds < KimodoGenerationWarningCheckService.GenerationDurationWarningSeconds)
+            {
+                EditorGUILayout.HelpBox(
+                    $"Durations shorter than {KimodoGenerationWarningCheckService.GenerationDurationWarningSeconds:F1}s may reduce motion quality.",
+                    MessageType.Warning);
+            }
         }
 
         internal static void DrawDiffusionSteps(

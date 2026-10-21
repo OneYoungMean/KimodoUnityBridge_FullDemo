@@ -50,12 +50,15 @@ namespace KimodoBridge.Editor
             AppendSamples(request.ManualSamples, built.CombinedSamples);
 
             if (endSamples.Count > 0 &&
+                !request.DeferEndConstraint &&
                 KimodoInOutConstraintTools.ClampFrameCount(request.GenerationFrames) > 1)
             {
                 built.CombinedSamples.AddRange(endSamples);
             }
+            built.EndBoundarySamples.AddRange(endSamples);
 
-            if (!KimodoGenerationWarningCheckService.TryValidateRootMotionConstraints(
+            if (!request.DeferEndConstraint &&
+                !KimodoGenerationWarningCheckService.TryValidateRootMotionConstraints(
                     built.CombinedSamples,
                     KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName),
                     out error))

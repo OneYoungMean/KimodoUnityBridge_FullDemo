@@ -97,14 +97,10 @@ namespace KimodoUnityBridge.Command
                 Vector3[] rightFoot,
                 Vector3[] leftElbow,
                 Vector3[] rightElbow,
-                Vector3[] leftKnee,
-                Vector3[] rightKnee,
                 Vector3[] head,
                 bool[] leftContacts,
                 bool[] rightContacts,
                 Bounds[] poseBounds,
-                Bounds firstBounds,
-                Bounds lastBounds,
                 Bounds bounds)
             {
                 Subject = subject;
@@ -116,17 +112,11 @@ namespace KimodoUnityBridge.Command
                 RightFoot = rightFoot;
                 LeftElbow = leftElbow;
                 RightElbow = rightElbow;
-                LeftKnee = leftKnee;
-                RightKnee = rightKnee;
                 Head = head;
                 LeftContacts = leftContacts;
                 RightContacts = rightContacts;
                 PoseBounds = poseBounds;
-                FirstBounds = firstBounds;
-                LastBounds = lastBounds;
                 Bounds = bounds;
-                KeyframeCount = Mathf.Max(1,
-                    (subject.Record.Analysis?["keyframes"] as JArray)?.Count ?? 1);
                 KeyFrameSet = new HashSet<int>((subject.Record.Analysis?["keyframes"] as JArray ?? new JArray())
                     .OfType<JObject>()
                     .Select(item => Mathf.Clamp(
@@ -143,22 +133,16 @@ namespace KimodoUnityBridge.Command
             public Vector3[] RightFoot { get; }
             public Vector3[] LeftElbow { get; }
             public Vector3[] RightElbow { get; }
-            public Vector3[] LeftKnee { get; }
-            public Vector3[] RightKnee { get; }
             public Vector3[] Head { get; }
             public bool[] LeftContacts { get; }
             public bool[] RightContacts { get; }
             public Bounds[] PoseBounds { get; }
-            public Bounds FirstBounds { get; }
-            public Bounds LastBounds { get; }
             public Bounds Bounds { get; }
-            public int KeyframeCount { get; private set; }
             public HashSet<int> KeyFrameSet { get; }
 
             public void RefreshKeyframes()
             {
                 JArray keyframes = Subject.Record.Analysis?["keyframes"] as JArray ?? new JArray();
-                KeyframeCount = Mathf.Max(1, keyframes.Count);
                 KeyFrameSet.Clear();
                 foreach (JObject item in keyframes.OfType<JObject>())
                 {
@@ -201,7 +185,7 @@ namespace KimodoUnityBridge.Command
 
             public static PictureTile RootTrajectory(SubjectPictureData subject, Vector3 direction)
             {
-                var keyframes = new HashSet<int>(SelectKeyFrames(subject, subject.KeyframeCount));
+                var keyframes = subject.KeyFrameSet;
                 List<int> frames = BuildAnalysisSampleFrames(
                     subject,
                     keyframes,
@@ -260,7 +244,8 @@ namespace KimodoUnityBridge.Command
                 return new PictureTile(subject, "selected_" + type, new JObject
                 {
                     ["presentation"] = type,
-                    ["frames"] = new JArray(ordered),
+                    ["frames"] = new JArray(sampled),
+                    ["candidate_frames"] = new JArray(ordered),
                     ["sample_frames"] = new JArray(sampled.Where(frame => !primary.Contains(frame)))
                 })
                 {
@@ -524,7 +509,6 @@ namespace KimodoUnityBridge.Command
             public double End;
             public DateTime CreatedAtUtc;
             public JObject Analysis;
-            public JArray Poses;
             public string MotionPath;
             public string AnimationId;
             public string AnimationName;
@@ -542,7 +526,6 @@ namespace KimodoUnityBridge.Command
                 ["animation_id"] = AnimationId ?? string.Empty,
                 ["animation_name"] = AnimationName ?? string.Empty,
                 ["input_signature"] = InputSignature ?? string.Empty,
-                ["poses"] = Poses?.DeepClone() ?? new JArray(),
                 ["analysis"] = Analysis?.DeepClone() ?? new JObject(),
                 ["pictures"] = Pictures?.DeepClone() ?? new JObject(),
                 ["root_trajectory"] = RootTrajectory?.DeepClone() ?? new JObject()
@@ -559,7 +542,6 @@ namespace KimodoUnityBridge.Command
                 AnimationId = json.Value<string>("animation_id"),
                 AnimationName = json.Value<string>("animation_name"),
                 InputSignature = json.Value<string>("input_signature"),
-                Poses = json["poses"] as JArray ?? json["analysis"]?["poses"] as JArray ?? new JArray(),
                 Analysis = json["analysis"] as JObject ?? new JObject(),
                 Pictures = json["pictures"] as JObject ?? new JObject(),
                 RootTrajectory = json["root_trajectory"] as JObject ?? new JObject()

@@ -14,7 +14,6 @@ using TimelineInject;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
-using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 
 namespace KimodoUnityBridge.Command
@@ -22,6 +21,8 @@ namespace KimodoUnityBridge.Command
 {
     internal static partial class command_context
     {
+        private const float MinimumGhostGroundSpacing = .5f;
+
         private static void CreateWorldLine(List<GameObject> objects, IReadOnlyList<Vector3> points, Color color, float width)
         {
             if (points == null || points.Count < 2) return;
@@ -33,7 +34,8 @@ namespace KimodoUnityBridge.Command
             line.SetPositions(points.Select(point => point + Vector3.up * .025f).ToArray());
             line.startWidth = line.endWidth = width;
             line.useWorldSpace = true;
-            line.sharedMaterial = MakeUnlitMaterial(color);
+            color.a = 1f;
+            line.sharedMaterial = CreatePipelineUnlitMaterial(color);
             line.startColor = line.endColor = color;
             objects.Add(lineObject);
         }
@@ -77,7 +79,6 @@ namespace KimodoUnityBridge.Command
             List<GameObject> objects,
             Vector3 position,
             float radius,
-            Color color,
             string name = "Kimodo Root2D Keyframe",
             float height = .045f)
         {
@@ -87,7 +88,6 @@ namespace KimodoUnityBridge.Command
             SetLayerRecursively(marker, SessionCaptureLayer);
             marker.transform.position = position + Vector3.up * height;
             marker.transform.localScale = new Vector3(radius, .04f, radius);
-            marker.GetComponent<Renderer>().sharedMaterial = MakeUnlitMaterial(color);
             objects.Add(marker);
         }
 
@@ -181,35 +181,11 @@ namespace KimodoUnityBridge.Command
             }
         }
 
-        private static Bounds CalculatePreviewPoseBounds(SubjectPictureData subject, int localFrame)
-        {
-            using (EvaluatedPosePreview preview = CreateAnalysisPosePreview(subject, localFrame))
-            {
-                Bounds bounds = CalculateSkinnedBounds(preview.Root);
-                bounds.Encapsulate(PreviewRootPosition(preview.Root));
-                bounds.Expand(new Vector3(1.5f, .5f, 1.5f));
-                if (bounds.size.x < 3f) bounds.Expand(new Vector3(3f - bounds.size.x, 0f, 0f));
-                if (bounds.size.z < 3f) bounds.Expand(new Vector3(0f, 0f, 3f - bounds.size.z));
-                return bounds;
-            }
-        }
 
         private static Bounds CalculateRawPreviewPoseBounds(SubjectPictureData subject, int localFrame)
         {
             // Bounds were sampled with these same poses before layout began.
             return subject.PoseBounds[Mathf.Clamp(localFrame, 0, subject.PoseBounds.Length - 1)];
-        }
-
-        private static EvaluatedPosePreview CreateAnalysisPosePreview(SubjectPictureData subject, int localFrame)
-        {
-            if (!IsHumanoidCharacter(subject.Subject.Character))
-            {
-                return new EvaluatedPosePreview(CreateMeshPosePreview(subject.Subject, localFrame));
-            }
-
-            TimelineCharacterRecord character = subject.Subject.Character;
-            KimodoMarkerSampleResult sample = subject.GetSample(localFrame);
-            return CreatePipelinePosePreview(character, sample);
         }
 
         private static GameObject CreateMeshPosePreview(AnalysisSubject subject, int localFrame)
@@ -303,7 +279,7 @@ namespace KimodoUnityBridge.Command
                 lastFrame
             };
             return preserveAllSelectedFrames
-                ? FilterOverlappingFrames(subject.Pelvis, result, protectedFrames)
+                ? FilterOverlappingFrames(subject.Pelvis, result)
                 : FilterStationaryFrames(subject, result, protectedFrames);
         }
 
@@ -324,28 +300,20 @@ namespace KimodoUnityBridge.Command
             return result;
         }
 
-        private static List<int> FilterOverlappingFrames(Vector3[] pelvis, IReadOnlyList<int> frames, ISet<int> protectedFrames)
+        private static List<int> FilterOverlappingFrames(Vector3[] pelvis, IReadOnlyList<int> frames)
         {
             var result = new List<int>();
             foreach (int frame in (frames ?? Array.Empty<int>()).Distinct().OrderBy(item => item))
             {
-                bool isProtected = protectedFrames != null && protectedFrames.Contains(frame);
-                bool overlaps = (protectedFrames != null && protectedFrames.Any(protectedFrame =>
+                Vector3 candidate = pelvis[frame];
+                candidate.y = 0f;
+                bool overlaps = result.Any(previousFrame =>
                 {
-                    if (protectedFrame == frame) return false;
-                    Vector3 a = pelvis[protectedFrame];
-                    Vector3 b = pelvis[frame];
-                    a.y = b.y = 0f;
-                    return Vector3.Distance(a, b) < .5f;
-                })) || result.Any(previous =>
-                {
-                    if (isProtected && protectedFrames.Contains(previous)) return false;
-                    Vector3 a = pelvis[previous];
-                    Vector3 b = pelvis[frame];
-                    a.y = b.y = 0f;
-                    return Vector3.Distance(a, b) < .5f;
+                    Vector3 previous = pelvis[previousFrame];
+                    previous.y = 0f;
+                    return Vector3.Distance(previous, candidate) < MinimumGhostGroundSpacing;
                 });
-                if (!overlaps || isProtected) result.Add(frame);
+                if (!overlaps) result.Add(frame);
             }
             return result;
         }
@@ -425,10 +393,8 @@ namespace KimodoUnityBridge.Command
             int lastFrame = Math.Max(0, tile.Subject.Pelvis.Length - 1);
             if (frame == 0) return AnalysisStartFrameTint;
             if (frame == lastFrame) return AnalysisEndFrameTint;
-            if (string.Equals(tile.PoseKind, "keyframe", StringComparison.Ordinal) ||
-                string.Equals(tile.PoseKind, "key_pose", StringComparison.Ordinal)) return AnalysisKeyframeTint;
-            if ((string.Equals(tile.PoseKind, "foot_transition", StringComparison.Ordinal) ||
-                 string.Equals(tile.PoseKind, "step_pose", StringComparison.Ordinal)) &&
+            if (string.Equals(tile.PoseKind, "key_pose", StringComparison.Ordinal)) return AnalysisKeyframeTint;
+            if (string.Equals(tile.PoseKind, "step_pose", StringComparison.Ordinal) &&
                 TryGetContactTint(tile.Subject, frame, out Color footTint))
             {
                 return footTint;

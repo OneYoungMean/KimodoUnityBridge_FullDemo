@@ -21,7 +21,9 @@ namespace KimodoUnityBridge.Command
             public Transform Transform;
         }
 
-        public static string PoseAnalysis(string argumentsJson) => Execute(argumentsJson, arguments =>
+        public static string PoseAnalysis(string argumentsJson) => Execute(argumentsJson, PoseAnalysis);
+
+        private static string PoseAnalysis(JObject arguments)
         {
             TimelineSessionRecord session = RequireCurrentTimelineSession();
             JArray constraintsArg = arguments["constraints"] as JArray
@@ -31,9 +33,7 @@ namespace KimodoUnityBridge.Command
                 throw new InvalidOperationException("constraints must contain at least one point constraint.");
 
             JObject cameraOptions = arguments["camera"] as JObject ?? new JObject();
-            SceneView sceneView = SceneView.lastActiveSceneView;
-            if (sceneView == null || sceneView.camera == null)
-                throw new InvalidOperationException("No active Scene View camera is available.");
+            GetOrOpenSceneView();
 
             TimelineCharacterRecord character = ResolveSessionCharacterByReference(
                 session, RequiredStringValue(arguments, "character"), addIfMissing: true);
@@ -103,7 +103,8 @@ namespace KimodoUnityBridge.Command
                 ["constraints"] = new JArray(captured)
             };
             return Ok(response);
-        });
+
+        }
 
         private static JObject CapturePoseAnalysisEntry(
             JObject arguments,
@@ -128,10 +129,7 @@ namespace KimodoUnityBridge.Command
                     preview.Root.transform);
                 Bounds bounds = CalculatePoseAnalysisBounds(transforms);
 
-                SceneView sceneView = SceneView.lastActiveSceneView;
-                if (sceneView == null || sceneView.camera == null)
-                    throw new InvalidOperationException("No active Scene View camera is available.");
-                ConfigureSceneView(sceneView, cameraOptions);
+                SceneView sceneView = GetOrOpenSceneView();
                 List<Tuple<Renderer, bool>> visibility = HidePoseAnalysisRenderers(transforms, character, cameraOptions);
                 try
                 {
@@ -162,6 +160,7 @@ namespace KimodoUnityBridge.Command
                     return new JObject
                     {
                         ["index"] = index,
+                        ["frame"] = sourceResult["frame"]?.DeepClone(),
                         ["image_path"] = "Assets/KimodoGeneratedClips/PoseAnalysis/" + fileName,
                         ["width"] = width,
                         ["height"] = height,
@@ -215,6 +214,7 @@ namespace KimodoUnityBridge.Command
                     measurements.Add(new JObject
                     {
                         ["index"] = index,
+                        ["frame"] = item.Item3["frame"]?.DeepClone(),
                         ["source"] = item.Item3.DeepClone(),
                         ["transforms"] = new JArray(poseTargets.Select(target => new JObject
                         {
@@ -227,10 +227,7 @@ namespace KimodoUnityBridge.Command
 
                 if (!hasBounds) throw new InvalidOperationException("constraints must contain at least one entry.");
                 bounds.Expand(Vector3.one * .1f);
-                SceneView sceneView = SceneView.lastActiveSceneView;
-                if (sceneView == null || sceneView.camera == null)
-                    throw new InvalidOperationException("No active Scene View camera is available.");
-                ConfigureSceneView(sceneView, cameraOptions);
+                SceneView sceneView = GetOrOpenSceneView();
                 visibility = HidePoseAnalysisRenderers(targets, entries[0].Item1, cameraOptions);
                 Vector3 direction = ReadSceneVector(
                     cameraOptions["direction"], "camera.direction", new Vector3(1f, .75f, -1f));

@@ -1,6 +1,5 @@
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 namespace KimodoBridge.Editor
 {
@@ -21,12 +20,10 @@ namespace KimodoBridge.Editor
         [SerializeField] private string localModelsPath = string.Empty;
         [SerializeField] private string defaultPrompt = DefaultPromptFallback;
         [SerializeField] private string defaultBridgeModelName = KimodoMotionModelProfiles.DefaultModelName;
-        [FormerlySerializedAs("defaultBridgeVramMode")]
         [SerializeField] private KimodoTextEncoderMode defaultTextEncoderMode = KimodoTextEncoderMode.HighPerformance;
         [SerializeField] private bool keepCpuForceExperimental;
         [SerializeField] private bool writeResampledTimelineCacheClips;
         [SerializeField] private bool enableDebugLog;
-        [SerializeField] private bool enableDebugMode;
         [SerializeField] private bool enableKimodoStaticGraph;
         [SerializeField] private bool enableSplineExperimental;
         [SerializeField] private bool setupWizardCompleted;
@@ -112,12 +109,6 @@ namespace KimodoBridge.Editor
         {
             get => enableDebugLog;
             set => enableDebugLog = value;
-        }
-
-        internal bool EnableDebugMode
-        {
-            get => enableDebugMode;
-            set => enableDebugMode = value;
         }
 
         internal bool EnableKimodoStaticGraph

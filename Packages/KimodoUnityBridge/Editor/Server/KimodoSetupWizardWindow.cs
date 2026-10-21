@@ -23,9 +23,7 @@ namespace KimodoBridge.Editor
         private sealed class EndpointProbeStatus
         {
             public string Label = string.Empty;
-            public string Url = string.Empty;
             public bool Reachable;
-            public string Error = string.Empty;
         }
 
         private sealed class ConnectivityStatus
@@ -126,8 +124,7 @@ namespace KimodoBridge.Editor
             {
                 if (connectivityTask.IsFaulted)
                 {
-                    string error = connectivityTask.Exception?.GetBaseException().Message ?? "unknown error";
-                    connectivityStatus = BuildFailedConnectivityStatus(error);
+                    connectivityStatus = BuildFailedConnectivityStatus();
                 }
                 else
                 {
@@ -609,26 +606,24 @@ namespace KimodoBridge.Editor
             };
         }
 
-        private static ConnectivityStatus BuildFailedConnectivityStatus(string error)
+        private static ConnectivityStatus BuildFailedConnectivityStatus()
         {
             return new ConnectivityStatus
             {
-                Pypi = new EndpointProbeStatus { Label = "PyPI", Url = PypiUrl, Reachable = false, Error = error },
-                AliyunPypi = new EndpointProbeStatus { Label = "Aliyun", Url = AliyunPypiUrl, Reachable = false, Error = error },
-                HuggingFace = new EndpointProbeStatus { Label = "HuggingFace", Url = HuggingFaceUrl, Reachable = false, Error = error },
-                ModelScope = new EndpointProbeStatus { Label = "ModelScope", Url = ModelScopeUrl, Reachable = false, Error = error }
+                Pypi = new EndpointProbeStatus { Label = "PyPI", Reachable = false },
+                AliyunPypi = new EndpointProbeStatus { Label = "Aliyun", Reachable = false },
+                HuggingFace = new EndpointProbeStatus { Label = "HuggingFace", Reachable = false },
+                ModelScope = new EndpointProbeStatus { Label = "ModelScope", Reachable = false }
             };
         }
 
         private static EndpointProbeStatus ProbeEndpoint(string label, string url)
         {
-            bool reachable = TryCheckUrlReachable(url, out string error);
+            bool reachable = TryCheckUrlReachable(url, out _);
             return new EndpointProbeStatus
             {
                 Label = label,
-                Url = url,
-                Reachable = reachable,
-                Error = error
+                Reachable = reachable
             };
         }
 

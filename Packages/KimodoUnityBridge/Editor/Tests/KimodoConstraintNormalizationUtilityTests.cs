@@ -192,8 +192,13 @@ namespace KimodoBridge.Editor.Tests
                 },
                 new KimodoMarkerSampleResult
                 {
+                    sampleValid = true, sampleTime = 0.5,
+                    rootOverride = new KimodoUnityBridge.KimodoRigidTransform { t = Vector3.zero }
+                },
+                new KimodoMarkerSampleResult
+                {
                     sampleValid = true, sampleTime = 1.0,
-                    rootOverride = new KimodoUnityBridge.KimodoRigidTransform { t = new Vector3(2f, 0f, 2f) }
+                    rootOverride = new KimodoUnityBridge.KimodoRigidTransform { t = new Vector3(3.5f, 0f, 0f) }
                 }
             };
 

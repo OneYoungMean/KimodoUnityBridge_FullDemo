@@ -85,15 +85,18 @@ namespace KimodoUnityBridge.Command.Tests
                 Assert.That(analysis["clips"], Is.Null);
                 Assert.That(analysis["pictures"]?.Value<string>("aspect"), Is.EqualTo("16:9"));
                 Assert.That(analysis["pictures"]?.Value<int>("tile_count"), Is.EqualTo(20));
-                Assert.That(analysis["pictures"]?.Value<string>("render_version"), Is.EqualTo("animation.analysis.20-sceneview-headers-metrics"));
+                Assert.That(analysis["pictures"]?.Value<string>("render_version"), Is.EqualTo("animation.analysis.20-sceneview-headers-metrics-ghost-spacing-05m"));
                 Assert.That(analysis["pictures"]?.Value<string>("title"), Is.Not.Empty);
                 Assert.That(analysis["pictures"]?.Value<int?>("header_height"), Is.GreaterThan(0));
                 Assert.That(analysis["pictures"]?["images"]?.Count(), Is.EqualTo(20));
 
                 JObject compactContext = Require("scene.context", new JObject());
                 Assert.That(compactContext["history"], Is.Null, "History should be omitted from the default scene context response.");
+                string sessionIdBeforeHistory = compactContext["session"]?.Value<string>("session_id");
                 JObject sceneContext = Require("scene.context", new JObject { ["include_history"] = true });
                 Assert.That(sceneContext["session"]?.Value<string>("session_id"), Is.Not.Empty);
+                Assert.That(sceneContext["session"]?.Value<string>("session_id"), Is.EqualTo(sessionIdBeforeHistory),
+                    "A history query must inspect the existing context without replacing it.");
                 Assert.That(sceneContext["session"]?.Value<int>("session_revision"), Is.GreaterThan(0));
                 JObject indexedAnalysis = (sceneContext["history"]?["analyses"] as JArray)?.Values<JObject>()
                     .SingleOrDefault(item => item.Value<string>("analysis_id") == analysis["clip"]?.Value<string>("analysis_id"));
@@ -133,6 +136,8 @@ namespace KimodoUnityBridge.Command.Tests
                 Assert.That(clipAnalysis["root_trajectory"]?["duration_seconds"], Is.Null);
                 Assert.That(clipAnalysis["root_trajectory"]?["samples"]?.FirstOrDefault()?["timeline_frame_60"], Is.Not.Null);
                 Assert.That(clipAnalysis["root_trajectory"]?["samples"]?.FirstOrDefault()?["frame"], Is.Null);
+                AssertGhostTileSpacing(analysis, clipAnalysis, "1.3");
+                AssertGhostTileSpacing(analysis, clipAnalysis, "1.4");
                 Assert.That(clipAnalysis["motion_profile"]?.Value<float>("path_length_xz"), Is.GreaterThan(0.5f));
                 Assert.That(Math.Abs(clipAnalysis["motion_profile"]?.Value<float>("heading_change_degrees") ?? 0f),
                     Is.GreaterThan(45f));
@@ -215,34 +220,165 @@ namespace KimodoUnityBridge.Command.Tests
             }
         }
 
-        [Test]
-        public void RootPathSamples_UseOnlyThePathEndpoints()
+        private static void AssertGhostTileSpacing(JObject analysis, JObject clipAnalysis, string tileId)
         {
-            Type contextType = typeof(command_dispatcher).Assembly
-                .GetType("KimodoUnityBridge.Command.command_context");
-            MethodInfo buildPath = contextType.GetMethod(
-                "BuildRootPathConstraints",
-                BindingFlags.Static | BindingFlags.NonPublic);
-            Assert.That(buildPath, Is.Not.Null);
+            JObject tile = (analysis["pictures"]?["images"] as JArray)?.Values<JObject>()
+                .Single(item => item.Value<string>("id") == tileId);
+            var frames = new HashSet<int>((tile["description"]?["timeline_frames_60"] as JArray ?? new JArray())
+                .Values<int>());
+            foreach (int frame in (tile["description"]?["sample_frames"] as JArray ?? new JArray()).Values<int>())
+                frames.Add(frame);
 
-            var path = new KimodoRootPathData
-            {
-                length = 2f,
-                knots = new List<KimodoRootPathKnot>
+            var positions = (clipAnalysis["root_trajectory"]?["samples"] as JArray ?? new JArray())
+                .Values<JObject>()
+                .ToDictionary(item => item.Value<int>("timeline_frame_60"), item =>
                 {
-                    new KimodoRootPathKnot { position = Vector2.zero },
-                    new KimodoRootPathKnot { position = Vector2.up },
-                    new KimodoRootPathKnot { position = Vector2.one }
-                }
-            };
-            var samples = ((IEnumerable<KimodoMarkerSampleResult>)buildPath.Invoke(null, new object[]
-            {
-                path, 0, 12, 73, 0f, 1f,
-                new HashSet<int>(), new HashSet<int>()
-            })).ToArray();
+                    JArray xz = (JArray)item["position_xz"];
+                    return new Vector2(xz[0].Value<float>(), xz[1].Value<float>());
+                });
+            int[] ordered = frames.OrderBy(frame => frame).ToArray();
+            for (int right = 1; right < ordered.Length; right++)
+            for (int left = 0; left < right; left++)
+                Assert.That(Vector2.Distance(positions[ordered[left]], positions[ordered[right]]),
+                    Is.GreaterThanOrEqualTo(.5f - .0001f),
+                    $"Ghost tile {tileId} draws frames {ordered[left]} and {ordered[right]} within 0.5m.");
+        }
 
-            Assert.That(samples.Select(sample => sample.sampleTime * 60d).ToArray(),
-                Is.EqualTo(new[] { 12d, 72d }));
+        [UnityTest]
+        public IEnumerator PoseAnalysis_ArmatureFixture_WritesIndividualAndCombinedPng()
+        {
+            GameObject source = AssetDatabase.LoadAssetAtPath<GameObject>(ModelPath);
+            Assert.That(source, Is.Not.Null, "Missing Armature fixture.");
+
+            GameObject character = UnityEngine.Object.Instantiate(source);
+            character.name = "KimodoTest_PoseAnalysis_Armature";
+            object testSession = null;
+            try
+            {
+                Avatar modelAvatar = AssetDatabase.LoadAllAssetsAtPath(ModelPath)
+                    .OfType<Avatar>()
+                    .FirstOrDefault();
+                Assert.That(modelAvatar, Is.Not.Null.And.Property("isHuman").True,
+                    "Armature fixture requires a Humanoid Avatar.");
+                Animator animator = character.GetComponentInChildren<Animator>(true) ?? character.AddComponent<Animator>();
+                animator.avatar = modelAvatar;
+                animator.runtimeAnimatorController = null;
+                animator.Rebind();
+
+                testSession = CreateCurrentTestContext(character, animator);
+                EnsureTestSceneView();
+
+                JObject individual = Require("pose.analysis", new JObject
+                {
+                    ["character"] = character.name,
+                    ["constraints"] = new JArray
+                    {
+                        new JObject
+                        {
+                            ["frame"] = 0,
+                            ["root"] = new JObject { ["position"] = new JArray(0, 0, 0) },
+                            ["effector"] = new JObject
+                            {
+                                ["right_hand"] = new JObject { ["position"] = new JArray(0, 0, 0) }
+                            }
+                        }
+                    },
+                    ["combine"] = false,
+                    ["joints"] = new JArray("Hips", "RightHand"),
+                    ["transforms"] = new JArray("@pose"),
+                    ["camera"] = new JObject { ["resolution"] = new JArray(640, 360) }
+                });
+
+                Assert.That(individual.Value<bool>("combine"), Is.False);
+                JArray individualRows = individual["constraints"] as JArray;
+                Assert.That(individualRows, Is.Not.Null.And.Count.EqualTo(1));
+                JObject individualRow = (JObject)individualRows[0];
+                Assert.That(individualRow.Value<int>("index"), Is.EqualTo(0));
+                Assert.That(individualRow.Value<int>("frame"), Is.EqualTo(0));
+                Assert.That(individualRow.Value<int>("width"), Is.EqualTo(640));
+                Assert.That(individualRow.Value<int>("height"), Is.EqualTo(360));
+                Assert.That(individualRow.Value<string>("image_path"), Does.StartWith("Assets/KimodoGeneratedClips/PoseAnalysis/"));
+                JObject individualSource = individualRow["source"] as JObject;
+                Assert.That(individualSource, Is.Not.Null);
+                Assert.That(individualSource.Value<string>("type"), Is.EqualTo("point_constraint"));
+                Assert.That(individualSource.Value<string>("character"), Is.EqualTo(character.name));
+                Assert.That(individualSource.Value<int>("frame"), Is.EqualTo(0));
+                Assert.That(individualSource["constraint"]?.Value<int>("frame"), Is.EqualTo(0));
+                JArray individualTransforms = individualRow["transforms"] as JArray;
+                Assert.That(individualTransforms, Is.Not.Null.And.Count.EqualTo(1));
+                Assert.That(individualTransforms[0].Value<string>("path"), Is.EqualTo("@pose"));
+                Assert.That(individualTransforms[0]["world_position"]?.Count(), Is.EqualTo(3));
+                JObject individualAnalysis = individualRow["pose_analysis"] as JObject;
+                Assert.That(individualAnalysis, Is.Not.Null);
+                Assert.That(individualAnalysis.Value<string>("overall"),
+                    Is.EqualTo("passed").Or.EqualTo("failed").Or.EqualTo("not_tested"));
+                Assert.That(individualAnalysis["joints"]?.Count(), Is.EqualTo(2));
+                Assert.That(individualRow["pose_analysis"]?["joints"]?.Values<JObject>()
+                    .Single(item => item.Value<string>("joint") == "RightHand")["distance_m"]?.Type,
+                    Is.EqualTo(JTokenType.Float));
+
+                JObject combined = Require("pose.analysis", new JObject
+                {
+                    ["character"] = character.name,
+                    ["constraints"] = new JArray
+                    {
+                        new JObject
+                        {
+                            ["frame"] = 0,
+                            ["root"] = new JObject { ["position"] = new JArray(0, 0, 0) }
+                        },
+                        new JObject
+                        {
+                            ["frame"] = 30,
+                            ["root"] = new JObject { ["position"] = new JArray(1, 0, 0) }
+                        }
+                    },
+                    ["combine"] = true,
+                    ["transforms"] = new JArray("@pose"),
+                    ["camera"] = new JObject { ["resolution"] = new JArray(640, 360) }
+                });
+
+                Assert.That(combined.Value<bool>("combine"), Is.True);
+                Assert.That(combined.Value<string>("image_path"), Does.StartWith("Assets/KimodoGeneratedClips/PoseAnalysis/"));
+                Assert.That(combined.Value<int>("width"), Is.EqualTo(640));
+                Assert.That(combined.Value<int>("height"), Is.EqualTo(360));
+                JArray combinedRows = combined["constraints"] as JArray;
+                Assert.That(combinedRows, Is.Not.Null.And.Count.EqualTo(2));
+                for (int index = 0; index < combinedRows.Count; index++)
+                {
+                    JObject row = (JObject)combinedRows[index];
+                    Assert.That(row.Value<int>("index"), Is.EqualTo(index));
+                    Assert.That(row.Value<int>("frame"), Is.EqualTo(index == 0 ? 0 : 30));
+                    JObject sourceResult = row["source"] as JObject;
+                    Assert.That(sourceResult, Is.Not.Null);
+                    Assert.That(sourceResult.Value<string>("type"), Is.EqualTo("point_constraint"));
+                    Assert.That(sourceResult.Value<string>("character"), Is.EqualTo(character.name));
+                    Assert.That(sourceResult.Value<int>("frame"), Is.EqualTo(index == 0 ? 0 : 30));
+                    Assert.That(sourceResult["constraint"]?.Value<int>("frame"), Is.EqualTo(index == 0 ? 0 : 30));
+                    JArray transforms = row["transforms"] as JArray;
+                    Assert.That(transforms, Is.Not.Null.And.Count.EqualTo(1));
+                    Assert.That(transforms[0].Value<string>("path"), Is.EqualTo("@pose"));
+                    Assert.That(transforms[0]["world_position"]?.Count(), Is.EqualTo(3));
+                    JObject poseAnalysis = row["pose_analysis"] as JObject;
+                    Assert.That(poseAnalysis, Is.Not.Null);
+                    Assert.That(poseAnalysis.Value<string>("overall"), Is.EqualTo("not_tested"));
+                    Assert.That(poseAnalysis["joints"]?.Count(), Is.GreaterThan(0));
+                }
+
+                yield return null;
+
+                string individualPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..", individualRow.Value<string>("image_path")));
+                string combinedPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..", combined.Value<string>("image_path")));
+                Assert.That(File.Exists(individualPath), Is.True, "pose.analysis did not write its individual PNG.");
+                Assert.That(new FileInfo(individualPath).Length, Is.GreaterThan(0));
+                Assert.That(File.Exists(combinedPath), Is.True, "pose.analysis did not write its combined PNG.");
+                Assert.That(new FileInfo(combinedPath).Length, Is.GreaterThan(0));
+            }
+            finally
+            {
+                ResetCurrentTestContext(testSession);
+                UnityEngine.Object.DestroyImmediate(character);
+            }
         }
 
         [Test]
@@ -284,6 +420,8 @@ namespace KimodoUnityBridge.Command.Tests
             })).ToArray();
 
             Assert.That(samples, Has.Length.EqualTo(2));
+            Assert.That(samples[0].sampleTime, Is.EqualTo(0f).Within(1e-6f));
+            Assert.That(samples[1].sampleTime, Is.EqualTo(59f / 60f).Within(1e-5f));
             Assert.That(Vector3.Distance(samples[0].rootOverride.t, new Vector3(10f, 2f, 20f)), Is.LessThan(1e-4f));
             Assert.That(Vector3.Distance(samples[1].rootOverride.t, new Vector3(10f, 2f, 19f)), Is.LessThan(1e-4f));
             Assert.That(Vector3.Distance(samples[0].rootOverride.q * Vector3.forward, Vector3.back), Is.LessThan(1e-4f));

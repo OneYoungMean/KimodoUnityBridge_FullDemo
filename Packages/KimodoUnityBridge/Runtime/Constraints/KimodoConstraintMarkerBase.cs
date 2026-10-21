@@ -77,8 +77,9 @@ public class KimodoConstraintMarker : Marker, IKimodoConstraintPreviewSelectable
         }
     }
 
-    /// <summary>Single serialized source of truth for Inspector, window,
-    /// AutoSample and generation.</summary>
+    /// <summary>Constraint payload for Inspector, AutoSample and generation.
+    /// ConstraintMode is canonical for the marker; the payload string is kept
+    /// synchronized for protocol consumers.</summary>
     public KimodoMarkerSampleResult SampleData
     {
         get { EnsureSampleData(); return sampleData; }
@@ -112,7 +113,6 @@ public class KimodoConstraintMarker : Marker, IKimodoConstraintPreviewSelectable
     {
         bool initializeDefaults = sampleData == null;
         sampleData ??= new KimodoMarkerSampleResult();
-        KimodoConstraintInternal.NormalizeMode(sampleData.constraintMode);
         sampleData.sampleData ??= new KimodoBridge.MuscleSample();
         if (!KimodoSampleDataLayout.IsValid(sampleData.sampleData))
         {
@@ -125,6 +125,8 @@ public class KimodoConstraintMarker : Marker, IKimodoConstraintPreviewSelectable
         sampleData.effectors.leftFoot ??= KimodoRigidTransform.Identity;
         sampleData.effectors.rightFoot ??= KimodoRigidTransform.Identity;
         sampleData.rootOverride ??= KimodoRigidTransform.Identity;
+        // Keep the protocol-facing string as a projection of the marker's
+        // serialized enum, rather than treating it as a second configuration.
         sampleData.constraintMode = ModeProtocolName(constraintMode);
         sampleData.sampleTime = Math.Max(0.0, time);
         if (initializeDefaults)

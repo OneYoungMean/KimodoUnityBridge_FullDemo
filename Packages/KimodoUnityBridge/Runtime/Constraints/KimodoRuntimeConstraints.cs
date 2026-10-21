@@ -9,10 +9,6 @@ namespace KimodoBridge
     internal sealed class KimodoRuntimeConstraints
     {
         internal const string FullBodyType = "fullbody";
-        internal const string LeftHandType = "left-hand";
-        internal const string RightHandType = "right-hand";
-        internal const string LeftFootType = "left-foot";
-        internal const string RightFootType = "right-foot";
         internal const string Root2DType = "root2d";
         internal const string Root2DTargetType = "root2d_target";
 

@@ -147,10 +147,18 @@ namespace KimodoUnityBridge.Command.Tests
                     "The fixture must start without a valid Humanoid Avatar.");
 
                 Type context = typeof(command_context);
+                Selection.activeGameObject = root;
+                MethodInfo automatic = context.GetMethod("ResolveAutomaticSceneCharacter", BindingFlags.Static | BindingFlags.NonPublic);
+                Assert.That(automatic.Invoke(null, null), Is.Null,
+                    "Automatic scene discovery must not generate an Avatar or reimport the character.");
+                Assert.That(((ModelImporter)AssetImporter.GetAtPath(modelPath)).animationType,
+                    Is.EqualTo(ModelImporterAnimationType.Generic),
+                    "Read-only character discovery must preserve the ModelImporter rig setting.");
+
                 if (useSelection)
                 {
-                    Selection.activeGameObject = root;
-                    MethodInfo automatic = context.GetMethod("ResolveAutomaticSceneCharacter", BindingFlags.Static | BindingFlags.NonPublic);
+                    var explicitlyResolved = KimodoLocalAvatarUtility.ResolveAvatarFromGameObject(root);
+                    Assert.That(explicitlyResolved.IsHumanoid, Is.True, explicitlyResolved.Error);
                     Assert.That(automatic.Invoke(null, null), Is.SameAs(animator));
                 }
                 else
@@ -164,7 +172,14 @@ namespace KimodoUnityBridge.Command.Tests
                 Assert.That(resolved.IsHumanoid, Is.True, resolved.Error);
                 Assert.That(KimodoLocalAvatarUtility.CheckAvatarValid(resolved.Avatar, root), Is.True);
                 Assert.That(((ModelImporter)AssetImporter.GetAtPath(modelPath)).animationType,
-                    Is.EqualTo(ModelImporterAnimationType.Human));
+                    Is.EqualTo(ModelImporterAnimationType.Generic),
+                    "Avatar generation must restore the original ModelImporter rig setting.");
+                var queried = KimodoLocalAvatarUtility.ResolveAvatarFromGameObject(root, allowGeneration: false);
+                Assert.That(queried.IsHumanoid, Is.True, queried.Error);
+                Assert.That(queried.Source, Is.EqualTo("Cache"),
+                    "A query must reuse the cached Avatar without changing the importer.");
+                Assert.That(((ModelImporter)AssetImporter.GetAtPath(modelPath)).animationType,
+                    Is.EqualTo(ModelImporterAnimationType.Generic));
                 timeline = ScriptableObject.CreateInstance<TimelineAsset>();
                 object session = CreateSessionRecord(
                     context.GetNestedType("TimelineSessionRecord", BindingFlags.NonPublic), timeline, null, null, null);
@@ -172,6 +187,9 @@ namespace KimodoUnityBridge.Command.Tests
                 object[] arguments = { session, root, animator, true, null, true };
                 Assert.That((bool)add.Invoke(null, arguments), Is.True, arguments[4] as string);
                 Assert.That(timeline.GetRootTracks().Count(), Is.EqualTo(1));
+                Assert.That(timeline.GetRootTracks().OfType<AnimationTrack>().Single().trackOffset,
+                    Is.EqualTo(TrackOffset.ApplyTransformOffsets),
+                    "Command-created character tracks must not apply scene offsets.");
             }
             finally
             {
@@ -225,7 +243,9 @@ namespace KimodoUnityBridge.Command.Tests
                 "KimodoUnityBridge.Command.KimodoCommandSessionMetadata");
             GameObject sessionRoot = new GameObject("KimodoSession_Test");
             GameObject source = new GameObject("TestCharacter");
+            GameObject otherSource = new GameObject("OtherCharacter");
             Animator animator = source.AddComponent<Animator>();
+            Animator otherAnimator = otherSource.AddComponent<Animator>();
             animator.applyRootMotion = true;
             source.transform.position = new Vector3(3f, 1f, 7f);
             source.transform.rotation = Quaternion.Euler(0f, 31f, 0f);
@@ -241,7 +261,9 @@ namespace KimodoUnityBridge.Command.Tests
             director.playableAsset = timeline;
             object session = CreateSessionRecord(sessionType, timeline, metadata, director, sessionRoot);
             AnimationTrack track = timeline.CreateTrack<AnimationTrack>(null, "TestCharacter");
-            track.trackOffset = TrackOffset.ApplySceneOffsets;
+            AnimationTrack otherTrack = timeline.CreateTrack<AnimationTrack>(null, "OtherCharacter");
+            director.SetGenericBinding(otherTrack, otherAnimator);
+            track.trackOffset = TrackOffset.ApplyTransformOffsets;
             MethodInfo bindMethod = context.GetMethod("BindTimelineCharacter", BindingFlags.Static | BindingFlags.NonPublic);
 
             try
@@ -249,6 +271,8 @@ namespace KimodoUnityBridge.Command.Tests
                 bindMethod.Invoke(null, new object[] { session, source, source, animator, track });
 
                 Assert.That(director.GetGenericBinding(track), Is.SameAs(animator));
+                Assert.That(director.GetGenericBinding(otherTrack), Is.SameAs(otherAnimator),
+                    "Binding one character must preserve other Animator bindings.");
                 Assert.That(animator.applyRootMotion, Is.True);
                 Assert.That(source.transform.position, Is.EqualTo(sourcePosition));
                 Assert.That(source.transform.rotation, Is.EqualTo(sourceRotation));
@@ -266,6 +290,7 @@ namespace KimodoUnityBridge.Command.Tests
             finally
             {
                 UnityEngine.Object.DestroyImmediate(source);
+                UnityEngine.Object.DestroyImmediate(otherSource);
                 UnityEngine.Object.DestroyImmediate(sessionRoot);
                 UnityEngine.Object.DestroyImmediate(timeline);
                 UnityEngine.Object.DestroyImmediate(metadata);
@@ -275,10 +300,8 @@ namespace KimodoUnityBridge.Command.Tests
         [Test]
         public void DestroySceneSessionRoots_DestroysTemporaryContexts()
         {
-            Scene previousScene = SceneManager.GetActiveScene();
-            Scene testScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+            Scene testScene = SceneManager.GetActiveScene();
             GameObject contextRoot = new GameObject("KimodoSession_DestroyTest");
-            SceneManager.MoveGameObjectToScene(contextRoot, testScene);
 
             try
             {
@@ -290,11 +313,7 @@ namespace KimodoUnityBridge.Command.Tests
             }
             finally
             {
-                if (testScene.IsValid())
-                {
-                    SceneManager.SetActiveScene(previousScene);
-                    EditorSceneManager.CloseScene(testScene, true);
-                }
+                if (contextRoot != null) UnityEngine.Object.DestroyImmediate(contextRoot);
             }
         }
 

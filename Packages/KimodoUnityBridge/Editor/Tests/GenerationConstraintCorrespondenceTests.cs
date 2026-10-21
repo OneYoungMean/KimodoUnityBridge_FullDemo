@@ -178,8 +178,7 @@ namespace KimodoUnityBridge.Command.Tests
                     {
                         rootOverride = KimodoRigidTransform.Identity,
                         effectors = new KimodoConstraintEffectors(),
-                        enableMask = new KimodoConstraintMask(),
-                        validMask = new KimodoConstraintMask()
+                        enableMask = new KimodoConstraintMask()
                     };
                     KimodoRetargetMarkerSamplingUtility.CaptureWorldTargets(fixture.Skeleton, actual);
 
@@ -198,7 +197,7 @@ namespace KimodoUnityBridge.Command.Tests
                         out _))
                     {
                         int rawFrame = Mathf.Clamp(constrainedFrame, 0, rawMotion.FrameCount - 1);
-                        if (rawMotion.TryReadUnityRootPosition(rawFrame, out Vector3 rawRoot))
+                        if (rawMotion.TryReadUnityRootPosition(rawFrame, out _))
                         {
                             rawRootDescription = $"raw frames {rawFrame - 1}/{rawFrame}/{rawFrame + 1}=" +
                                 $"{ReadRawRoot(rawMotion, rawFrame - 1)}/{ReadRawRoot(rawMotion, rawFrame)}/{ReadRawRoot(rawMotion, rawFrame + 1)}";
@@ -270,11 +269,9 @@ namespace KimodoUnityBridge.Command.Tests
                     sample.rootOverride.t = new Vector3(1f, 1f, 1f);
                     sample.enableMask = new KimodoConstraintMask
                     {
-                        rootPosition = true,
                         rootHeading = true,
                         rightHand = true
                     };
-                    sample.validMask = sample.enableMask.Clone();
                 }
 
                 KimodoEditorGenerateRequest request = fixture.BuildRequest(sample);
@@ -352,8 +349,7 @@ namespace KimodoUnityBridge.Command.Tests
                     {
                         rootOverride = KimodoRigidTransform.Identity,
                         effectors = new KimodoConstraintEffectors(),
-                        enableMask = new KimodoConstraintMask(),
-                        validMask = new KimodoConstraintMask()
+                        enableMask = new KimodoConstraintMask()
                     };
                     KimodoRetargetMarkerSamplingUtility.CaptureWorldTargets(fixture.Skeleton, actual);
                     KimodoMarkerSampleResult expected = request.ConstraintSamples.Single();
@@ -410,11 +406,9 @@ namespace KimodoUnityBridge.Command.Tests
                 KimodoMarkerSampleResult rootEffect = fixture.Capture("effector", 40.0 / 30.0);
                 rootEffect.enableMask = new KimodoConstraintMask
                 {
-                    rootPosition = true,
                     rootHeading = true,
                     rightHand = true
                 };
-                rootEffect.validMask = rootEffect.enableMask.Clone();
 
                 KimodoEditorGenerateRequest request = fixture.BuildRequest(
                     fullBody,
@@ -478,12 +472,10 @@ namespace KimodoUnityBridge.Command.Tests
                 KimodoMarkerSampleResult rootEffect = fixture.Capture("effector", 32.0 / 30.0);
                 rootEffect.enableMask = new KimodoConstraintMask
                 {
-                    rootPosition = true,
                     rootHeading = true,
                     leftHand = true,
                     rightHand = true
                 };
-                rootEffect.validMask = rootEffect.enableMask.Clone();
 
                 KimodoEditorGenerateRequest request = fixture.BuildRequest(rootEffect);
                 JArray exported = JArray.Parse(request.Constraints.json);
@@ -648,14 +640,12 @@ namespace KimodoUnityBridge.Command.Tests
                     sampleTime = sampleTime,
                     sampleData = pose.Clone(),
                     enableMask = KimodoConstraintMask.ForType(mode),
-                    validMask = KimodoConstraintMask.ForType(mode),
                     effectors = new KimodoConstraintEffectors(),
                     rootOverride = KimodoRigidTransform.Identity,
                     enabled = true
                 };
                 KimodoRetargetMarkerSamplingUtility.CaptureWorldTargets(skeleton, sample);
                 sample.enableMask = KimodoConstraintMask.ForType(mode);
-                sample.validMask = sample.enableMask.Clone();
                 return sample;
             }
 

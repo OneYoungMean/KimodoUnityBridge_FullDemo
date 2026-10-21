@@ -1,9 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
 using TimelineInject;
-using Newtonsoft.Json;
 using UnityEditor;
 using UnityEditor.Timeline;
 using UnityEngine;
@@ -15,7 +12,6 @@ namespace KimodoBridge.Editor
     [CanEditMultipleObjects]
     public partial class KimodoPlayableClipEditor : UnityEditor.Editor
     {
-        private const double RepaintIntervalSeconds = 0.2d;
         private SerializedProperty bridgeModelName;
         private SerializedProperty textEncoderMode;
         private SerializedProperty motionPrompt;
@@ -40,14 +36,13 @@ namespace KimodoBridge.Editor
         private SerializedProperty inOutConstraintModeProp;
         private SerializedProperty enableInConstraint;
         private SerializedProperty enableOutConstraint;
+        private SerializedProperty postApplyOutConstraint;
         private SerializedProperty inConstraintWindowFrames;
         private SerializedProperty inConstraintSampleCount;
         private SerializedProperty outConstraintWindowFrames;
         private SerializedProperty outConstraintSampleCount;
         private SerializedProperty ardyAutoHistory;
         private SerializedProperty ardyHistoryWeight;
-        private SerializedProperty ardyTargetMaxSpeed;
-        private SerializedProperty ardyTargetMaxAcceleration;
         private SerializedProperty showConstraint;
         private SerializedProperty splinePathEnabled;
         private SerializedProperty splineWaypointCount;
@@ -76,8 +71,6 @@ namespace KimodoBridge.Editor
         private bool showTrajectoryContinuityFoldout;
         private bool showAdvancedFoldout = true;
         private GUIStyle trajectoryContinuityFoldoutStyle;
-        private double lastRepaintTime;
-        private bool repaintQueued;
 
         private void OnEnable()
         {
@@ -147,14 +140,13 @@ namespace KimodoBridge.Editor
             inOutConstraintModeProp = serializedObject.FindProperty("inOutConstraintMode");
             enableInConstraint = serializedObject.FindProperty("enableInConstraint");
             enableOutConstraint = serializedObject.FindProperty("enableOutConstraint");
+            postApplyOutConstraint = serializedObject.FindProperty("postApplyOutConstraint");
             inConstraintWindowFrames = serializedObject.FindProperty("inConstraintWindowFrames");
             inConstraintSampleCount = serializedObject.FindProperty("inConstraintSampleCount");
             outConstraintWindowFrames = serializedObject.FindProperty("outConstraintWindowFrames");
             outConstraintSampleCount = serializedObject.FindProperty("outConstraintSampleCount");
             ardyAutoHistory = serializedObject.FindProperty("ardyAutoHistory");
             ardyHistoryWeight = serializedObject.FindProperty("ardyHistoryWeight");
-            ardyTargetMaxSpeed = serializedObject.FindProperty("ardyTargetMaxSpeed");
-            ardyTargetMaxAcceleration = serializedObject.FindProperty("ardyTargetMaxAcceleration");
             showConstraint = serializedObject.FindProperty("showConstraint");
             splinePathEnabled = serializedObject.FindProperty("splinePathEnabled");
             splineWaypointCount = serializedObject.FindProperty("splineWaypointCount");
@@ -195,7 +187,6 @@ namespace KimodoBridge.Editor
         private void OnDisable()
         {
             EditorUtility.ClearProgressBar();
-            repaintQueued = false;
         }
 
         public override void OnInspectorGUI()
@@ -210,7 +201,6 @@ namespace KimodoBridge.Editor
             SyncRequestHandleState();
             serializedObject.UpdateIfRequiredOrScript();
             DrawGenerationSection();
-            DrawAnalysisSection();
             DrawBakeSection();
             DrawErrorSection();
             DrawGeneratedInfo();
@@ -242,6 +232,7 @@ namespace KimodoBridge.Editor
             if (hasTimelineDuration)
             {
                 EditorGUILayout.LabelField("Timeline Duration", $"{timelineClip.duration:F2}s");
+                KimodoGenerationInspectorGui.DrawDurationWarning((float)timelineClip.duration);
             }
             else
             {
@@ -395,81 +386,6 @@ namespace KimodoBridge.Editor
             EditorGUILayout.Space();
         }
 
-        private void DrawAnalysisSection()
-        {
-            if (!KimodoPlayableClipGenerationSettings.instance.EnableDebugMode)
-            {
-                return;
-            }
-
-            EditorGUILayout.Space(4f);
-            if (!GUILayout.Button("Analyze Selected Clip(s)"))
-            {
-                return;
-            }
-
-            if (!KimodoClipAnalysisService.TryAnalyzeSelected(clip, out List<KimodoClipAnalysisResult> results, out string error))
-            {
-                Debug.LogError("[Kimodo Analysis] " + error);
-                return;
-            }
-            if (!KimodoClipAnalysisService.TryRebuildMarkers(results, out int markerCount, out error))
-            {
-                Debug.LogError("[Kimodo Analysis] " + error);
-                return;
-            }
-            int totalFrames = results.Sum(item => item.FrameSamples?.Count ?? 0);
-            int keyframeCount = results.Sum(item => (item.Analysis?["keyframes"] as Newtonsoft.Json.Linq.JArray)?.Count ?? 0);
-            Debug.Log($"[Kimodo Analysis] picture=all-standard, clips={results.Count}, frames={totalFrames}, keyframes={keyframeCount}, markers={markerCount}");
-            string imagePath = string.Empty;
-            string renderError = string.Empty;
-            bool rendered = TryRenderAnalysisPicture(results, 512, out imagePath, out renderError);
-            if (rendered)
-            {
-                Debug.Log($"[Kimodo Analysis] picture=all-standard image_path={imagePath}");
-                foreach (KimodoClipAnalysisResult result in results)
-                {
-                    Debug.Log("[Kimodo Analysis] picture=all-standard analysis=" +
-                        (result.Analysis?.ToString(Formatting.None) ?? "{}") + "; image_path=" + imagePath);
-                }
-            }
-            else
-            {
-                Debug.LogWarning($"[Kimodo Analysis] picture=all-standard image_path=<not generated>; render_error={renderError}");
-            }
-        }
-
-        private static bool TryRenderAnalysisPicture(
-            IReadOnlyList<KimodoClipAnalysisResult> results,
-            int resolution,
-            out string imagePath,
-            out string error)
-        {
-            imagePath = string.Empty;
-            error = string.Empty;
-            try
-            {
-                Type bridgeType = AppDomain.CurrentDomain.GetAssemblies()
-                    .Select(assembly => assembly.GetType("KimodoUnityBridge.Command.KimodoAnalysisPictureBridge", false))
-                    .FirstOrDefault(type => type != null);
-                MethodInfo method = bridgeType?.GetMethod("TryRenderSelectedAnalysis", BindingFlags.Public | BindingFlags.Static);
-                if (method == null) { error = "Analysis picture bridge is unavailable until the Command assembly is loaded."; return false; }
-                object[] args =
-                {
-                    results.Select(item => item.TimelineClip).ToArray(), resolution, null, null
-                };
-                bool success = (bool)method.Invoke(null, args);
-                imagePath = args[2] as string ?? string.Empty;
-                error = args[3] as string ?? string.Empty;
-                return success;
-            }
-            catch (Exception ex)
-            {
-                error = ex.InnerException?.Message ?? ex.Message;
-                return false;
-            }
-        }
-
         public override bool RequiresConstantRepaint()
         {
             return isGenerating;
@@ -510,6 +426,13 @@ namespace KimodoBridge.Editor
                         EditorGUIUtility.labelWidth = 36f;
                         EditorGUILayout.PropertyField(enableOutConstraint, new GUIContent("Out"), GUILayout.Width(60f));
                         EditorGUIUtility.labelWidth = previousLabelWidth;
+                        if (enableOutConstraint.boolValue)
+                        {
+                            EditorGUILayout.PropertyField(
+                                postApplyOutConstraint,
+                                new GUIContent("Post", "Defer Out until after the first trajectory pass, align it in SOMA Root2D space, then apply it in the second pass."),
+                                GUILayout.Width(70f));
+                        }
                     }
                 }
             }
@@ -772,21 +695,6 @@ namespace KimodoBridge.Editor
             bridgeConnectedCached = KimodoBridgeService.Shared.IsConnected;
         }
 
-        private static string SummarizeForUi(string message, int maxLength = 320)
-        {
-            if (string.IsNullOrWhiteSpace(message))
-            {
-                return string.Empty;
-            }
-
-            string normalized = string.Join(" ", message.Split(new[] { '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries)).Trim();
-            if (normalized.Length <= maxLength)
-            {
-                return normalized;
-            }
-
-            return normalized.Substring(0, maxLength) + "...";
-        }
 
         private void DrawAnimationClipSection()
         {
@@ -850,52 +758,6 @@ namespace KimodoBridge.Editor
             EditorGUILayout.EndVertical();
         }
 
-        private void RequestThrottledRepaint()
-        {
-            if (this == null)
-            {
-                return;
-            }
-
-            double now = EditorApplication.timeSinceStartup;
-            if (now - lastRepaintTime >= RepaintIntervalSeconds)
-            {
-                lastRepaintTime = now;
-                Repaint();
-                return;
-            }
-
-            if (repaintQueued)
-            {
-                return;
-            }
-
-            repaintQueued = true;
-            EditorApplication.delayCall += FlushQueuedRepaint;
-        }
-
-        private void FlushQueuedRepaint()
-        {
-            repaintQueued = false;
-            if (this == null)
-            {
-                return;
-            }
-
-            double now = EditorApplication.timeSinceStartup;
-            if (now - lastRepaintTime < RepaintIntervalSeconds)
-            {
-                if (!repaintQueued)
-                {
-                    repaintQueued = true;
-                    EditorApplication.delayCall += FlushQueuedRepaint;
-                }
-                return;
-            }
-
-            lastRepaintTime = now;
-            Repaint();
-        }
 
         private void SyncRequestHandleState()
         {
@@ -961,23 +823,6 @@ namespace KimodoBridge.Editor
                 EditorGUILayout.PropertyField(
                     autoBeginAnchor,
                     new GUIContent("Auto Begin Anchor", "When the first second has no effective constraint anchor, use the Avatar skeleton rest pose as a FullBody frame-0 constraint."));
-            }
-
-            if (KimodoGenerationInspectorGui.IsArdy(bridgeModelName?.stringValue) &&
-                ardyAutoHistory != null &&
-                !ardyAutoHistory.hasMultipleDifferentValues &&
-                ardyAutoHistory.boolValue &&
-                ardyTargetMaxSpeed != null &&
-                ardyTargetMaxAcceleration != null)
-            {
-                EditorGUILayout.Space(4f);
-                EditorGUILayout.LabelField("ARDY Motion Limits", EditorStyles.boldLabel);
-                EditorGUILayout.PropertyField(
-                    ardyTargetMaxSpeed,
-                    new GUIContent("Max Speed", "Maximum root speed used to plan ARDY Full-Body root targets."));
-                EditorGUILayout.PropertyField(
-                    ardyTargetMaxAcceleration,
-                    new GUIContent("Max Acceleration", "Maximum root acceleration used to plan ARDY Full-Body root targets."));
             }
 
             EditorGUILayout.Space(4f);

@@ -49,6 +49,14 @@
 - [ ] 区分并保留仍有实际用途的 Timeline segment `role`、Marker `sourceRole` 与 analysis 输入字段，禁止全局关键字替换。
 - [ ] 完成图片选项与 Analysis option 协议调整后，重新验证拾取苹果生成流程；在此之前，拾取苹果任务使用当前稳定的 generation 命令链，不依赖未完成的 Analysis 协议重构。
 
+## 暂缓 TODO：Command 层收敛
+
+- [ ] 核对多场景切换和 Domain Reload 下 `currentTimelineSession`、`firstTimelineSession` 与持久化 `is_current` 的归属，覆盖切换、重开和恢复流程；此项暂不改 Session 持久化结构。
+- [ ] 为 QuickServer、连接超时、取消和输入错误定义稳定的错误码映射；当前执行器仍将未分类异常映射为 `invalid_argument`。
+- [x] 已删去 `animation.analysis` 不可从公开 schema 到达的 `analysis_option` 读取和旧字段拒绝逻辑；`animation.generate` 的轻量 `analysis_option` 保留。
+- [x] 已让 schema 校验与 handler 共用一次 JSON 解析结果；字符串命令入口仍保留，内部测试的错误响应行为不变。
+- [x] 已在 Runtime Constraints 内抽取不带隐式 clamp 的 Bézier 求值器，供 Command RootPath 与 Runtime path-angle 共用；切线计算仍留在 Command。
+
 ## Known issues：复合动作规划与姿势/约束选择
 
 本节的详细记录已移到 skill 随附的 [`tools/known-issues.md`](../tools/known-issues.md)。它是执行时可参考的绕行信息，不是强制流程、硬性指标或停止条件；后续随执行循环、Pose test、command schema 和 Unity/API 集成更新统一修订。
@@ -95,9 +103,18 @@
 - Unity 6000.5.7f1 导入/编译通过；schema、六类合法输入、部分 transform 覆盖、旧输入拒绝、IK FullBody、marker 序列化和协议折叠均已做定向断言。
 - 最近全范围定向断言仍有三项现存失败：两项旧 CaptureWorldTargets validity 断言，以及 PoseGet fixture 的 Timeline Animator 绑定。它们不作为当前 constraint 类型契约。
 - 尚未执行本次升级的后端生成或播放验证；不要引用归档中的旧项目/旧版本测试数量作为本次通过证据。
+- Inspector 专用分析按钮、预计算图片桥接及反射服务已移入 `archive/inspector-analysis-legacy~`；活动分析入口为 Command 层的 `animation.analysis` 与 `pose.analysis`。
 
 ## 后续 TODO（暂缓至项目稳定后）
 
 - 审查 `KimodoBridgeService.EnsureConnectedAsync` 的异步线程边界：它在 `ConfigureAwait(false)` 后可能继续执行 Editor 注入的 RuntimeRoot/Settings 委托。确认并发等待时是否会离开 Unity 主线程，再决定如何将 Unity Editor API 调用切回主线程。
-- 收敛 `KimodoTool.Editor` 与 `KimodoTool.Command.Editor` 间的分析桥接：`KimodoClipAnalysisService` 和 `KimodoPlayableClipEditor` 通过反射查找 `KimodoAnalysisPictureBridge`。评估共享接口或显式注册方案，避免字符串类型名和方法签名形成隐式程序集依赖。
-- 上述两项属于程序集边界/线程敏感改动，项目稳定前只记录，不在当前阶段改实现。
+- 线程边界检查属于 Editor 主线程敏感改动，项目稳定前只记录，不在当前阶段改实现。
+
+## 代码清理待办（暂缓，由后续处理）
+
+- [ ] 检查 `KimodoHandEffectorGoalTests` 中 AnimationHumanStream goal 与 Avatar post rotation 的 180° 偏差；确认是测试公式、Unity 版本差异还是运行时手部约束方向错误。
+- [ ] 将 FullDemo `5.RuntimeArdyDemo.unity` 中仍序列化到 `targetHumanoidAnimator` 的 8 个目标迁入 `targetHumanoidAnimators`，然后验证 ARDY 场景能启动；当前代码只读取新列表。
+- [ ] 为运行时生成失败定义退避或阻塞策略，避免 QuickServer 不可用或请求持续失败时每帧重试并重复写日志。
+- [ ] 调整 `SegmentReady` 通知与生成状态提交顺序，避免订阅者异常导致已接受的段播放、但段号和约束 revision 未提交。
+- [ ] 收敛 Runtime Motion Driver 的 Stop/Reset 状态重置，并确保 `ResetMotionAsync` 在异常路径也解除 `GenerationBlocked`。
+- [ ] 更新或归档 `AnalysisPictureSpacingTests` 中反射调用的旧截图间距 helper；当前测试名仍对应已不存在的私有实现。

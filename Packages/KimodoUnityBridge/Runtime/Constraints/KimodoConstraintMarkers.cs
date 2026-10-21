@@ -112,15 +112,10 @@ namespace KimodoBridge
 
     }
 
-    /// <summary>Effector enable intent and the persisted allowHeading option.</summary>
+    /// <summary>Persisted constraint channel intent.</summary>
     [Serializable]
     public sealed class KimodoConstraintMask
     {
-        [Obsolete("Validity is represented by sampleValid.")] public bool muscle;
-        [Obsolete("Validity is represented by sampleValid.")] public bool rootTQ;
-        [Obsolete("Validity is represented by sampleValid.")] public bool leftFootTQ;
-        [Obsolete("Validity is represented by sampleValid.")] public bool rightFootTQ;
-        [Obsolete("Root enablement is represented by rootOverride.")] public bool rootPosition;
         public bool rootHeading;
         public bool leftFoot;
         public bool rightFoot;
@@ -158,8 +153,7 @@ namespace KimodoBridge
         }
 
         public bool AnyEndEffector => leftFoot || rightFoot || leftHand || rightHand;
-        public bool IsEmpty => !muscle && !rootTQ && !leftFootTQ && !rightFootTQ &&
-            !rootPosition && !rootHeading && !AnyEndEffector;
+        public bool IsEmpty => !rootHeading && !AnyEndEffector;
 
         public static bool IsActive(KimodoMarkerSampleResult sample, string channel)
         {
@@ -168,9 +162,6 @@ namespace KimodoBridge
             switch ((channel ?? string.Empty).Trim().ToLowerInvariant())
             {
                 case "muscle": return sample.sampleData?.IsValid == true;
-                case "roottq": return sample.sampleData?.IsValid == true;
-                case "leftfoottq": return sample.sampleData?.IsValid == true;
-                case "rightfoottq": return sample.sampleData?.IsValid == true;
                 case "rootposition": return sample.rootOverride != null;
                 case "rootheading": return sample.rootOverride != null && enabled?.rootHeading == true;
                 case "lefthand": return enabled?.leftHand == true;
@@ -212,8 +203,6 @@ namespace KimodoBridge
         public KimodoConstraintMask enableMask = new KimodoConstraintMask();
         // Older Unity assets missing this field retain true as the default.
         public bool sampleValid = true;
-        [Obsolete("Ignored by execution; retained only so old Unity assets deserialize.")]
-        public KimodoConstraintMask validMask = new KimodoConstraintMask();
         public bool enabled = true;
         // Creation metadata; does not merge or select constraint types.
         public long creationOrder;
@@ -238,7 +227,6 @@ namespace KimodoBridge
             sampleData = sampleData?.Clone() ?? new KimodoBridge.MuscleSample(),
             enableMask = enableMask?.Clone() ?? new KimodoConstraintMask(),
             sampleValid = sampleValid,
-            validMask = validMask?.Clone() ?? new KimodoConstraintMask(),
             enabled = enabled,
             creationOrder = creationOrder,
             effectors = effectors?.Clone() ?? new KimodoConstraintEffectors(),

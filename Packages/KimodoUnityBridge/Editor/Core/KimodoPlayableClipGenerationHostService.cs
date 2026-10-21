@@ -25,7 +25,8 @@ namespace KimodoBridge.Editor
             bool deferConstraintNormalization = false,
             bool enableAutoBeginAnchor = true,
             TimelineClip timelineClipOverride = null,
-            bool? generateLoopOverride = null)
+            bool? generateLoopOverride = null,
+            bool deferOutConstraint = false)
         {
             if (clip == null)
             {
@@ -45,9 +46,14 @@ namespace KimodoBridge.Editor
             int targetFrameCount = Mathf.Max(
                 KimodoMotionModelProfiles.MinGenerationFrames,
                 KimodoFrameTimeUtility.SecondsToFrameCount(timelineClip.duration, targetFrameRate));
+            int generationFrameCount = Mathf.Max(
+                targetFrameCount,
+                KimodoFrameTimeUtility.SecondsToFrameCount(
+                    KimodoGenerationWarningCheckService.MinimumGenerationDurationSeconds,
+                    targetFrameRate));
             int sourceSessionFrameCount = Mathf.Max(1, Mathf.RoundToInt((float)(timelineClip.duration * 60.0)));
             bool isLoopGeneration = (generateLoopOverride ?? clip.generateLoop) && sourceSessionFrameCount <= 300;
-            int loopPaddingFrames = isLoopGeneration ? targetFrameCount / 2 : 0;
+            int loopPaddingFrames = isLoopGeneration ? generationFrameCount / 2 : 0;
             bool useOutsideGuardFrame = ShouldUseOutsideGuardFrame(
                 clip,
                 externalConstraint,
@@ -66,7 +72,7 @@ namespace KimodoBridge.Editor
                 contextBefore = Math.Max(contextBefore, externalConstraint.ContextBeforeFrames);
                 contextAfter = Math.Max(contextAfter, externalConstraint.ContextAfterFrames);
             }
-            int runtimeFrameCount = (isLoopGeneration ? targetFrameCount * 2 : targetFrameCount) +
+            int runtimeFrameCount = (isLoopGeneration ? generationFrameCount * 2 : generationFrameCount) +
                 contextBefore + contextAfter;
             int runtimeTrimStartFrame = loopPaddingFrames + contextBefore;
             double runtimeSampleOffsetSeconds = runtimeTrimStartFrame / (double)targetFrameRate;
@@ -98,9 +104,40 @@ namespace KimodoBridge.Editor
                     deferConstraintNormalization,
                     enableAutoBeginAnchor,
                     runtimeSampleOffsetSeconds,
-                    timelineClip);
+                    timelineClip,
+                    deferOutConstraint);
             string constraintsJson = constraintResult.ConstraintsJson;
+            string deferredOutConstraintJson = constraintResult.DeferredOutConstraintJson;
+            if (deferOutConstraint)
+            {
+                KimodoInOutConstraintResult deferredOut =
+                    ConstraintProvider.BuildDeferredOutConstraintOrThrow(
+                        clip,
+                        runtimeFrameCount,
+                        disableTimelineInOut,
+                        runtimeSampleOffsetSeconds,
+                        timelineClip);
+                if (!string.IsNullOrWhiteSpace(deferredOut.ConstraintsJson))
+                {
+                    deferredOutConstraintJson = CombineConstraintJson(
+                        deferredOutConstraintJson,
+                        deferredOut.ConstraintsJson);
+                }
+            }
             List<KimodoMarkerSampleResult> constraintSamples = constraintResult.CombinedSamples;
+            if (deferOutConstraint && externalConstraint?.Enabled == true &&
+                externalConstraint.DeferredOutConstraintSamples?.Count > 0)
+            {
+                constraintSamples = new List<KimodoMarkerSampleResult>(constraintSamples);
+                KimodoInOutConstraintComposer.AppendSamples(
+                    externalConstraint.DeferredOutConstraintSamples,
+                    constraintSamples);
+                int immediateCount = constraintResult.CombinedSamples.Count;
+                for (int i = immediateCount; i < constraintSamples.Count; i++)
+                {
+                    constraintSamples[i].sampleTime += runtimeSampleOffsetSeconds;
+                }
+            }
             bool hasSyntheticAutoBeginConstraint = constraintResult.HasSyntheticAutoBeginConstraint;
 
             ArdyEditorHistorySource initialHistorySource = null;
@@ -169,6 +206,7 @@ namespace KimodoBridge.Editor
                     clip.diffusionSteps),
                 EffectiveSeed = effectiveSeed,
                 Constraints = new KimodoConstraintPayload { json = constraintsJson, clips = clipConstraints },
+                DeferredOutConstraintJson = deferredOutConstraintJson,
                 AnalysisOptionsJson = string.IsNullOrWhiteSpace(externalConstraint?.AnalysisOptionsJson)
                     ? clip.analysisOptionsJson ?? string.Empty
                     : externalConstraint.AnalysisOptionsJson,
@@ -190,14 +228,17 @@ namespace KimodoBridge.Editor
                 InitialArdyHistorySource = initialHistorySource,
                 ArdyHistoryWeight = isArdy && !clip.ardyAutoHistory
                     ? Mathf.Clamp01(clip.ardyHistoryWeight)
-                    : (double?)null,
-                ArdyMaxSpeed = isArdy
-                    ? Mathf.Max(0.01f, clip.ardyTargetMaxSpeed)
-                    : (double?)null,
-                ArdyMaxAcceleration = isArdy
-                    ? Mathf.Max(0.01f, clip.ardyTargetMaxAcceleration)
                     : (double?)null
             };
+        }
+
+        private static string CombineConstraintJson(string first, string second)
+        {
+            if (string.IsNullOrWhiteSpace(first)) return second ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(second)) return first;
+            var combined = JArray.Parse(first);
+            combined.Merge(JArray.Parse(second));
+            return combined.ToString(Newtonsoft.Json.Formatting.None);
         }
 
         // TODO: expose an internal generation entry that supplies an AvatarMask when Clip Constraint is ready.

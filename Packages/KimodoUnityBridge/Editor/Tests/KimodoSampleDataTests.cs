@@ -96,24 +96,11 @@ namespace KimodoBridge.Editor.Tests
         {
             KimodoMarkerSampleResult invalid = CreateFullBody(1, 0.5f, true);
             invalid.sampleValid = false;
-            invalid.validMask = KimodoConstraintMask.ForType("fullbody");
 
             Assert.Throws<InvalidOperationException>(() => KimodoConstraintInternal.GetConstraintInternal(
                 invalid, KimodoConstraintRigType.Soma77, null));
             Assert.Throws<InvalidOperationException>(() =>
                 KimodoConstraintInternal.ValidateSample(invalid));
-        }
-
-        [Test, Category("BridgeRegression")]
-        public void SampleValid_TrueDoesNotDependOnLegacyChannelValidity()
-        {
-            KimodoMarkerSampleResult sample = CreateFullBody(1, 0.5f, true);
-            sample.constraintMode = "fullbody";
-            sample.sampleValid = true;
-            sample.enableMask.muscle = true;
-            sample.validMask.muscle = false;
-
-            CollectionAssert.AreEqual(new[] { "fullbody" }, ResolveTypes(sample));
         }
 
         [Test, Category("BridgeRegression")]
@@ -210,31 +197,20 @@ namespace KimodoBridge.Editor.Tests
                 marker.ConstraintMode = KimodoConstraintMode.FullBody;
                 marker.SampleData.enableMask = new KimodoConstraintMask
                 {
-                    muscle = true,
-                    rootPosition = true,
                     rootHeading = true
                 };
                 var sampled = new KimodoMarkerSampleResult
                 {
                     sampleData = new MuscleSample(),
-                    enableMask = new KimodoConstraintMask(),
-                    validMask = new KimodoConstraintMask
-                    {
-                        muscle = true,
-                        rootPosition = true,
-                        rootHeading = true,
-                        leftHand = true
-                    }
+                    enableMask = new KimodoConstraintMask()
                 };
 
                 KimodoMarkerSampleResult normalized =
                     KimodoMarkerSamplingUtility.NormalizeConstraintMarkerSample(marker, sampled);
 
-                Assert.That(normalized.enableMask.muscle, Is.True);
-                Assert.That(normalized.enableMask.rootPosition, Is.True);
                 Assert.That(normalized.enableMask.rootHeading, Is.True);
                 Assert.That(normalized.enableMask.leftHand, Is.False);
-                Assert.That(normalized.validMask.leftHand, Is.True);
+                Assert.That(normalized.sampleValid, Is.True);
             }
             finally
             {
@@ -357,12 +333,6 @@ namespace KimodoBridge.Editor.Tests
                 rootHeading = true,
                 leftHand = true
             };
-            commandSample.validMask = new KimodoConstraintMask
-            {
-                rootPosition = true,
-                rootHeading = true,
-                leftHand = true
-            };
 
             var marker = ScriptableObject.CreateInstance<KimodoConstraintMarker>();
             try
@@ -398,8 +368,6 @@ namespace KimodoBridge.Editor.Tests
             try
             {
                 Assert.That(marker.SampleData.sampleValid, Is.True);
-                Assert.That(marker.SampleData.enableMask.muscle, Is.False);
-                Assert.That(marker.SampleData.enableMask.rootPosition, Is.False);
                 Assert.That(marker.SampleData.enableMask.rootHeading, Is.True);
                 Assert.That(marker.SampleData.enableMask.AnyEndEffector, Is.False);
                 Assert.That(marker.SampleData.effectors.leftHand.space, Is.EqualTo(KimodoConstraintSpace.Local));
@@ -426,8 +394,6 @@ namespace KimodoBridge.Editor.Tests
                     position = new Vector3(1f, 2f, 3f),
                     rotation = Quaternion.Euler(0f, 15f, 0f)
                 };
-                marker.SampleData.enableMask.rootPosition = true;
-                marker.SampleData.validMask.rootPosition = true;
 
                 KimodoMarkerSampleResult dragged = marker.SampleData.Clone();
                 dragged.rootOverride.position = new Vector3(8f, 9f, 10f);
@@ -458,20 +424,11 @@ namespace KimodoBridge.Editor.Tests
                 rootOverride = KimodoUnityBridge.KimodoRigidTransform.Identity,
                 enableMask = new KimodoConstraintMask
                 {
-                    rootPosition = true,
                     leftHand = true,
                     rightHand = true,
                     leftFoot = true,
                     rightFoot = true
                 },
-                validMask = new KimodoConstraintMask
-                {
-                    rootPosition = true,
-                    leftHand = true,
-                    rightHand = true,
-                    leftFoot = true,
-                    rightFoot = true
-                }
             };
 
             Assert.That(KimodoConstraintPosePipeline.IsRootOnlySample(sample), Is.True);
@@ -530,22 +487,26 @@ namespace KimodoBridge.Editor.Tests
                 Assert.That(marker.SampleData.constraintMode, Is.EqualTo("fullbody"));
                 Assert.Throws<InvalidOperationException>(() => marker.ConstraintMode = (KimodoConstraintMode)3);
                 marker.SampleData.constraintMode = mode;
-                Assert.Throws<InvalidOperationException>(() => marker.CommitSampleData());
+                Assert.DoesNotThrow(() => marker.CommitSampleData());
+                Assert.That(marker.SampleData.constraintMode, Is.EqualTo("fullbody"));
                 marker.ConstraintMode = KimodoConstraintMode.FullBody;
             }
             finally { UnityEngine.Object.DestroyImmediate(marker); }
         }
 
         [Test]
-        public void ExplicitModeSelection_CanRepairAnUnsupportedLegacySample()
+        public void MarkerMode_RepairsAnUnsupportedLegacySampleDataMode()
         {
             var marker = ScriptableObject.CreateInstance<KimodoConstraintMarker>();
             try
             {
                 marker.SampleData.constraintMode = "mix";
-                Assert.Throws<InvalidOperationException>(() => marker.CommitSampleData());
-                marker.ConstraintMode = KimodoConstraintMode.Effector;
-                Assert.That(marker.SampleData.constraintMode, Is.EqualTo("effector"));
+                Assert.DoesNotThrow(() => marker.CommitSampleData());
+                Assert.That(marker.SampleData.constraintMode, Is.EqualTo("fullbody"));
+
+                marker.SampleData.constraintMode = "root2d";
+                Assert.DoesNotThrow(() => marker.CommitSampleData());
+                Assert.That(marker.SampleData.constraintMode, Is.EqualTo("fullbody"));
             }
             finally { UnityEngine.Object.DestroyImmediate(marker); }
         }
@@ -572,21 +533,9 @@ namespace KimodoBridge.Editor.Tests
             return new KimodoMarkerSampleResult
             {
                 sampleData = KimodoSampleDataLayout.FromBuffer(data),
-                enableMask = new KimodoConstraintMask
-                {
-                    muscle = valid,
-                    rootTQ = valid,
-                    leftFootTQ = valid,
-                    rightFootTQ = valid
-                },
+                enableMask = new KimodoConstraintMask(),
                 constraintMode = "fullbody",
-                validMask = new KimodoConstraintMask
-                {
-                    muscle = valid,
-                    rootTQ = valid,
-                    leftFootTQ = valid,
-                    rightFootTQ = valid
-                },
+                sampleValid = valid,
                 sampleTime = 0,
                 creationOrder = creationOrder,
                 enabled = true
@@ -595,10 +544,10 @@ namespace KimodoBridge.Editor.Tests
 
         private static void EnableAllEffectors(KimodoMarkerSampleResult sample)
         {
-            sample.enableMask.leftHand = sample.validMask.leftHand = true;
-            sample.enableMask.rightHand = sample.validMask.rightHand = true;
-            sample.enableMask.leftFoot = sample.validMask.leftFoot = true;
-            sample.enableMask.rightFoot = sample.validMask.rightFoot = true;
+            sample.enableMask.leftHand = true;
+            sample.enableMask.rightHand = true;
+            sample.enableMask.leftFoot = true;
+            sample.enableMask.rightFoot = true;
         }
 
         private static string[] ResolveTypes(KimodoMarkerSampleResult sample)

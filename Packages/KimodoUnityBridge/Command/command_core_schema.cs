@@ -23,13 +23,13 @@ namespace KimodoUnityBridge.Command
         private static CommandCatalog BuildCommandCatalog()
         {
             JObject document = JObject.Parse(GetCommandDefinitionsJson());
-            var handlers = new Dictionary<string, Func<string, string>>(StringComparer.Ordinal)
+            var handlers = new Dictionary<string, Func<JObject, string>>(StringComparer.Ordinal)
             {
                 [HelpCommand] = GetCommandHelp,
                 [SceneContextCommand] = SceneContextGet,
                 [InstallServerCommand] = InstallServer,
-                [PoseFromVideoCommand] = AnalyzeMocapVideo,
-                [PoseFromPictureCommand] = AnalyzeMocapPicture,
+                [PoseFromVideoCommand] = arguments => StartMocapAnalysis(arguments, "video"),
+                [PoseFromPictureCommand] = arguments => StartMocapAnalysis(arguments, "picture"),
                 [AnimationAnalysisCommand] = AnimationAnalysis,
                 [PoseAnalysisCommand] = PoseAnalysis,
                 [RetargetAnimationCommand] = RetargetAnimation,
@@ -45,7 +45,7 @@ namespace KimodoUnityBridge.Command
             foreach (JObject definition in document["tools"]?.Values<JObject>() ?? Enumerable.Empty<JObject>())
             {
                 string name = definition.Value<string>("name");
-                if (string.IsNullOrWhiteSpace(name) || !handlers.TryGetValue(name, out Func<string, string> handler))
+                if (string.IsNullOrWhiteSpace(name) || !handlers.TryGetValue(name, out Func<JObject, string> handler))
                 {
                     throw new InvalidOperationException($"Command definition '{name ?? string.Empty}' has no handler.");
                 }
@@ -102,8 +102,8 @@ namespace KimodoUnityBridge.Command
                 SceneContextCommand => CommandDocumentation(
                     "Read the active Unity scene, its Kimodo Timeline, character handles, and current Session identity.",
                     new[] { "Use returned scene object references for later commands instead of guessing from names or asset paths.", "Set include_history only when the Session-wide animation, generation, and analysis index is needed." },
-                    new[] { "Returns current scene and director details, character/Clip references, frame-rate metadata, and Session identifiers.", "Character discovery uses the generation Avatar resolver: check Animator, importer and cache, then try automatic Avatar generation. Only valid Humanoid Avatars matching the character skeleton are indexed; resolution or generation failures skip the object.", "When requested, history includes compact animation, generation, and analysis records." },
-                    new[] { "May initialize the scene Session and generate missing Humanoid Avatars, including model importer updates and reimports. Existing animation clips are preserved." },
+                    new[] { "Returns the current live scene context, director details, character/Clip references, frame-rate metadata, and Session identifiers without creating or replacing a context.", "Character discovery uses already assigned, imported, or cached Humanoid Avatars; this read command does not generate an Avatar or reimport a model.", "When requested, history includes compact animation, generation, and analysis records." },
+                    new[] { "Requires an existing live scene Session; it does not create or reset one. History is read from the existing Session metadata and analysis index." },
                     new[] { "Context reflects the active loaded scene and current Session; history is omitted by default.", "A Clip asset path is asset metadata and is not itself a scene Clip handle." },
                     GenerateAnimationCommand, AnimationAnalysisCommand, PoseGetCommand),
                 InstallServerCommand => CommandDocumentation(
@@ -189,7 +189,8 @@ namespace KimodoUnityBridge.Command
                     new[] { "Returns whether the context was cleared, how many context objects were destroyed, and lazy recreation information." },
                     new[] { "Destroys transient context GameObjects; persisted Timeline and animation assets are retained." },
                     new[] { "References to transient Session objects may no longer resolve after clearing; the next command recreates context lazily." },
-                    SceneContextCommand)
+                    SceneContextCommand),
+                _ => throw new InvalidOperationException($"Unknown command '{command}'.")
             };
         }
 
@@ -434,8 +435,30 @@ namespace KimodoUnityBridge.Command
                         ["properties"] = new JObject
                         {
                             ["status"] = new JObject { ["type"] = "string", ["enum"] = new JArray("pending", "completed", "failed", "skipped") },
-                            ["result"] = ObjectSchema("analysis_schema_version", "clip", "pictures"),
-                            ["error"] = ObjectSchema("code", "message")
+                            ["result"] = new JObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JObject
+                                {
+                                    ["ok"] = new JObject { ["type"] = "boolean" },
+                                    ["analysis_schema_version"] = new JObject { ["type"] = "string" },
+                                    ["clip"] = BuildCommandOutputFieldSchema(AnimationAnalysisCommand, "clip"),
+                                    ["pictures"] = BuildCommandOutputFieldSchema(AnimationAnalysisCommand, "pictures")
+                                },
+                                ["required"] = new JArray("ok"),
+                                ["additionalProperties"] = true
+                            },
+                            ["error"] = new JObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JObject
+                                {
+                                    ["code"] = new JObject { ["type"] = "string" },
+                                    ["message"] = new JObject { ["type"] = "string" }
+                                },
+                                ["required"] = new JArray("code", "message"),
+                                ["additionalProperties"] = true
+                            }
                         },
                         ["additionalProperties"] = true
                     };
@@ -645,53 +668,9 @@ namespace KimodoUnityBridge.Command
         }
 
 
-        private static PropertyDefinition OptionalArray(string name, string itemType, string description)
-        {
-            return new PropertyDefinition(name, new JObject
-            {
-                ["type"] = "array",
-                ["items"] = new JObject { ["type"] = itemType },
-                ["description"] = description
-            }, false);
-        }
 
-        private static PropertyDefinition RequiredArray(string name, string itemType, string description)
-        {
-            return new PropertyDefinition(name, new JObject
-            {
-                ["type"] = "array",
-                ["items"] = new JObject { ["type"] = itemType },
-                ["description"] = description
-            }, true);
-        }
 
-        private static PropertyDefinition OptionalEnumArray(string name, string description, params string[] values)
-        {
-            return new PropertyDefinition(name, new JObject
-            {
-                ["type"] = "array",
-                ["items"] = new JObject
-                {
-                    ["type"] = "string",
-                    ["enum"] = new JArray(values)
-                },
-                ["description"] = description
-            }, false);
-        }
 
-        private static PropertyDefinition RequiredEnumArray(string name, string description, params string[] values)
-        {
-            return new PropertyDefinition(name, new JObject
-            {
-                ["type"] = "array",
-                ["items"] = new JObject
-                {
-                    ["type"] = "string",
-                    ["enum"] = new JArray(values)
-                },
-                ["description"] = description
-            }, true);
-        }
 
         private static PropertyDefinition OptionalConstraints(string name, string description)
         {
@@ -942,25 +921,6 @@ namespace KimodoUnityBridge.Command
             };
         }
 
-        private static PropertyDefinition RequiredSamples(string name)
-        {
-            return new PropertyDefinition(name, new JObject
-            {
-                ["type"] = "array",
-                ["minItems"] = 1,
-                ["items"] = new JObject
-                {
-                    ["type"] = "object",
-                    ["additionalProperties"] = false,
-                    ["properties"] = new JObject
-                    {
-                        ["character"] = new JObject { ["type"] = "string" },
-                        ["time"] = new JObject { ["type"] = "number" }
-                    },
-                    ["required"] = new JArray("character", "time")
-                }
-            }, true);
-        }
 
         private static PropertyDefinition RequiredAnalysisClips(bool required = true)
         {
@@ -984,34 +944,8 @@ namespace KimodoUnityBridge.Command
             }, required);
         }
 
-        private static PropertyDefinition Enum(string name, params string[] values)
-        {
-            return new PropertyDefinition(name, new JObject
-            {
-                ["type"] = "string",
-                ["enum"] = new JArray(values),
-                ["default"] = values[0]
-            }, false);
-        }
 
-        private static PropertyDefinition OptionalEnumWithDefault(string name, string defaultValue, params string[] values)
-        {
-            return new PropertyDefinition(name, new JObject
-            {
-                ["type"] = "string",
-                ["enum"] = new JArray(values),
-                ["default"] = defaultValue
-            }, false);
-        }
 
-        private static PropertyDefinition RequiredEnum(string name, params string[] values)
-        {
-            return new PropertyDefinition(name, new JObject
-            {
-                ["type"] = "string",
-                ["enum"] = new JArray(values)
-            }, true);
-        }
 
         private sealed class CommandCatalog
         {
@@ -1053,11 +987,21 @@ namespace KimodoUnityBridge.Command
         {
             private readonly JObject definition;
 
-            public CommandRegistration(JObject definition, Func<string, string> handler)
+            public CommandRegistration(JObject definition, Func<JObject, string> handler)
             {
                 this.definition = (JObject)definition.DeepClone();
-                Handler = handler ?? throw new ArgumentNullException(nameof(handler));
                 Name = this.definition.Value<string>("name");
+                JObject inputSchema = this.definition["inputSchema"] as JObject
+                    ?? throw new InvalidOperationException($"Command '{Name ?? string.Empty}' has no input schema.");
+                if (handler == null) throw new ArgumentNullException(nameof(handler));
+                Handler = argumentsJson => Execute(argumentsJson, arguments =>
+                {
+                    if (!CommandInputSchemaValidator.TryValidate(inputSchema, arguments, out string validationError))
+                    {
+                        throw new CommandException("invalid_argument", validationError);
+                    }
+                    return handler(arguments);
+                });
             }
 
             public string Name { get; }
@@ -1131,16 +1075,14 @@ namespace KimodoUnityBridge.Command
 
         private readonly struct ResolvedCharacter
         {
-            public ResolvedCharacter(GameObject root, Animator animator, Avatar avatar, string name)
+            public ResolvedCharacter(GameObject root, Avatar avatar, string name)
             {
                 Root = root;
-                Animator = animator;
                 Avatar = avatar;
                 Name = name;
             }
 
             public GameObject Root { get; }
-            public Animator Animator { get; }
             public Avatar Avatar { get; }
             public UnityEngine.Object Target => Root;
             public string Name { get; }

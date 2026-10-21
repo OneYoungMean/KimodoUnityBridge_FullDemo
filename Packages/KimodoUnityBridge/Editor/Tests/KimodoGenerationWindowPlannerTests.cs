@@ -145,37 +145,37 @@ namespace KimodoBridge.Editor.Tests
                 {
                     ["type"] = "root2d",
                     ["frame_indices"] = new JArray(3 * fps),
-                    ["smooth_root_2d"] = new JArray(new JArray(0, 0)),
-                    ["global_root_heading"] = new JArray(new JArray(0, 1))
+                    ["smooth_root_2d"] = new JArray { new JArray(0, 0) },
+                    ["global_root_heading"] = new JArray { new JArray(0, 1) }
                 },
                 new JObject
                 {
                     ["type"] = "fullbody",
                     ["frame_indices"] = new JArray(6 * fps),
-                    ["root_positions"] = new JArray(new JArray(6, 0, 0)),
-                    ["local_joints_rot"] = new JArray(new JArray(new JArray(0, 0, 0)))
+                    ["root_positions"] = new JArray { new JArray(6, 0, 0) },
+                    ["local_joints_rot"] = new JArray { new JArray { new JArray(0, 0, 0) } }
                 },
                 new JObject
                 {
                     ["type"] = "root2d",
                     ["frame_indices"] = new JArray(9 * fps),
-                    ["smooth_root_2d"] = new JArray(new JArray(9, 3)),
-                    ["global_root_heading"] = new JArray(new JArray(1, 0))
+                    ["smooth_root_2d"] = new JArray { new JArray(9, 3) },
+                    ["global_root_heading"] = new JArray { new JArray(1, 0) }
                 },
                 new JObject
                 {
                     ["type"] = "right-hand",
                     ["frame_indices"] = new JArray(12 * fps),
-                    ["smooth_root_2d"] = new JArray(new JArray(12, 3)),
-                    ["global_root_heading"] = new JArray(new JArray(1, 0)),
-                    ["target_positions"] = new JArray(new JArray(1, 2, 3))
+                    ["root_positions"] = new JArray { new JArray(12, 0, 3) },
+                    ["global_root_heading"] = new JArray { new JArray(1, 0) },
+                    ["target_positions"] = new JArray { new JArray(1, 2, 3) }
                 }
             }.ToString(Formatting.None);
 
             List<KimodoGlobalRawConstraint> anchors = KimodoGenerationWindowPlanner.ReadRootAnchors(rawConstraints);
             CollectionAssert.AreEqual(
                 new[] { 90, 180, 270, 360 },
-                anchors.Select(anchor => anchor.Frame));
+                anchors.Select(anchor => anchor.Frame).ToArray());
             CollectionAssert.AreEqual(
                 new[]
                 {
@@ -184,7 +184,7 @@ namespace KimodoBridge.Editor.Tests
                     KimodoRawConstraintKind.Root2D,
                     KimodoRawConstraintKind.Effector
                 },
-                anchors.Select(anchor => anchor.Kind));
+                anchors.Select(anchor => anchor.Kind).ToArray());
             Assert.That(anchors[1].RootPosition, Is.EqualTo(new Vector2(6f, 0f)));
             Assert.That(anchors[2].RootPosition, Is.EqualTo(new Vector2(9f, 3f)));
         }
@@ -195,7 +195,7 @@ namespace KimodoBridge.Editor.Tests
             {
                 ["type"] = type,
                 ["frame_indices"] = new JArray(frame),
-                [valuesProperty] = new JArray(values)
+                [valuesProperty] = new JArray { values }
             };
         }
 

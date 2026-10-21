@@ -63,7 +63,7 @@ namespace KimodoBridge.Editor
             }
 
             entryId = KimodoConstraintMarkerEditorUtility.GetMarkerEntryId(marker);
-            if (EditPreviews.TryGetValue(context.PreviewKey, out EditPreviewRegistration previous))
+            if (EditPreviews.TryGetValue(context.PreviewKey, out _))
             {
                 KimodoConstraintPreviewRenderer.DestroyScope(context);
                 EditPreviews.Remove(context.PreviewKey);
@@ -87,7 +87,7 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            EditPreviews[context.PreviewKey] = new EditPreviewRegistration(context, entryId);
+            EditPreviews[context.PreviewKey] = new EditPreviewRegistration(context);
             return true;
         }
 
@@ -334,12 +334,10 @@ namespace KimodoBridge.Editor
         private sealed class EditPreviewRegistration
         {
             internal readonly ConstraintPreviewContext Context;
-            internal readonly string EntryId;
 
-            internal EditPreviewRegistration(ConstraintPreviewContext context, string entryId)
+            internal EditPreviewRegistration(ConstraintPreviewContext context)
             {
                 Context = context;
-                EntryId = entryId;
             }
         }
     }

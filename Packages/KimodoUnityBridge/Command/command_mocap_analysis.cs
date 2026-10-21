@@ -11,14 +11,12 @@ namespace KimodoUnityBridge.Command
 {
     internal static partial class command_context
     {
-        public static string AnalyzeMocapVideo(string argumentsJson) => StartMocapAnalysis(argumentsJson, "video");
+        public static string AnalyzeMocapVideo(string argumentsJson) => Execute(argumentsJson, arguments => StartMocapAnalysis(arguments, "video"));
 
-        public static string AnalyzeMocapPicture(string argumentsJson) => StartMocapAnalysis(argumentsJson, "picture");
+        public static string AnalyzeMocapPicture(string argumentsJson) => Execute(argumentsJson, arguments => StartMocapAnalysis(arguments, "picture"));
 
-        private static string StartMocapAnalysis(string argumentsJson, string kind)
+        private static string StartMocapAnalysis(JObject arguments, string kind)
         {
-            return Execute(argumentsJson, arguments =>
-            {
                 string mediaPath = RequiredStringValue(arguments, kind == "video" ? "video_path" : "image_path");
                 string person = arguments.Value<string>("person")?.Trim();
                 if (kind == "video" && person != null && person != "left" && person != "right")
@@ -29,11 +27,6 @@ namespace KimodoUnityBridge.Command
                 string requestId = "mocap:" + Guid.NewGuid().ToString("N");
                 lock (JobsLock)
                 {
-                    while (MocapAnalysisTasks.Count >= MaxRememberedJobs)
-                    {
-                        string oldest = MocapAnalysisTasks.First().Key;
-                        MocapAnalysisTasks.Remove(oldest);
-                    }
                     MocapAnalysisTasks[requestId] = new JObject
                     {
                         ["request_id"] = requestId,
@@ -45,6 +38,7 @@ namespace KimodoUnityBridge.Command
                         ["person"] = person ?? string.Empty,
                         ["started_at_utc"] = DateTime.UtcNow.ToString("O")
                     };
+                    TrimTerminalTasksLocked(MocapAnalysisTasks, MaxRememberedJobs, "completed", "failed");
                 }
 
                 EditorApplication.delayCall += () =>
@@ -56,7 +50,6 @@ namespace KimodoUnityBridge.Command
                     ["request_id"] = requestId,
                     ["status"] = "accepted"
                 });
-            });
         }
 
         private static async Task RunMocapAnalysisTaskAsync(string requestId, string kind, string mediaPath, string person)

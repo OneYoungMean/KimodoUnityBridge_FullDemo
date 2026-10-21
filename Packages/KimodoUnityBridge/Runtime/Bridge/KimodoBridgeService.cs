@@ -875,7 +875,6 @@ namespace KimodoBridge
                     BridgeRuntimeDefaults.LogPumpWaitFileTimeoutMs * 3,
                     BridgeRuntimeDefaults.LogPumpMissingFilePollMinMs,
                     BridgeRuntimeDefaults.LogPumpMissingFilePollMinMs);
-                StartLogPumpForPath(pumps, Path.Combine(root, "log", "run_server.log"), "[RunServer]");
                 StartLogPumpForPath(pumps, Path.Combine(root, "log", "setup.log"), "[Setup]");
             }
         }
@@ -888,8 +887,7 @@ namespace KimodoBridge
             lock (LogPumpLock)
             {
                 if (!SharedLogPumps.TryGetValue(root, out List<ActiveLogPump> pumps)) return;
-                StartLogPumpForPath(pumps, Path.Combine(root, "log", "bridge_server.log"), "[BridgeServer]");
-                StartLogPumpForPath(pumps, BridgeEndpointResolver.ResolveAttachLogPath(root), "[Bridge]");
+                StartLogPumpForPath(pumps, BridgeEndpointResolver.ResolveAttachLogPath(root), "[BridgeServer]");
             }
         }
 

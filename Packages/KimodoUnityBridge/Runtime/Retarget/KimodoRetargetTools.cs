@@ -116,18 +116,16 @@ namespace KimodoBridge
                 bool needsSourceCache = exportMuscleClip && !sourceClip.isHumanMotion;
                 bool needsTargetCache = !exportMuscleClip;
 
-                if (needsSourceCache && !KimodoRetargetAvatarUtility.ValidateRetargetSkeleton(sourceCache, out _))
+                if (needsSourceCache)
                 {
-                    sourceCache = null;
                     if (!KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(sourceAvatar, "KimodoRetargetTools_SourceClipBatch", out sourceCache, out error))
                     {
                         return false;
                     }
                 }
 
-                if (needsTargetCache && !KimodoRetargetAvatarUtility.ValidateRetargetSkeleton(targetCache, out _))
+                if (needsTargetCache)
                 {
-                    targetCache = null;
                     if (!KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(targetAvatar, "KimodoRetargetTools_TargetClipBatch", out targetCache, out error))
                     {
                         return false;

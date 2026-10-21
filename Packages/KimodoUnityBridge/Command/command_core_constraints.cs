@@ -379,30 +379,6 @@ namespace KimodoUnityBridge.Command
             }
         }
 
-        // Compatibility helper for editor tests and legacy reflection callers.
-        // Public command generation uses BuildRootPathConstraintsWorld below.
-        private static IEnumerable<KimodoMarkerSampleResult> BuildRootPathConstraints(
-            KimodoRootPathData path,
-            int constraintIndex,
-            int startFrame,
-            int durationFrames,
-            float targetRootHeight,
-            float targetHumanScale,
-            ISet<int> explicitPointFrames,
-            ISet<int> occupiedPathFrames)
-        {
-            return BuildRootPathConstraintsWorld(
-                path,
-                constraintIndex,
-                startFrame,
-                durationFrames,
-                targetHumanScale,
-                new Vector3(0f, targetRootHeight, 0f),
-                Quaternion.identity,
-                explicitPointFrames,
-                occupiedPathFrames);
-        }
-
         private static IEnumerable<KimodoMarkerSampleResult> BuildRootPathConstraintsWorld(
             KimodoRootPathData path,
             int constraintIndex,
@@ -593,7 +569,7 @@ namespace KimodoUnityBridge.Command
             Vector2 p1 = p0 + (first.hasTangentOut ? first.tangentOut : chord / 3f);
             Vector2 p3 = second.position;
             Vector2 p2 = p3 + (second.hasTangentIn ? second.tangentIn : -chord / 3f);
-            position = EvaluateBezier(p0, p1, p2, p3, t);
+            position = KimodoBezierUtility.EvaluateCubic(p0, p1, p2, p3, t);
             tangent = EvaluateBezierTangent(p0, p1, p2, p3, t);
             if (tangent.sqrMagnitude <= 1e-8f) tangent = chord;
         }
@@ -615,15 +591,6 @@ namespace KimodoUnityBridge.Command
                 },
                 enableMask = new KimodoConstraintMask { rootHeading = true },
             };
-        }
-
-        private static Vector2 EvaluateBezier(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float t)
-        {
-            float oneMinus = 1f - t;
-            return oneMinus * oneMinus * oneMinus * p0 +
-                3f * oneMinus * oneMinus * t * p1 +
-                3f * oneMinus * t * t * p2 +
-                t * t * t * p3;
         }
 
         private static Vector2 EvaluateBezierTangent(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float t)
@@ -814,66 +781,6 @@ namespace KimodoUnityBridge.Command
             return route;
         }
 
-        private static bool TrySampleDirectSkeletonConstraint(
-            TimelineCharacterRecord source,
-            RetargetSkeleton targetCache,
-            string modelName,
-            string constraintType,
-            double sampleTime,
-            out KimodoMarkerSampleResult sample,
-            out string error)
-        {
-            sample = null;
-            error = string.Empty;
-            if (source?.Root == null || !KimodoRetargetAvatarUtility.ValidateRetargetSkeleton(targetCache, out error))
-            {
-                return false;
-            }
-
-            Transform[] allSourceTransforms = source.Root.GetComponentsInChildren<Transform>(true);
-            Transform[] rootCandidates = allSourceTransforms
-                .Where(transform => string.Equals(
-                    transform.name, targetCache.canonicalRootBoneName, StringComparison.Ordinal))
-                .ToArray();
-            Transform sourceSkeletonRoot = rootCandidates.Length == 1 ? rootCandidates[0] : null;
-            if (sourceSkeletonRoot == null)
-            {
-                error = $"incompatible_skeleton: source must contain one unambiguous '{targetCache.canonicalRootBoneName}' root bone";
-                return false;
-            }
-            Transform[] sourceTransforms = sourceSkeletonRoot.GetComponentsInChildren<Transform>(true);
-            var sourceNames = sourceTransforms.ToDictionary(transform => transform, transform => transform.name);
-            var sourceByPath = sourceTransforms.ToDictionary(
-                transform => KimodoRetargetAvatarUtility.CalculateTransformPath(
-                    transform, sourceSkeletonRoot, targetCache.canonicalRootBoneName, sourceNames),
-                transform => transform,
-                StringComparer.Ordinal);
-            var targetPaths = new HashSet<string>(targetCache.bonePaths, StringComparer.Ordinal);
-            string missing = sourceByPath.Keys.FirstOrDefault(path => !targetPaths.Contains(path));
-            if (missing != null)
-            {
-                error = $"incompatible_skeleton: target skeleton is missing source bone path '{missing}'";
-                return false;
-            }
-
-            KimodoRetargetClipSamplingUtility.ResetRetargetSkeletonPose(targetCache);
-            for (int i = 0; i < targetCache.bonePaths.Length; i++)
-            {
-                if (sourceByPath.TryGetValue(targetCache.bonePaths[i], out Transform sourceTransform) &&
-                    targetCache.boneTransforms[i] != null)
-                {
-                    targetCache.boneTransforms[i].localPosition = sourceTransform.localPosition;
-                    targetCache.boneTransforms[i].localRotation = sourceTransform.localRotation;
-                }
-            }
-            BoneSample targetSample = KimodoRetargetSamplingUtility.CaptureBoneSample(targetCache);
-            if (!KimodoRetargetMarkerSamplingUtility.TryBuildMarkerSampleResultFromBoneSample(
-                    targetSample, targetCache, modelName, constraintType, sampleTime, out sample, out error))
-            {
-                return false;
-            }
-            return true;
-        }
 
         internal static List<double> ResolvePoseConstraintTimes(
             int poseCount,
@@ -929,106 +836,8 @@ namespace KimodoUnityBridge.Command
             return types;
         }
 
-        private static List<double> ParsePoseTimes(JToken token, int poseCount)
-        {
-            if (token == null)
-            {
-                return null;
-            }
-            if (token is not JArray values || values.Count != poseCount)
-            {
-                throw new InvalidOperationException("times count must match pose_refs count.");
-            }
 
-            var times = new List<double>(values.Count);
-            for (int i = 0; i < values.Count; i++)
-            {
-                if ((values[i].Type != JTokenType.Float && values[i].Type != JTokenType.Integer) ||
-                    double.IsNaN(values[i].Value<double>()) ||
-                    double.IsInfinity(values[i].Value<double>()))
-                {
-                    throw new InvalidOperationException($"times[{i}] must be a finite number.");
-                }
-                times.Add(values[i].Value<double>());
-            }
-            return times;
-        }
 
-        private static List<string> ParsePoseConstraintTypes(JToken token, int poseCount)
-        {
-            if (token == null)
-            {
-                return ResolvePoseConstraintTypes(poseCount, null);
-            }
-            if (token is not JArray values || values.Count != poseCount)
-            {
-                throw new InvalidOperationException("constraint_types count must match pose_refs count.");
-            }
-            return ResolvePoseConstraintTypes(
-                poseCount,
-                values.Select((value, index) => value.Type == JTokenType.String
-                    ? value.Value<string>()
-                    : throw new InvalidOperationException($"constraint_types[{index}] must be a string.")).ToArray());
-        }
-
-        private static bool TrySamplePoseConstraint(
-            ResolvedCharacter pose,
-            RetargetSkeleton targetCache,
-            string modelName,
-            string constraintType,
-            double sampleTime,
-            out KimodoMarkerSampleResult sample,
-            out string error)
-        {
-            sample = null;
-            error = string.Empty;
-            if (pose.Animator == null || !KimodoRetargetAvatarUtility.ValidateRetargetSkeleton(targetCache, out error))
-            {
-                return false;
-            }
-
-            try
-            {
-                var humanPose = new HumanPose();
-                using (var poseHandler = new HumanPoseHandler(pose.Avatar, pose.Animator.transform))
-                {
-                    poseHandler.GetHumanPose(ref humanPose);
-                }
-                KimodoRetargetClipWriter.EnsureHumanPoseMuscles(ref humanPose);
-                KimodoRetargetClipSamplingUtility.ResetRetargetSkeletonPose(targetCache);
-                targetCache.poseHandler.SetHumanPose(ref humanPose);
-                BoneSample targetSample = KimodoRetargetSamplingUtility.CaptureBoneSample(targetCache);
-                if (!KimodoRetargetMarkerSamplingUtility.TryBuildMarkerSampleResultFromBoneSample(
-                        targetSample,
-                        targetCache,
-                        modelName,
-                        constraintType,
-                        sampleTime,
-                        out sample,
-                        out error))
-                {
-                    return false;
-                }
-
-                if (!KimodoRetargetSamplingUtility.TryCaptureMuscleSample(
-                        targetCache,
-                        out MuscleSample evaluatedSample,
-                        out error))
-                {
-                    return false;
-                }
-                sample.sampleData = evaluatedSample;
-                sample.enableMask ??= new KimodoConstraintMask();
-                sample.sampleValid = true;
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                error = ex.Message;
-                return false;
-            }
-        }
 
     }
 }

@@ -557,13 +557,13 @@ namespace KimodoUnityBridge.Command
                     sessionRoot = new GameObject($"{KimodoRuntimeUtility.SessionRootPrefix}{safeName}")
                     {
                         layer = SessionCaptureLayer,
-                        hideFlags = HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild
+                        hideFlags = HideFlags.DontSaveInEditor
                     };
                 }
                 else
                 {
                     sessionRoot.layer = SessionCaptureLayer;
-                    sessionRoot.hideFlags = HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild;
+                    sessionRoot.hideFlags = HideFlags.DontSaveInEditor;
                 }
                 if (director == null)
                 {
@@ -572,7 +572,7 @@ namespace KimodoUnityBridge.Command
                     director = directorObject.AddComponent<PlayableDirector>();
                 }
                 director.playableAsset = timeline;
-                director.hideFlags = HideFlags.DontSaveInEditor | HideFlags.DontSaveInBuild;
+                director.hideFlags = HideFlags.DontSaveInEditor;
                 if (director.transform.parent != sessionRoot.transform)
                 {
                     director.transform.SetParent(sessionRoot.transform, false);
@@ -592,7 +592,7 @@ namespace KimodoUnityBridge.Command
                         continue;
                     }
                     KimodoLocalAvatarUtility.AvatarResolveResult avatarResult =
-                        KimodoLocalAvatarUtility.ResolveAvatarFromGameObject(root);
+                        KimodoLocalAvatarUtility.ResolveAvatarFromGameObject(root, allowGeneration: false);
                     if (!KimodoRetargetCoreUtility.IsValidHumanoid(avatarResult.Avatar) ||
                         !KimodoLocalAvatarUtility.CheckAvatarValid(avatarResult.Avatar, root))
                     {
@@ -665,10 +665,6 @@ namespace KimodoUnityBridge.Command
             {
                 foreach (TimelineSessionRecord session in restored)
                 {
-                    if (session.SessionRoot != null)
-                    {
-                        UnityEngine.Object.DestroyImmediate(session.SessionRoot);
-                    }
                     lock (TimelineSessionsLock) TimelineSessions.Remove(session.Name);
                     if (ReferenceEquals(firstTimelineSession, session)) firstTimelineSession = null;
                 }

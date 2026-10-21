@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using TimelineInject;
 using UnityEditor.Timeline;
 using UnityEngine;
@@ -20,7 +21,8 @@ namespace KimodoBridge.Editor
             bool deferNormalization,
             bool enableAutoBeginAnchor,
             double sampleTimeOffsetSeconds,
-            TimelineClip timelineClip)
+            TimelineClip timelineClip,
+            bool deferOutConstraint = false)
         {
             bool includeTimeline = externalConstraint?.Enabled != true ||
                 externalConstraint.IncludeTimelineConstraints;
@@ -43,7 +45,8 @@ namespace KimodoBridge.Editor
                     deferNormalization,
                     enableAutoBeginAnchor,
                     sampleTimeOffsetSeconds,
-                    timelineClip);
+                    timelineClip,
+                    deferOutConstraint);
                 if (KimodoMotionModelProfiles.TryGetArdy(clip.bridgeModelName, out _) &&
                     result.BeginBoundarySample != null)
                 {
@@ -60,9 +63,19 @@ namespace KimodoBridge.Editor
 
             if (externalConstraint?.Enabled == true)
             {
+                IReadOnlyList<KimodoMarkerSampleResult> immediateSamples = externalConstraint.ConstraintSamples;
+                if (deferOutConstraint && externalConstraint.DeferredOutConstraintSamples != null &&
+                    externalConstraint.DeferredOutConstraintSamples.Count > 0)
+                {
+                    var deferredSet = new HashSet<KimodoMarkerSampleResult>(
+                        externalConstraint.DeferredOutConstraintSamples);
+                    immediateSamples = externalConstraint.ConstraintSamples
+                        .Where(sample => sample != null && !deferredSet.Contains(sample))
+                        .ToList();
+                }
                 int externalSampleStart = result.CombinedSamples.Count;
                 KimodoInOutConstraintComposer.AppendSamples(
-                    externalConstraint.ConstraintSamples,
+                    immediateSamples,
                     result.CombinedSamples);
                 for (int i = externalSampleStart; i < result.CombinedSamples.Count; i++)
                 {
@@ -79,10 +92,43 @@ namespace KimodoBridge.Editor
                     result.CombinedSamples.RemoveAt(0);
                     result.HasSyntheticAutoBeginConstraint = false;
                 }
+
+                if (deferOutConstraint && externalConstraint.DeferredOutConstraintSamples != null &&
+                    externalConstraint.DeferredOutConstraintSamples.Count > 0)
+                {
+                    var deferredSamples = new List<KimodoMarkerSampleResult>();
+                    KimodoInOutConstraintComposer.AppendSamples(
+                        externalConstraint.DeferredOutConstraintSamples,
+                        deferredSamples);
+                    for (int i = 0; i < deferredSamples.Count; i++)
+                    {
+                        deferredSamples[i].sampleTime += sampleTimeOffsetSeconds;
+                    }
+
+                    result.DeferredOutConstraintJson = KimodoConstraintJsonExporter.ToConstraintsJson(
+                        deferredSamples,
+                        ResolveExportContext(timelineClip, generationContext),
+                        0.0,
+                        runtimeLengthSeconds,
+                        frameRate);
+                }
             }
 
+            var samplesForValidation = new List<KimodoMarkerSampleResult>(result.CombinedSamples);
+            if (deferOutConstraint && externalConstraint?.Enabled == true)
+            {
+                var deferredForValidation = new List<KimodoMarkerSampleResult>();
+                KimodoInOutConstraintComposer.AppendSamples(
+                    externalConstraint.DeferredOutConstraintSamples,
+                    deferredForValidation);
+                for (int i = 0; i < deferredForValidation.Count; i++)
+                {
+                    deferredForValidation[i].sampleTime += sampleTimeOffsetSeconds;
+                }
+                samplesForValidation.AddRange(deferredForValidation);
+            }
             if (!KimodoGenerationWarningCheckService.TryValidateRootMotionConstraints(
-                    result.CombinedSamples,
+                    samplesForValidation,
                     frameRate,
                     out string rootMotionError))
             {
@@ -91,8 +137,21 @@ namespace KimodoBridge.Editor
                     result.CombinedSamples.RemoveAt(0);
                     result.HasSyntheticAutoBeginConstraint = false;
                 }
+                samplesForValidation = new List<KimodoMarkerSampleResult>(result.CombinedSamples);
+                if (deferOutConstraint && externalConstraint?.Enabled == true)
+                {
+                    var deferredForValidation = new List<KimodoMarkerSampleResult>();
+                    KimodoInOutConstraintComposer.AppendSamples(
+                        externalConstraint.DeferredOutConstraintSamples,
+                        deferredForValidation);
+                    for (int i = 0; i < deferredForValidation.Count; i++)
+                    {
+                        deferredForValidation[i].sampleTime += sampleTimeOffsetSeconds;
+                    }
+                    samplesForValidation.AddRange(deferredForValidation);
+                }
                 if (!KimodoGenerationWarningCheckService.TryValidateRootMotionConstraints(
-                        result.CombinedSamples,
+                        samplesForValidation,
                         frameRate,
                         out rootMotionError))
                 {
@@ -113,6 +172,45 @@ namespace KimodoBridge.Editor
             return result;
         }
 
+        public KimodoInOutConstraintResult BuildDeferredOutConstraintOrThrow(
+            KimodoPlayableClip clip,
+            int runtimeFrameCount,
+            bool disableTimelineInOut,
+            double sampleTimeOffsetSeconds,
+            TimelineClip timelineClip)
+        {
+            KimodoInOutConstraintResult result = BuildConstraintDataOrThrow(
+                clip,
+                runtimeFrameCount,
+                disableTimelineInOut,
+                deferNormalization: true,
+                enableAutoBeginAnchor: false,
+                sampleTimeOffsetSeconds: sampleTimeOffsetSeconds,
+                timelineClipOverride: timelineClip,
+                enableInOverride: false,
+                enableOutOverride: true,
+                deferEndConstraint: true);
+            if (result.EndBoundarySamples.Count == 0)
+            {
+                result.ConstraintsJson = string.Empty;
+                return result;
+            }
+
+            KimodoInOutConstraintAdapter.TryResolveTimelineContext(
+                timelineClip,
+                out KimodoTimelineInOutConstraintContext context,
+                out _);
+            result.ConstraintsJson = KimodoConstraintJsonExporter.ToConstraintsJson(
+                result.EndBoundarySamples,
+                ResolveExportContext(timelineClip, context),
+                0.0,
+                KimodoInOutConstraintTools.ResolveConstraintClipDurationSeconds(
+                    runtimeFrameCount,
+                    KimodoMotionModelProfiles.ResolveGenerationFrameRate(clip.bridgeModelName)),
+                KimodoMotionModelProfiles.ResolveGenerationFrameRate(clip.bridgeModelName));
+            return result;
+        }
+
         public KimodoInOutConstraintResult BuildConstraintDataOrThrow(
             KimodoPlayableClip clip,
             int? generationFramesOverride = null,
@@ -120,7 +218,10 @@ namespace KimodoBridge.Editor
             bool deferNormalization = false,
             bool enableAutoBeginAnchor = true,
             double sampleTimeOffsetSeconds = 0.0,
-            TimelineClip timelineClipOverride = null)
+            TimelineClip timelineClipOverride = null,
+            bool? enableInOverride = null,
+            bool? enableOutOverride = null,
+            bool deferEndConstraint = false)
         {
             TimelineClip sourceClip = timelineClipOverride ?? KimodoTimelineClipResolver.FindTimelineClipForAsset(clip);
             if (sourceClip == null)
@@ -156,13 +257,14 @@ namespace KimodoBridge.Editor
                 enableAutoBeginAnchor && clip.autoBeginAnchor,
                 deferNormalization,
                 // Mode=None prevents boundary sampling; true keeps manual-marker normalization independent of the In toggle.
-                disableTimelineInOut || clip.enableInConstraint,
-                !disableTimelineInOut && clip.enableOutConstraint,
+                enableInOverride ?? (disableTimelineInOut || clip.enableInConstraint),
+                enableOutOverride ?? (!disableTimelineInOut && clip.enableOutConstraint),
                 generationFrames,
                 sampleTimeOffsetSeconds,
                 out KimodoInOutConstraintResult result,
                 out string error,
-                splinePathSamples);
+                splinePathSamples,
+                deferEndConstraint);
 
             if (!ok)
             {

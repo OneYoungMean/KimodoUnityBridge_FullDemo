@@ -37,39 +37,73 @@ namespace TimelineInject
                 throw new InvalidOperationException("ModelImporter is null.");
             }
 
-            SerializedObject importerSo = new SerializedObject(importer);
-            SerializedProperty animationTypeProp = importerSo.FindProperty("m_AnimationType");
-            SerializedProperty humanBoneArrayProp = importerSo.FindProperty("m_HumanDescription.m_Human");
-            SerializedProperty humanSkeletonArrayProp = importerSo.FindProperty("m_HumanDescription.m_Skeleton");
-            if (animationTypeProp == null)
+            ModelImporterAnimationType originalAnimationType = importer.animationType;
+            HumanDescription originalHumanDescription = importer.humanDescription;
+            Avatar generatedAvatar = null;
+            Exception generationError = null;
+
+            try
             {
-                throw new InvalidOperationException("Cannot find ModelImporter property: m_AnimationType");
+                SerializedObject importerSo = new SerializedObject(importer);
+                SerializedProperty animationTypeProp = importerSo.FindProperty("m_AnimationType");
+                SerializedProperty humanBoneArrayProp = importerSo.FindProperty("m_HumanDescription.m_Human");
+                SerializedProperty humanSkeletonArrayProp = importerSo.FindProperty("m_HumanDescription.m_Skeleton");
+                if (animationTypeProp == null)
+                {
+                    throw new InvalidOperationException("Cannot find ModelImporter property: m_AnimationType");
+                }
+                if (humanBoneArrayProp == null || humanSkeletonArrayProp == null)
+                {
+                    throw new InvalidOperationException("Cannot find ModelImporter human description properties.");
+                }
+
+                ImportAssetOptions importOptions = forceReimport ? ImportAssetOptions.ForceUpdate : ImportAssetOptions.Default;
+
+                animationTypeProp.intValue = (int)ModelImporterAnimationType.Generic;
+                AvatarSetupTool.ClearAll(humanBoneArrayProp, humanSkeletonArrayProp);
+                importerSo.ApplyModifiedPropertiesWithoutUndo();
+                AssetDatabase.ImportAsset(modelImporterPath, importOptions);
+
+                importer = AssetImporter.GetAtPath(modelImporterPath) as ModelImporter;
+                if (importer == null)
+                {
+                    throw new InvalidOperationException("ModelImporter could not be reloaded after reset import.");
+                }
+
+                importer.animationType = ModelImporterAnimationType.Human;
+                AssetDatabase.ImportAsset(modelImporterPath, importOptions);
+
+                generatedAvatar = AssetDatabase.LoadAssetAtPath<Avatar>(modelImporterPath);
+                if (generatedAvatar == null || !generatedAvatar.isValid || !generatedAvatar.isHuman)
+                {
+                    throw new InvalidOperationException("Importer avatar is null or invalid after humanoid auto-setup import chain.");
+                }
+
+                generatedAvatar = UnityEngine.Object.Instantiate(generatedAvatar);
+                generatedAvatar.name = $"{avatarRoot.name}_GeneratedAvatar";
             }
-            if (humanBoneArrayProp == null || humanSkeletonArrayProp == null)
+            catch (Exception ex)
             {
-                throw new InvalidOperationException("Cannot find ModelImporter human description properties.");
+                generationError = ex;
             }
-
-            ImportAssetOptions importOptions = forceReimport ? ImportAssetOptions.ForceUpdate : ImportAssetOptions.Default;
-
-            // Step 1: reset avatar-related import settings.
-            animationTypeProp.intValue = 2;
-            AvatarSetupTool.ClearAll(humanBoneArrayProp, humanSkeletonArrayProp);
-            importerSo.ApplyModifiedPropertiesWithoutUndo();
-            AssetDatabase.ImportAsset(modelImporterPath, importOptions);
-
-            // Step 2: enable humanoid creation and let importer generate avatar on import.
-            animationTypeProp.intValue = 3;
-            importerSo.ApplyModifiedPropertiesWithoutUndo();
-            AssetDatabase.ImportAsset(modelImporterPath, importOptions);
-
-            Avatar avatar = AssetDatabase.LoadAssetAtPath<Avatar>(modelImporterPath);
-            if (avatar == null || !avatar.isValid || !avatar.isHuman)
+            finally
             {
-                throw new InvalidOperationException("Importer avatar is null or invalid after humanoid auto-setup import chain.");
+                ModelImporter restoreImporter = AssetImporter.GetAtPath(modelImporterPath) as ModelImporter;
+                if (restoreImporter != null)
+                {
+                    restoreImporter.animationType = originalAnimationType;
+                    restoreImporter.humanDescription = originalHumanDescription;
+                    EditorUtility.SetDirty(restoreImporter);
+                    AssetDatabase.ImportAsset(modelImporterPath, ImportAssetOptions.ForceUpdate);
+                }
             }
 
-            return avatar;
+            if (generationError != null)
+            {
+                throw new InvalidOperationException("Humanoid Avatar generation failed; original model import settings were restored.", generationError);
+            }
+
+            return generatedAvatar;
         }
 
         private static bool TryGetModelImporter(GameObject gameObject, out ModelImporter importer, out string modelImporterPath)

@@ -38,7 +38,8 @@ namespace KimodoUnityBridge.Command
             line.SetPositions(points.Select(point => point + Vector3.up * .02f).ToArray());
             line.startWidth = line.endWidth = lineWidth;
             line.useWorldSpace = true;
-            line.sharedMaterial = MakeUnlitMaterial(color);
+            color.a = 1f;
+            line.sharedMaterial = CreatePipelineUnlitMaterial(color);
             line.startColor = line.endColor = color;
             objects.Add(lineObject);
         }
@@ -67,7 +68,6 @@ namespace KimodoUnityBridge.Command
             TimelineCharacterRecord character,
             double start,
             double end,
-            JArray poses,
             JObject analysis,
             byte[] motionBytes,
             TimelineAnimationRecord animation = null,
@@ -91,7 +91,6 @@ namespace KimodoUnityBridge.Command
                 Start = start,
                 End = end,
                 CreatedAtUtc = DateTime.UtcNow,
-                Poses = poses != null ? (JArray)poses.DeepClone() : new JArray(),
                 Analysis = analysis != null ? (JObject)analysis.DeepClone() : new JObject(),
                 MotionPath = motionBytes != null && motionBytes.Length > 0
                     ? ToProjectRelativePath(motionPath)
@@ -128,12 +127,6 @@ namespace KimodoUnityBridge.Command
             return true;
         }
 
-        private static Vector3 PreviewRootPosition(GameObject preview)
-        {
-            Animator animator = preview.GetComponentInChildren<Animator>(true);
-            return animator != null ? animator.transform.position : preview.transform.position;
-        }
-
         private static void CreateWorldLine(List<GameObject> objects, Vector3 from, Vector3 to, float width, Color color)
         {
             GameObject lineObject = MoveToAnalysisSessionRoot(
@@ -144,7 +137,8 @@ namespace KimodoUnityBridge.Command
             line.SetPositions(new[] { from, to });
             line.startWidth = line.endWidth = width;
             line.useWorldSpace = true;
-            line.sharedMaterial = MakeUnlitMaterial(color);
+            color.a = 1f;
+            line.sharedMaterial = CreatePipelineUnlitMaterial(color);
             line.startColor = line.endColor = color;
             objects.Add(lineObject);
         }
@@ -276,7 +270,7 @@ namespace KimodoUnityBridge.Command
                 // v5 aligns native KMB analysis frames to the fixed 60 FPS command
                 // time base before keyframe/contact extraction. Do not reuse
                 // v3 caches, whose markers are in the model's native FPS.
-                ["contract"] = "animation_analysis_picture_v5_command_60",
+                ["contract"] = "animation_analysis_picture_v6_ghost_spacing_05m_command_60",
                 ["character_ref"] = character?.CharacterRef ?? string.Empty,
                 ["rig_type"] = IsHumanoidCharacter(character) ? "humanoid" : "mesh",
                 ["animation_id"] = animation?.Id.ToString("D") ?? string.Empty,
@@ -316,14 +310,6 @@ namespace KimodoUnityBridge.Command
                 return Path.GetFullPath(path);
             }
             return Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), path.Replace('/', Path.DirectorySeparatorChar)));
-        }
-        private static Material MakeUnlitMaterial(Color color)
-        {
-            Shader shader = Shader.Find("HDRP/Unlit");
-            if (shader == null) throw new InvalidOperationException("The HDRP/Unlit shader is required for SceneView evidence lines.");
-            var material = new Material(shader) { hideFlags = HideFlags.HideAndDontSave, color = color };
-            if (material.HasProperty("_UnlitColor")) material.SetColor("_UnlitColor", color);
-            return material;
         }
     }
 }

@@ -2,11 +2,56 @@ using System;
 using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
+using UnityEngine;
 
 namespace KimodoBridge.Editor.Tests
 {
     public sealed class KimodoConstraintProtocolBoundaryTests
     {
+        [Test]
+        public void BuildConstraint_RejectsMultipleEffectorOutputs()
+        {
+            var sample = new KimodoMarkerSampleResult
+            {
+                constraintMode = "effector",
+                enableMask = new KimodoConstraintMask { leftHand = true, rightHand = true }
+            };
+            var exportContext = new KimodoConstraintExportContext
+            {
+                projectedPoseProjector = _ => new KimodoConstraintProjectedPose
+                {
+                    profileRootPosition = Vector3.zero,
+                    jointNames = new[] { "LeftHand", "RightHand" },
+                    jointPositions = new[] { Vector3.zero, Vector3.right },
+                    jointRotations = new[] { Quaternion.identity, Quaternion.identity },
+                    localJointAngles = new List<Vector3> { Vector3.zero }
+                }
+            };
+
+            List<KimodoConstraintJson> all = KimodoConstraintJsonExporter.BuildConstraints(
+                new[] { sample }, exportContext, mergeByType: false);
+
+            Assert.That(all, Has.Count.EqualTo(2));
+            CollectionAssert.AreEqual(new[] { "left-hand", "right-hand" },
+                all.ConvertAll(constraint => constraint.type));
+
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+                KimodoConstraintJsonExporter.BuildConstraint(
+                    sample, exportContext, 0.0, null));
+
+            Assert.That(exception.Message, Does.Contain("2 constraints"));
+            Assert.That(exception.Message, Does.Contain("BuildConstraints"));
+        }
+
+        [Test]
+        public void BuildConstraint_ReturnsNullWhenSampleEmitsNoConstraints()
+        {
+            var sample = new KimodoMarkerSampleResult { enabled = false };
+
+            Assert.That(KimodoConstraintJsonExporter.BuildConstraint(
+                sample, new KimodoConstraintExportContext(), 0.0, null), Is.Null);
+        }
+
         [TestCase("fullbody")]
         [TestCase("right-hand")]
         public void PayloadSerialization_FoldsSameFrameRoot2DIntoRootContext(string type)

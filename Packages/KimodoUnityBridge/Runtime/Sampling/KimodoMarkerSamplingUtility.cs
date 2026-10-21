@@ -20,7 +20,7 @@ namespace KimodoBridge
 
             KimodoMarkerSampleResult authored = marker.SampleData;
             bool useSampledValues = marker.autoSample;
-            KimodoMarkerSampleResult normalized = useSampledValues && sample != null
+            KimodoMarkerSampleResult normalized = useSampledValues
                 ? sample.Clone()
                 : authored?.Clone() ?? new KimodoMarkerSampleResult();
             if (useSampledValues)
@@ -35,7 +35,7 @@ namespace KimodoBridge
             // constraintMode changes application behavior only. In particular,
             // Root2D keeps the complete sampled rootOverride payload.
             normalized.enabled = marker.constraintEnabled;
-            if (!useSampledValues && sample != null &&
+            if (!useSampledValues &&
                 KimodoSampleDataLayout.IsValid(sample.sampleData))
             {
                 normalized.sampleData = sample.sampleData.Clone();

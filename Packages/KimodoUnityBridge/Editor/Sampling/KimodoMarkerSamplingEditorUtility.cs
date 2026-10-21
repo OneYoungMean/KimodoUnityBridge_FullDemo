@@ -136,79 +136,10 @@ namespace KimodoBridge.Editor
                 : string.Empty;
         }
 
-        private static bool StringListsEqual(System.Collections.Generic.IReadOnlyList<string> left, System.Collections.Generic.IReadOnlyList<string> right)
-        {
-            int leftCount = left != null ? left.Count : 0;
-            int rightCount = right != null ? right.Count : 0;
-            if (leftCount != rightCount)
-            {
-                return false;
-            }
 
-            for (int i = 0; i < leftCount; i++)
-            {
-                if (!string.Equals(left[i] ?? string.Empty, right[i] ?? string.Empty, System.StringComparison.Ordinal))
-                {
-                    return false;
-                }
-            }
 
-            return true;
-        }
 
-        private static bool Vector3ListsEqual(System.Collections.Generic.IReadOnlyList<Vector3> left, System.Collections.Generic.IReadOnlyList<Vector3> right)
-        {
-            int leftCount = left != null ? left.Count : 0;
-            int rightCount = right != null ? right.Count : 0;
-            if (leftCount != rightCount)
-            {
-                return false;
-            }
 
-            for (int i = 0; i < leftCount; i++)
-            {
-                if (!Approximately(left[i], right[i]))
-                {
-                    return false;
-                }
-            }
 
-            return true;
-        }
-
-        private static bool IntListsEqual(System.Collections.Generic.IReadOnlyList<int> left, System.Collections.Generic.IReadOnlyList<int> right)
-        {
-            int leftCount = left != null ? left.Count : 0;
-            int rightCount = right != null ? right.Count : 0;
-            if (leftCount != rightCount)
-            {
-                return false;
-            }
-
-            for (int i = 0; i < leftCount; i++)
-            {
-                if (left[i] != right[i])
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        private static bool Approximately(Vector2 left, Vector2 right)
-        {
-            return (left - right).sqrMagnitude <= 1e-10f;
-        }
-
-        private static bool Approximately(Vector3 left, Vector3 right)
-        {
-            return (left - right).sqrMagnitude <= 1e-10f;
-        }
-
-        private static bool Approximately(Quaternion left, Quaternion right)
-        {
-            return Mathf.Abs(Quaternion.Dot(left, right)) >= 1f - 1e-10f;
-        }
     }
 }

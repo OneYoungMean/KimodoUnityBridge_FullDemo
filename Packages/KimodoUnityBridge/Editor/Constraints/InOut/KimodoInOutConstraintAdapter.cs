@@ -38,7 +38,8 @@ namespace KimodoBridge.Editor
             double sampleTimeOffsetSeconds,
             out KimodoInOutConstraintResult result,
             out string error,
-            IReadOnlyList<KimodoMarkerSampleResult> additionalManualSamples = null)
+            IReadOnlyList<KimodoMarkerSampleResult> additionalManualSamples = null,
+            bool deferEndConstraint = false)
         {
             result = null;
             error = string.Empty;
@@ -73,7 +74,8 @@ namespace KimodoBridge.Editor
                 enableOut,
                 generationFrames,
                 manualSamples,
-                sampleTimeOffsetSeconds);
+                sampleTimeOffsetSeconds,
+                deferEndConstraint);
             if (request == null)
             {
                 result = new KimodoInOutConstraintResult();
@@ -319,7 +321,8 @@ namespace KimodoBridge.Editor
             bool enableOut,
             int generationFrames,
             List<KimodoMarkerSampleResult> manualSamples,
-            double sampleTimeOffsetSeconds = 0.0)
+            double sampleTimeOffsetSeconds = 0.0,
+            bool deferEndConstraint = false)
         {
             if (context == null)
             {
@@ -363,6 +366,7 @@ namespace KimodoBridge.Editor
                 EndSampleCount = isArdy ? 1 : playable?.outConstraintSampleCount ?? 1,
                 AutoBeginAnchor = autoBeginAnchor,
                 DeferNormalization = deferNormalization,
+                DeferEndConstraint = deferEndConstraint,
                 TimelineContext = context,
                 ManualSamples = KimodoInOutConstraintTools.BuildLocalManualSamples(
                     manualSamples,

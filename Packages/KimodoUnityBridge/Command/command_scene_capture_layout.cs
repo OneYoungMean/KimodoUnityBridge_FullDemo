@@ -23,7 +23,13 @@ namespace KimodoUnityBridge.Command
             try
             {
                 captureSessionRoot = session.SessionRoot;
-                layout.Initialize(data, width, BuildAnimationAnalysisClipResult(subject), cameraOptions);
+                layout.Initialize(
+                    data,
+                    width,
+                    KimodoAnimationAnalysisResponseBuilder.BuildClipResult(
+                        CreateAnalysisResponseData(subject),
+                        IsHumanoidCharacter(subject.Character)),
+                    cameraOptions);
                 return layout;
             }
             catch { layout.Dispose(); throw; }
@@ -111,7 +117,7 @@ namespace KimodoUnityBridge.Command
                 {
                     bool primary = Tiles[0].PrimaryFrames.Contains(frame);
                     Color color = !primary ? Color.gray : frame == 0 ? AnalysisStartFrameTint : frame == ground.Length - 1 ? AnalysisEndFrameTint : AnalysisKeyframeTint;
-                    CreateGroundMarker(lines[0], ground[frame], primary ? .13f : .08f, color);
+                    CreateGroundMarker(lines[0], ground[frame], primary ? .13f : .08f);
                     if (primary) CreateHeadingArrow(lines[0], ground[frame], SampleRootForward(data, frame), .45f, color);
                 }
                 heightFrames = BuildHeightTimePoseFrames(data);
@@ -135,13 +141,7 @@ namespace KimodoUnityBridge.Command
                     CreateWorldLine(lines[1], new Vector3(0, y, 0), new Vector3(0, y, length), .015f, Color.gray);
                 }
                 CreateAnalysisBodyTrajectories(lines[3], data);
-                foreach (GameObject item in lines.SelectMany(group => group))
-                {
-                    foreach (Renderer renderer in item.GetComponentsInChildren<Renderer>())
-                        ownedMaterials.AddRange(renderer.sharedMaterials.Where(material => material != null && !EditorUtility.IsPersistent(material)));
-                    foreach (MeshFilter filter in item.GetComponentsInChildren<MeshFilter>())
-                        if (filter.sharedMesh != null && !EditorUtility.IsPersistent(filter.sharedMesh)) ownedMeshes.Add(filter.sharedMesh);
-                }
+                CollectOwnedResources();
                 foreach (GameObject item in lines.SelectMany(group => group)) item.SetActive(false);
                 var descriptions = new JArray();
                 for (int index = 0; index < Tiles.Count; index++)
@@ -156,14 +156,29 @@ namespace KimodoUnityBridge.Command
                         ["description"] = Tiles[index].Description.DeepClone()
                     });
                 }
-                Metadata = BuildPublicPictureMetadata(new JObject
+                Metadata = KimodoAnimationAnalysisResponseBuilder.BuildPictureMetadata(new JObject
                 {
                     ["tile_count"] = Tiles.Count, ["images"] = descriptions, ["width"] = width, ["height"] = height,
-                    ["render_version"] = "animation.analysis.20-sceneview-headers-metrics", ["aspect"] = "16:9",
+                    ["render_version"] = "animation.analysis.20-sceneview-headers-metrics-ghost-spacing-05m", ["aspect"] = "16:9",
                     ["header_height"] = height - rects[0].yMax
-                }, data.Subject);
+                }, CreateAnalysisResponseData(data.Subject));
                 Metadata["title"] = title;
                 Metadata["screenshot_generated_at"] = capturedAt.ToString("o", CultureInfo.InvariantCulture);
+            }
+
+            private void CollectOwnedResources()
+            {
+                foreach (GameObject item in lines.SelectMany(group => group))
+                {
+                    if (item == null) continue;
+                    foreach (Renderer renderer in item.GetComponentsInChildren<Renderer>())
+                    {
+                        ownedMaterials.AddRange(renderer.sharedMaterials
+                            .Where(material => material != null && !EditorUtility.IsPersistent(material)));
+                    }
+                    foreach (MeshFilter filter in item.GetComponentsInChildren<MeshFilter>())
+                        if (filter.sharedMesh != null && !EditorUtility.IsPersistent(filter.sharedMesh)) ownedMeshes.Add(filter.sharedMesh);
+                }
             }
 
             private static float[] BuildGroundSpeeds(IReadOnlyList<Vector3> points)
@@ -311,6 +326,7 @@ namespace KimodoUnityBridge.Command
                 if (disposed) return;
                 disposed = true;
                 pool?.Dispose();
+                CollectOwnedResources();
                 foreach (GameObject item in lines.SelectMany(group => group))
                     if (item != null) UnityEngine.Object.DestroyImmediate(item);
                 foreach (Material material in ownedMaterials.Distinct()) if (material != null) UnityEngine.Object.DestroyImmediate(material);

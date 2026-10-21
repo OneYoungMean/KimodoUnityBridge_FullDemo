@@ -69,8 +69,10 @@ namespace KimodoUnityBridge.Command
             };
             for (int index = 0; index < 8; index++) result.Add(PictureTile.PoseSlot(subject, keyframes[index], "key_pose", index + 1));
             for (int index = 0; index < 8; index++) result.Add(PictureTile.PoseSlot(subject, steps[index], "step_pose", index + 1));
-            result[2].Description["frames"] = new JArray(allKeyframes);
-            result[3].Description["frames"] = new JArray(allFootEvents);
+            // SelectedOverview records the frames that survive spatial
+            // de-duplication in "frames" and preserves the complete source
+            // set separately in "candidate_frames". Keep that distinction:
+            // these tiles describe what was drawn, not every analysis event.
             result[2].Description["selected_frames"] = new JArray(keyframes.Where(value => value.HasValue).Select(value => value.Value));
             result[3].Description["selected_frames"] = new JArray(steps.Where(value => value.HasValue).Select(value => value.Value));
             result[2].Description["shared_with"] = "key_pose";
@@ -196,16 +198,7 @@ namespace KimodoUnityBridge.Command
 
         private static List<int> GetAllAnalysisKeyframes(SubjectPictureData subject)
         {
-            int last = Math.Max(0, subject.Pelvis.Length - 1);
-            return (subject.Subject.Record.Analysis?["keyframes"] as JArray ?? new JArray())
-                .OfType<JObject>()
-                .Select(item => Mathf.Clamp(
-                    (item.Value<int?>("timeline_frame_60") ?? subject.Subject.StartFrame) - subject.Subject.StartFrame,
-                    0,
-                    last))
-                .Distinct()
-                .OrderBy(frame => frame)
-                .ToList();
+            return subject.KeyFrameSet.OrderBy(frame => frame).ToList();
         }
 
         private static List<int> GetAllFootEventFrames(SubjectPictureData subject)
@@ -254,7 +247,7 @@ namespace KimodoUnityBridge.Command
                 {
                     Vector3 previous = subject.Pelvis[previousFrame];
                     previous.y = 0f;
-                    return Vector3.Distance(previous, candidate) < .5f;
+                    return Vector3.Distance(previous, candidate) < MinimumGhostGroundSpacing;
                 }))
                 {
                     continue;
@@ -274,9 +267,10 @@ namespace KimodoUnityBridge.Command
             int targetCount = Math.Max(0, count);
             if (targetCount == 0) return Array.Empty<int?>();
 
-            // Keep the existing spatial de-duplication as the validity filter,
-            // but evaluate every candidate before selecting evenly across the
-            // resulting ordered set. Always make both clip endpoints eligible.
+            // Keep the same spatial de-duplication used by ghost views as the
+            // validity filter, but evaluate every candidate before selecting
+            // evenly across the resulting ordered set. Always make both clip
+            // endpoints eligible.
             List<int> validFrames = GetNonOverlappingFrames(
                 subject,
                 (candidates ?? Enumerable.Empty<int>()).Concat(new[] { 0, lastFrame }));
@@ -308,24 +302,6 @@ namespace KimodoUnityBridge.Command
             return selected.Concat(Enumerable.Repeat<int?>(null, targetCount - selectedCount)).ToArray();
         }
 
-        private static void CalculateSceneViewExtents(
-            SubjectPictureData subject,
-            Vector3 direction,
-            out Vector3 viewCenter,
-            out float maxHorizontal,
-            out float maxVertical,
-            out float maxDepth)
-        {
-            CalculateSceneViewExtents(
-                subject.Pelvis.Concat(subject.LeftHand)
-                    .Concat(subject.RightHand).Concat(subject.LeftFoot).Concat(subject.RightFoot)
-                    .Concat(subject.Head),
-                direction,
-                out viewCenter,
-                out maxHorizontal,
-                out maxVertical,
-                out maxDepth);
-        }
 
         private static void CalculateSceneViewExtents(
             Bounds bounds,
@@ -418,8 +394,6 @@ namespace KimodoUnityBridge.Command
             var rightFoot = new Vector3[frameCount];
             var leftElbow = new Vector3[frameCount];
             var rightElbow = new Vector3[frameCount];
-            var leftKnee = new Vector3[frameCount];
-            var rightKnee = new Vector3[frameCount];
             var head = new Vector3[frameCount];
             var poseBounds = new Bounds[frameCount];
             Bounds firstBounds = default;
@@ -450,8 +424,6 @@ namespace KimodoUnityBridge.Command
                     rightFoot[localFrame] = ReadHumanoidBonePosition(poseAnimator, HumanBodyBones.RightFoot, subject.Character.Name);
                     leftElbow[localFrame] = ReadHumanoidBonePosition(poseAnimator, HumanBodyBones.LeftLowerArm, subject.Character.Name);
                     rightElbow[localFrame] = ReadHumanoidBonePosition(poseAnimator, HumanBodyBones.RightLowerArm, subject.Character.Name);
-                    leftKnee[localFrame] = ReadHumanoidBonePosition(poseAnimator, HumanBodyBones.LeftLowerLeg, subject.Character.Name);
-                    rightKnee[localFrame] = ReadHumanoidBonePosition(poseAnimator, HumanBodyBones.RightLowerLeg, subject.Character.Name);
                     head[localFrame] = ReadHumanoidBonePosition(poseAnimator, HumanBodyBones.Head, subject.Character.Name);
                     Bounds currentBounds = CalculateSkinnedBounds(posePreview.Root);
                     poseBounds[localFrame] = currentBounds;
@@ -499,14 +471,10 @@ namespace KimodoUnityBridge.Command
                 rightFoot,
                 leftElbow,
                 rightElbow,
-                leftKnee,
-                rightKnee,
                 head,
                 leftContacts,
                 rightContacts,
                 poseBounds,
-                firstBounds,
-                lastBounds,
                 bounds);
         }
 
@@ -515,8 +483,6 @@ namespace KimodoUnityBridge.Command
             int frameCount = Math.Max(1, subject.EndFrameExclusive - subject.StartFrame);
             var positions = new Vector3[frameCount];
             var poseBounds = new Bounds[frameCount];
-            Bounds firstBounds = default;
-            Bounds lastBounds = default;
             Bounds allBounds = default;
             bool hasBounds = false;
             for (int localFrame = 0; localFrame < frameCount; localFrame++)
@@ -527,8 +493,6 @@ namespace KimodoUnityBridge.Command
                     positions[localFrame] = preview.transform.position;
                     Bounds current = CalculateSkinnedBounds(preview);
                     poseBounds[localFrame] = current;
-                    if (localFrame == 0) firstBounds = current;
-                    if (localFrame == frameCount - 1) lastBounds = current;
                     if (!hasBounds)
                     {
                         allBounds = current;
@@ -558,13 +522,9 @@ namespace KimodoUnityBridge.Command
                 positions,
                 positions,
                 positions,
-                positions,
-                positions,
                 new bool[frameCount],
                 new bool[frameCount],
                 poseBounds,
-                firstBounds,
-                lastBounds,
                 bounds);
         }
 
@@ -589,20 +549,6 @@ namespace KimodoUnityBridge.Command
             Bounds result = renderers[0].bounds;
             for (int index = 1; index < renderers.Length; index++) result.Encapsulate(renderers[index].bounds);
             return result;
-        }
-
-        private static List<int> SelectKeyFrames(SubjectPictureData subject, int count)
-        {
-            int lastFrame = Math.Max(0, subject.Pelvis.Length - 1);
-            return (subject.Subject.Record.Analysis?["keyframes"] as JArray ?? new JArray())
-                .OfType<JObject>()
-                .Select(item => Mathf.Clamp(
-                    (item.Value<int?>("timeline_frame_60") ?? subject.Subject.StartFrame) - subject.Subject.StartFrame,
-                    0,
-                    lastFrame))
-                .Distinct()
-                .OrderBy(frame => frame)
-                .ToList();
         }
 
         private sealed class PhaseSegment

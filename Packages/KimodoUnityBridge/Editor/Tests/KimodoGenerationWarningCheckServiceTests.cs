@@ -68,7 +68,7 @@ namespace KimodoBridge.Editor.Tests
                 }
             };
 
-            JObject result = KimodoGenerationWarningCheckService.Build(args, 60, 60f);
+            JObject result = KimodoGenerationWarningCheckService.Build(args, 180, 60f);
 
             Assert.That(result.Value<bool>("blocking"), Is.EqualTo(blocking));
             Assert.That(result.Value<string>("overall"), Is.EqualTo(blocking ? "error" : warning ? "warning" : "ok"));
@@ -94,10 +94,31 @@ namespace KimodoBridge.Editor.Tests
                 }
             };
 
-            JObject result = KimodoGenerationWarningCheckService.Build(args, 60, 60f);
+            JObject result = KimodoGenerationWarningCheckService.Build(args, 180, 60f);
 
             Assert.That(result["constraint_overlap"].Value<string>("status"), Is.EqualTo("ok"));
             Assert.That(result["constraint_overlap"]["issues"].ToObject<JArray>().Count, Is.EqualTo(0));
+        }
+
+        [TestCase(89, true, "error", "duration_below_minimum")]
+        [TestCase(90, false, "ok", null)]
+        [TestCase(179, false, "warning", "duration_short_warning")]
+        [TestCase(180, false, "ok", null)]
+        public void Duration_ReportsMinimumAndShortMotionThresholds(
+            int durationFrames,
+            bool blocking,
+            string overall,
+            string issueCode)
+        {
+            JObject result = KimodoGenerationWarningCheckService.Build(new JObject(), durationFrames, 60f);
+
+            Assert.That(result.Value<bool>("blocking"), Is.EqualTo(blocking));
+            Assert.That(result.Value<string>("overall"), Is.EqualTo(overall));
+            JArray issues = result["duration"]["issues"].ToObject<JArray>();
+            if (issueCode == null)
+                Assert.That(issues.Count, Is.EqualTo(0));
+            else
+                Assert.That(issues.Any(issue => issue.Value<string>("code") == issueCode), Is.True);
         }
 
         [Test]
@@ -121,7 +142,7 @@ namespace KimodoBridge.Editor.Tests
                 }
             };
 
-            JObject result = KimodoGenerationWarningCheckService.Build(args, 60, 60f, generatedSamples: new[] { sample });
+            JObject result = KimodoGenerationWarningCheckService.Build(args, 180, 60f, generatedSamples: new[] { sample });
 
             Assert.That(result.Value<bool>("blocking"), Is.False);
             Assert.That(result["effectors"].Value<string>("status"), Is.EqualTo("warning"));

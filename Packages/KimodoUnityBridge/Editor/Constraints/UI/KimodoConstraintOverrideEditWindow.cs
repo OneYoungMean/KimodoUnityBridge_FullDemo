@@ -554,14 +554,6 @@ namespace KimodoBridge.Editor
             CollapseSceneDragUndo();
         }
 
-        private void EnsureSceneDragUndo()
-        {
-            if (sceneDragUndoGroup >= 0 || marker == null) return;
-            Undo.IncrementCurrentGroup();
-            sceneDragUndoGroup = Undo.GetCurrentGroup();
-            Undo.SetCurrentGroupName("Edit Kimodo Constraint");
-            Undo.RecordObject(marker, "Edit Kimodo Constraint");
-        }
 
         private void CollapseSceneDragUndo()
         {

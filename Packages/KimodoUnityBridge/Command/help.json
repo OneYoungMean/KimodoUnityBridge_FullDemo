@@ -3469,29 +3469,154 @@
               "result": {
                 "type": "object",
                 "properties": {
+                  "ok": {
+                    "type": "boolean"
+                  },
                   "analysis_schema_version": {
                     "type": "string"
                   },
                   "clip": {
-                    "type": "string"
+                    "type": "object",
+                    "properties": {
+                      "analysis_id": {
+                        "type": "string"
+                      },
+                      "session_id": {
+                        "type": "string"
+                      },
+                      "character": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "start_timeline_frame_60": {
+                        "type": "integer"
+                      },
+                      "end_timeline_frame_60_exclusive": {
+                        "type": "integer"
+                      },
+                      "analysis_mode": {
+                        "type": "string"
+                      },
+                      "phase_track_version": {
+                        "type": "string"
+                      },
+                      "phase_track": {
+                        "type": "array"
+                      },
+                      "keyframes": {
+                        "type": "array"
+                      },
+                      "foot_contacts": {
+                        "type": "array"
+                      },
+                      "root_trajectory": {
+                        "type": "object"
+                      },
+                      "endpoint_pose_comparison": {
+                        "type": "object"
+                      },
+                      "motion_profile": {
+                        "type": "object"
+                      }
+                    },
+                    "additionalProperties": true
                   },
                   "pictures": {
-                    "type": "object"
+                    "type": "object",
+                    "properties": {
+                      "aspect": {
+                        "type": "string"
+                      },
+                      "tile_count": {
+                        "type": "integer"
+                      },
+                      "render_version": {
+                        "type": "string"
+                      },
+                      "image_path": {
+                        "type": "string"
+                      },
+                      "width": {
+                        "type": "integer"
+                      },
+                      "height": {
+                        "type": "integer"
+                      },
+                      "images": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "object"
+                            },
+                            "tile": {
+                              "type": "string"
+                            },
+                            "rect": {
+                              "type": "object"
+                            },
+                            "description": {
+                              "type": "string"
+                            },
+                            "header": {
+                              "type": "object",
+                              "properties": {
+                                "text": {
+                                  "type": "object"
+                                },
+                                "color": {
+                                  "type": "object"
+                                },
+                                "height": {
+                                  "type": "integer"
+                                },
+                                "character_count": {
+                                  "type": "object"
+                                }
+                              },
+                              "additionalProperties": true
+                            }
+                          },
+                          "additionalProperties": true
+                        }
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "screenshot_generated_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "header_height": {
+                        "type": "integer"
+                      }
+                    },
+                    "additionalProperties": true
                   }
                 },
-                "additionalProperties": true
+                "additionalProperties": true,
+                "required": [
+                  "ok"
+                ]
               },
               "error": {
                 "type": "object",
                 "properties": {
                   "code": {
-                    "type": "object"
+                    "type": "string"
                   },
                   "message": {
                     "type": "string"
                   }
                 },
-                "additionalProperties": true
+                "additionalProperties": true,
+                "required": [
+                  "code",
+                  "message"
+                ]
               }
             },
             "additionalProperties": true

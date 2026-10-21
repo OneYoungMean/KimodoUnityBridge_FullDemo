@@ -47,14 +47,13 @@ namespace KimodoBridge.Editor
         public CancellationToken Token;
         public bool HasSyntheticAutoBeginConstraint;
         public List<KimodoMarkerSampleResult> ConstraintSamples = new List<KimodoMarkerSampleResult>();
+        public string DeferredOutConstraintJson = string.Empty;
         public TimelineClip TimelineClipSnapshot;
         public bool ResetTimelineTimeScaleAfterGeneration;
         public PlayableDirector TimelineDirectorSnapshot;
         internal KimodoTimelineInOutConstraintContext TimelineContextSnapshot;
         public ArdyEditorHistorySource InitialArdyHistorySource;
         public double? ArdyHistoryWeight;
-        public double? ArdyMaxSpeed;
-        public double? ArdyMaxAcceleration;
 
         public int EffectiveRuntimeFrameCount =>
             RuntimeFrameCount > 0 ? RuntimeFrameCount : TargetFrameCount;

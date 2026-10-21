@@ -301,16 +301,6 @@ namespace KimodoBridge.Editor
                 }
 
                 EditorGUI.BeginChangeCheck();
-                bool enableDebugMode = EditorGUILayout.Toggle(
-                    new GUIContent("Debug Mode", "Show editor-only diagnostic actions such as clip analysis."),
-                    settings.EnableDebugMode);
-                if (EditorGUI.EndChangeCheck())
-                {
-                    settings.EnableDebugMode = enableDebugMode;
-                    settings.SaveSettings();
-                }
-
-                EditorGUI.BeginChangeCheck();
                 bool enableKimodoStaticGraph = EditorGUILayout.Toggle(
                     new GUIContent(
                         "Kimodo Static Graph",
@@ -724,16 +714,6 @@ namespace KimodoBridge.Editor
             }
         }
 
-        private string ResolveModelsRootForServer()
-        {
-            string customPath = KimodoPlayableClipGenerationSettings.instance.LocalModelsPath?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(customPath))
-            {
-                return string.Empty;
-            }
-
-            return Path.GetFullPath(customPath);
-        }
 
         private void PullServerStatusFromController()
         {
@@ -889,21 +869,6 @@ namespace KimodoBridge.Editor
                 CancellationToken.None);
         }
 
-        private static string SummarizeForUi(string message, int maxLength = 320)
-        {
-            if (string.IsNullOrWhiteSpace(message))
-            {
-                return string.Empty;
-            }
-
-            string normalized = string.Join(" ", message.Split(new[] { '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries)).Trim();
-            if (normalized.Length <= maxLength)
-            {
-                return normalized;
-            }
-
-            return normalized.Substring(0, maxLength) + "...";
-        }
 
     }
 }

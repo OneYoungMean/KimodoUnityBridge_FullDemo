@@ -67,7 +67,6 @@ namespace KimodoBridge.Editor
                     source.RangeStartSeconds,
                     latestSampleTime - (availableFrames - 1) / profile.SourceFps);
                 var rootPositions = new Vector3[frameCount];
-                var rootRotations = new Quaternion[frameCount];
                 var rotations = new List<float>(frameCount * jointNames.Length * 4);
                 var footContacts = new byte[frameCount * KimodoFootContactTrackUtility.ChannelCount];
                 var timelineTimes = new double[frameCount];
@@ -124,7 +123,6 @@ namespace KimodoBridge.Editor
                     }
 
                     Quaternion rootRotation = rootJoint.rotation.normalized;
-                    rootRotations[frame] = rootRotation;
                     rootPositions[frame] = rootJoint.position;
                     for (int joint = 0; joint < joints.Length; joint++)
                     {

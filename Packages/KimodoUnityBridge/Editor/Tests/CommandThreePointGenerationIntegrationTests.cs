@@ -66,7 +66,7 @@ namespace KimodoUnityBridge.Command.Tests
                     ["source"] = new JObject
                     {
                         ["character"] = character.name,
-                        ["scene_time_seconds"] = 0.0
+                        ["mode"] = "skeleton_rest_pose"
                     },
                     ["full_data"] = true
                 });
@@ -145,11 +145,11 @@ namespace KimodoUnityBridge.Command.Tests
                 Assert.That(start.rootOverride.t.z, Is.EqualTo(defaultRoot[2].Value<float>()).Within(0.001f));
                 Assert.That(middle.constraintMode, Is.EqualTo("fullbody"));
                 Assert.That(middle.rootOverride.t.x, Is.EqualTo(5f).Within(0.001f));
-                Assert.That(middle.rootOverride.t.y, Is.EqualTo(defaultRoot[1].Value<float>()).Within(0.001f),
-                    "Root2D overlays planar channels while retaining the FullBody pose height.");
+                Assert.That(middle.rootOverride.t.y, Is.EqualTo(0.95f).Within(0.001f),
+                    "The explicit World root position includes and overrides height.");
                 Assert.That(end.constraintMode, Is.EqualTo("fullbody"));
                 Assert.That(end.rootOverride.t.x, Is.EqualTo(10f).Within(0.001f));
-                Assert.That(end.rootOverride.t.y, Is.EqualTo(defaultRoot[1].Value<float>()).Within(0.001f));
+                Assert.That(end.rootOverride.t.y, Is.EqualTo(0.95f).Within(0.001f));
                 Assert.That(end.effectors.rightHand.t, Is.EqualTo(new Vector3(10f, 1f, 1f)));
 
                 // Verify the command-side export before waiting on the backend.
@@ -173,9 +173,12 @@ namespace KimodoUnityBridge.Command.Tests
                 Assert.That(constraintLoss, Is.Not.Null, status.ToString());
                 Assert.That(constraintLoss.Value<int>("compared_count"), Is.GreaterThan(0), constraintLoss.ToString());
                 Assert.That(constraintLoss["frames"].Values<JObject>().Any(frame =>
-                    frame.Value<string>("constraint_type") == "fullbody" && frame["effectors"]?["right_hand"] != null),
+                    Mathf.Abs(frame.Value<float>("timeline_time_seconds") - MidFrame / 60f) < 0.001f &&
+                    frame["constraint_hips_world"]?.Values<float>().Count() == 3 &&
+                    Mathf.Abs(frame["constraint_hips_world"][0].Value<float>() - 5f) < 0.001f &&
+                    Mathf.Abs(frame["constraint_hips_world"][1].Value<float>() - 0.95f) < 0.001f),
                     Is.True,
-                    "Returned constraint loss should include the generated frame with the FullBody with planar root override and right-hand IK edits.");
+                    "Returned constraint loss should include the middle generated frame with its explicit World root position.");
                 AssertGenerationResolvesCachedCharacterByNameAndId(character);
                 string path = status["clip"]?.Value<string>("asset_path");
                 Assert.That(path, Is.Not.Null.And.Not.Empty, status.ToString());

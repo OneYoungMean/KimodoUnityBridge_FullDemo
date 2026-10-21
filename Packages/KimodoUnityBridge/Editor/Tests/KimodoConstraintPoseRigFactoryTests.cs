@@ -335,7 +335,6 @@ namespace KimodoBridge.Editor.Tests
                     Assert.That(KimodoConstraintPoseRigFactory.TryApplyPose(rig,
                         previewSample, model, out error), Is.True, error);
                     Assert.That(previewSample.constraintMode, Is.EqualTo(sample.constraintMode));
-                    Assert.That(previewSample.enableMask.muscle, Is.EqualTo(sample.enableMask.muscle));
                     CollectionAssert.AreEqual(originalData, previewSample.sampleData.data);
                     var actual = KimodoRetargetSamplingUtility.CaptureBoneSample(rig.TargetCache);
                     Transform actualHips = rig.TargetCache.animator.GetBoneTransform(HumanBodyBones.Hips);
@@ -348,7 +347,6 @@ namespace KimodoBridge.Editor.Tests
                     }
                 }
                 Assert.That(sample.constraintMode, Is.EqualTo("root2d"));
-                Assert.That(sample.enableMask.muscle, Is.False);
                 CollectionAssert.AreEqual(originalData, sample.sampleData.data);
                 var export = KimodoConstraintJsonExporter.BuildConstraint(sample,
                     new KimodoConstraintExportContext { projectedPoseProjector = KimodoConstraintExportProjector.CreateProfileNative(model) }, 0, 1, 30);
@@ -392,7 +390,7 @@ namespace KimodoBridge.Editor.Tests
         }
 
         [Test]
-        public void CaptureWorldTargets_ReportsValidityWithoutEnablingChannels()
+        public void CaptureWorldTargets_DoesNotEnableChannels()
         {
             Assert.That(
                 KimodoRuntimeAvatarSkeletonBuilder.TryLoadAvatarByModelName(
@@ -416,42 +414,12 @@ namespace KimodoBridge.Editor.Tests
 
                 KimodoRetargetMarkerSamplingUtility.CaptureWorldTargets(skeleton, sample);
 
-                Assert.That(sample.validMask.rootPosition, Is.True);
-                Assert.That(sample.validMask.rootHeading, Is.True);
-                Assert.That(sample.validMask.leftHand, Is.True);
-                Assert.That(sample.validMask.rightHand, Is.True);
-                Assert.That(sample.validMask.leftFoot, Is.True);
-                Assert.That(sample.validMask.rightFoot, Is.True);
                 Assert.That(sample.enableMask.IsEmpty, Is.True);
             }
             finally
             {
                 skeleton.Dispose();
             }
-        }
-
-        [Test]
-        public void CaptureWorldTargets_DoesNotAdvertiseMissingSkeletonChannels()
-        {
-            var sample = new KimodoMarkerSampleResult
-            {
-                enableMask = new KimodoConstraintMask(),
-                validMask = new KimodoConstraintMask
-                {
-                    rootPosition = true,
-                    rootHeading = true,
-                    leftHand = true,
-                    rightHand = true,
-                    leftFoot = true,
-                    rightFoot = true
-                }
-            };
-
-            KimodoRetargetMarkerSamplingUtility.CaptureWorldTargets(null, sample);
-
-            Assert.That(sample.validMask.rootPosition, Is.False);
-            Assert.That(sample.validMask.rootHeading, Is.False);
-            Assert.That(sample.validMask.AnyEndEffector, Is.False);
         }
 
         [Test]
@@ -463,15 +431,13 @@ namespace KimodoBridge.Editor.Tests
             {
                 constraintMode = "fullbody",
                 rootOverride = new KimodoUnityBridge.KimodoRigidTransform { q = capturedHips },
-                enableMask = new KimodoConstraintMask { rootHeading = true },
-                validMask = new KimodoConstraintMask { rootHeading = true }
+                enableMask = new KimodoConstraintMask { rootHeading = true }
             };
             var root2D = new KimodoMarkerSampleResult
             {
                 constraintMode = "root2d",
                 rootOverride = new KimodoUnityBridge.KimodoRigidTransform { q = capturedHips },
-                enableMask = new KimodoConstraintMask { rootHeading = true },
-                validMask = new KimodoConstraintMask { rootHeading = true }
+                enableMask = new KimodoConstraintMask { rootHeading = true }
             };
 
             Assert.That(
@@ -536,16 +502,7 @@ namespace KimodoBridge.Editor.Tests
                         t = expectedRoot,
                         q = hipsRotation
                     },
-                    enableMask = new KimodoConstraintMask(),
-                    validMask = new KimodoConstraintMask
-                    {
-                        muscle = true,
-                        rootTQ = true,
-                        leftFootTQ = true,
-                        rightFootTQ = true,
-                        rootPosition = true,
-                        rootHeading = true
-                    }
+                    enableMask = new KimodoConstraintMask()
                 };
                 Type context = typeof(command_dispatcher).Assembly
                     .GetType("KimodoUnityBridge.Command.command_context");
@@ -578,8 +535,6 @@ namespace KimodoBridge.Editor.Tests
                 Assert.That(Vector3.Distance(result.rootOverride.t, expectedRoot), Is.LessThan(0.01f));
                 Assert.That(result.constraintMode, Is.EqualTo("fullbody"));
                 Assert.That(result.sampleValid, Is.True);
-                Assert.That(result.enableMask.muscle, Is.False);
-                Assert.That(result.enableMask.rootPosition, Is.False);
                 Assert.That(result.enableMask.rootHeading, Is.True);
                 Assert.That(result.enableMask.AnyEndEffector, Is.False);
             }
@@ -644,16 +599,7 @@ namespace KimodoBridge.Editor.Tests
                         t = baselinePosition + Vector3.up * 2f,
                         q = Quaternion.identity
                     },
-                    enableMask = new KimodoConstraintMask { rootHeading = false },
-                    validMask = new KimodoConstraintMask
-                    {
-                        muscle = true,
-                        rootTQ = true,
-                        leftFootTQ = true,
-                        rightFootTQ = true,
-                        rootPosition = true,
-                        rootHeading = false
-                    }
+                    enableMask = new KimodoConstraintMask { rootHeading = false }
                 };
 
                 Assert.That(

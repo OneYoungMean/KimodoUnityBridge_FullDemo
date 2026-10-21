@@ -371,13 +371,6 @@ namespace KimodoBridge
             }
         }
 
-        private static void AddOptional(JObject payload, string name, bool? value)
-        {
-            if (value.HasValue)
-            {
-                payload[name] = value.Value;
-            }
-        }
 
         internal async Task<bool> TryCancelGenerateAsync(
             string host,

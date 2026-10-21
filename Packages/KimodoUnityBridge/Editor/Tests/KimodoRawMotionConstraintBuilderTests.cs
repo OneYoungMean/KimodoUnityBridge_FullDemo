@@ -8,6 +8,20 @@ namespace KimodoBridge.Editor.Tests
     public sealed class KimodoRawMotionConstraintBuilderTests
     {
         [Test]
+        public void KimodoBezierUtility_EvaluatesCubicMidpoint()
+        {
+            Vector2 midpoint = KimodoBezierUtility.EvaluateCubic(
+                Vector2.zero,
+                new Vector2(4f, 0f),
+                new Vector2(4f, 2f),
+                new Vector2(0f, 2f),
+                0.5f);
+
+            Assert.That(midpoint.x, Is.EqualTo(3f).Within(1e-5f));
+            Assert.That(midpoint.y, Is.EqualTo(1f).Within(1e-5f));
+        }
+
+        [Test]
         public void BuildLoopConstraintJson_UsesRawMotionWithoutCharacterSpaceSamples()
         {
             const string model = KimodoMotionModelProfiles.ArdyCoreModelName;
@@ -243,14 +257,14 @@ namespace KimodoBridge.Editor.Tests
                 {
                     ["type"] = "fullbody",
                     ["frame_indices"] = new JArray(1),
-                    ["root_positions"] = new JArray(new JArray(100f, 0f, 200f))
+                    ["root_positions"] = new JArray { new JArray(100f, 0f, 200f) }
                 },
                 new JObject
                 {
                     ["type"] = "root2d",
                     ["frame_indices"] = new JArray(1),
-                    ["smooth_root_2d"] = new JArray(new JArray(-9f, 11f)),
-                    ["global_root_heading"] = new JArray(new JArray(1f, 0f))
+                    ["smooth_root_2d"] = new JArray { new JArray(-9f, 11f) },
+                    ["global_root_heading"] = new JArray { new JArray(1f, 0f) }
                 }).ToString();
 
             JArray constraints = JArray.Parse(KimodoRawMotionConstraintBuilder.BuildHeadingOverrideConstraintJson(

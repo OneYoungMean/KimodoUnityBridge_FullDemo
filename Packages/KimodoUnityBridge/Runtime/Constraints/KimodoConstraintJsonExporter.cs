@@ -186,6 +186,12 @@ namespace KimodoBridge
             return output;
         }
 
+        /// <summary>
+        /// Builds the single constraint emitted by a sample. Returns null when the sample emits none;
+        /// use <see cref="BuildConstraints(IReadOnlyList{KimodoMarkerSampleResult}, KimodoConstraintExportContext)"/>
+        /// when a sample may emit multiple constraints.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">The sample emits multiple constraints.</exception>
         public static KimodoConstraintJson BuildConstraint(
             KimodoMarkerSampleResult sample,
             KimodoConstraintExportContext exportContext,
@@ -202,9 +208,17 @@ namespace KimodoBridge
                 sample,
                 KimodoConstraintRigType.Unknown,
                 exportContext);
-            return internals.Length == 0
-                ? null
-                : internals[0].ToJsonObject(clipStartSeconds, clipDurationSeconds, exportFps);
+            if (internals.Length == 0)
+            {
+                return null;
+            }
+            if (internals.Length > 1)
+            {
+                throw new InvalidOperationException(
+                    $"Sample produces {internals.Length} constraints. Use BuildConstraints to export all of them.");
+            }
+
+            return internals[0].ToJsonObject(clipStartSeconds, clipDurationSeconds, exportFps);
         }
 
         public static List<KimodoConstraintJson> BuildConstraints(

@@ -672,9 +672,7 @@ namespace KimodoBridge.Editor
                 text_encoder_mode = KimodoTextEncoderModeProtocol.ToProtocolValue(request.TextEncoderMode),
                 simulate_free_vram_gb = KimodoPlayableClipGenerationSettings.instance.KeepCpuForceExperimental ? 0 : (int?)null,
                 models_root = modelsRoot,
-                ardy_history_weight = request.ArdyHistoryWeight,
-                ardy_max_speed = request.ArdyMaxSpeed,
-                ardy_max_acceleration = request.ArdyMaxAcceleration
+                ardy_history_weight = request.ArdyHistoryWeight
             };
 
             return new KimodoBridgeCommandRequest

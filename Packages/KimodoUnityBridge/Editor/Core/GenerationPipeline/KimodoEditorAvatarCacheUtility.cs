@@ -21,6 +21,12 @@ namespace KimodoBridge.Editor
             return avatar != null;
         }
 
+        public static bool HasGeneratedAvatarCache(GameObject avatarRoot)
+        {
+            string cachePath = BuildAvatarCachePath(avatarRoot);
+            return !string.IsNullOrWhiteSpace(cachePath) && AssetDatabase.LoadMainAssetAtPath(cachePath) != null;
+        }
+
         public static bool TrySaveGeneratedAvatarCache(GameObject avatarRoot, Avatar generatedAvatar, out Avatar savedAvatar, out string error)
         {
             savedAvatar = null;
@@ -48,9 +54,10 @@ namespace KimodoBridge.Editor
             try
             {
                 KimodoEditorClipWritebackService.EnsureFolderExists(GeneratedAvatarFolder);
-                if (AssetDatabase.LoadAssetAtPath<Avatar>(cachePath) != null)
+                if (AssetDatabase.LoadMainAssetAtPath(cachePath) != null)
                 {
-                    AssetDatabase.DeleteAsset(cachePath);
+                    error = "Avatar cache already exists; refusing to replace it.";
+                    return false;
                 }
 
                 AssetDatabase.CreateAsset(generatedAvatar, cachePath);

@@ -17,7 +17,9 @@ namespace KimodoUnityBridge.Command
     {
         private const double SessionFrameRate = KimodoFrameTimeUtility.CommandFrameRate;
 
-        public static string PoseGet(string argumentsJson) => Execute(argumentsJson, arguments =>
+        public static string PoseGet(string argumentsJson) => Execute(argumentsJson, PoseGet);
+
+        private static string PoseGet(JObject arguments)
         {
             TimelineSessionRecord session = RequireCurrentTimelineSession();
             JObject source = arguments["source"] as JObject
@@ -87,7 +89,8 @@ namespace KimodoUnityBridge.Command
                 ? KimodoConstraintPoseUtility.BuildPoseJson(marker.SampleData)
                 : BuildCompactPose(marker.SampleData);
             return Ok(result);
-        });
+
+        }
 
         private static KimodoMarkerSampleResult CaptureOriginalScenePose(TimelineCharacterRecord character, bool restPose)
         {
@@ -118,7 +121,9 @@ namespace KimodoUnityBridge.Command
             return sample;
         }
 
-        public static string PoseSet(string argumentsJson) => Execute(argumentsJson, arguments =>
+        public static string PoseSet(string argumentsJson) => Execute(argumentsJson, PoseSet);
+
+        private static string PoseSet(JObject arguments)
         {
             TimelineSessionRecord session = RequireCurrentTimelineSession();
             PoseReference reference = RequirePoseReference(arguments["pose"] as JObject);
@@ -192,7 +197,8 @@ namespace KimodoUnityBridge.Command
                 ["pose"] = PoseReferenceJson(character.PoseCacheTrack.name, reference.Index),
                 ["data"] = KimodoConstraintPoseUtility.BuildPoseJson(sample)
             });
-        });
+
+        }
 
         private static void ApplyPoseRootTransform(KimodoMarkerSampleResult sample, JObject root)
         {
@@ -217,7 +223,6 @@ namespace KimodoUnityBridge.Command
             {
                 throw new InvalidOperationException("root must contain position and/or rotation.");
             }
-            bool hasPosition = root["position"] is JArray;
             bool hasRotation = root["rotation"] is JArray;
             if (hasRotation) sample.enableMask.rootHeading = true;
             sample.sampleValid = true;
@@ -252,11 +257,10 @@ namespace KimodoUnityBridge.Command
                         KimodoTimelinePreviewRefreshUtility.ApproximatelyTimelineTime(sampleTime, item.start)) &&
                     sampleTime <= item.end)
                 ?? character.Track.GetClips().FirstOrDefault();
-            string contextError = string.Empty;
             if (sourceClip == null || !KimodoInOutConstraintAdapter.TryResolveTimelineContext(
                     sourceClip,
                     out KimodoTimelineInOutConstraintContext context,
-                    out contextError))
+                    out _))
             {
                 context = new KimodoTimelineInOutConstraintContext
                 {
@@ -611,7 +615,7 @@ namespace KimodoUnityBridge.Command
             return marker;
         }
 
-        private static KimodoConstraintMarker StoreExternalPath(
+        private static void StoreExternalPath(
             TimelineCharacterRecord character,
             int index,
             KimodoRootPathData path)
@@ -635,7 +639,6 @@ namespace KimodoUnityBridge.Command
             marker.CommitSampleData();
             EditorUtility.SetDirty(marker);
             EditorUtility.SetDirty(character.PoseCacheTrack);
-            return marker;
         }
 
         private static JObject BuildPathJson(KimodoRootPathData path) => new JObject
@@ -846,9 +849,6 @@ namespace KimodoUnityBridge.Command
             if (float.IsNaN(result) || float.IsInfinity(result)) throw new InvalidOperationException($"{name} must be finite.");
             return result;
         }
-
-        private static KimodoConstraintMarker FindUntypedPose(AnimationTrack track, int frame) =>
-            FindPoseMarker(track, frame);
 
         private static KimodoConstraintMarker FindPoseMarker(AnimationTrack track, int index) =>
             track.GetMarkers().OfType<KimodoConstraintMarker>().FirstOrDefault(marker =>

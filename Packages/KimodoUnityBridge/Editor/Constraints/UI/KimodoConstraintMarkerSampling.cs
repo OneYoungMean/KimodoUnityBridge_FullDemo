@@ -77,10 +77,7 @@ namespace KimodoBridge.Editor
                 $"exactFrame={(sampleTime * sessionFrameRate):R}");
 
             sample.sampleTime = sampleTime;
-            if (marker is KimodoConstraintMarker)
-            {
-                sample.constraintMode = marker.SampleData.constraintMode;
-            }
+            sample.constraintMode = marker.SampleData.constraintMode;
             KimodoMarkerSampleResult preview = MergeAutoSampledChannels(marker, sample);
             if (preview == null)
             {

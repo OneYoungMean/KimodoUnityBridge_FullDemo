@@ -566,7 +566,7 @@ namespace KimodoBridge
             Vector2 d1 = EvaluateCircularHeading(totalAngleRadians, endT);
             float segmentAngle = Mathf.Abs(totalAngleRadians * (endT - startT));
             float handle = 4f / 3f * Mathf.Tan(segmentAngle * 0.25f) * Mathf.Abs(radius);
-            position = EvaluateBezier(p0, p0 + d0 * handle, p3 - d1 * handle, p3, u);
+            position = KimodoBezierUtility.EvaluateCubic(p0, p0 + d0 * handle, p3 - d1 * handle, p3, u);
         }
 
         private static Vector2 EvaluateCircularPath(float radius, float angle, float t)
@@ -642,15 +642,6 @@ namespace KimodoBridge
         }
 
         private static Vector3 ToProtocolPosition(Vector3 position) => new Vector3(-position.x, position.y, position.z);
-
-        private static Vector2 EvaluateBezier(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float t)
-        {
-            float oneMinus = 1f - t;
-            return oneMinus * oneMinus * oneMinus * p0 +
-                3f * oneMinus * oneMinus * t * p1 +
-                3f * oneMinus * t * t * p2 +
-                t * t * t * p3;
-        }
 
         private static Vector3 ToProtocolAxisAngle(Vector3 unityAxisAngle)
         {

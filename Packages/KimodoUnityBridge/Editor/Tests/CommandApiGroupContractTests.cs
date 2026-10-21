@@ -19,6 +19,53 @@ namespace KimodoUnityBridge.Command.Tests
     public sealed class CommandApiGroupContractTests
     {
         [Test]
+        public void Invoke_ValidatesInputSchemaAndPreservesDateFormattedStrings()
+        {
+            JObject malformedJson = JObject.Parse(command_dispatcher.Invoke("scene.context", "{"));
+            Assert.That(malformedJson.Value<bool>("ok"), Is.False);
+            Assert.That(malformedJson["error"]?.Value<string>("code"), Is.EqualTo("invalid_argument"));
+
+            JObject directMalformedJson = JObject.Parse(command_context.PoseGet("{"));
+            Assert.That(directMalformedJson.Value<bool>("ok"), Is.False);
+            Assert.That(directMalformedJson["error"]?.Value<string>("code"), Is.EqualTo("invalid_argument"));
+
+            JObject unknownProperty = JObject.Parse(command_dispatcher.Invoke(
+                "scene.context",
+                new JObject { ["unexpected"] = true }.ToString()));
+            Assert.That(unknownProperty.Value<bool>("ok"), Is.False);
+            Assert.That(unknownProperty["error"]?.Value<string>("code"), Is.EqualTo("invalid_argument"));
+            Assert.That(unknownProperty["error"]?.Value<string>("message"), Does.Contain("unexpected"));
+
+            JObject dateText = JObject.Parse(command_dispatcher.Invoke(
+                "kimodo.help",
+                new JObject { ["command"] = "2026-10-20T12:34:56Z" }.ToString()));
+            Assert.That(dateText.Value<bool>("ok"), Is.False);
+            Assert.That(dateText["error"]?.Value<string>("message"), Does.Contain("Unknown Kimodo command"));
+        }
+
+        [Test]
+        public void TaskRetention_RemovesOldestTerminalTaskAndKeepsActiveTasks()
+        {
+            Type context = typeof(command_dispatcher).Assembly.GetType("KimodoUnityBridge.Command.command_context");
+            MethodInfo trimOldest = context.GetMethod("TryRemoveOldestTerminalTaskLocked", BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(trimOldest, Is.Not.Null);
+
+            var tasks = new Dictionary<string, JObject>
+            {
+                ["active"] = new JObject { ["status"] = "running", ["started_at_utc"] = "2026-10-01T00:00:00Z" },
+                ["newest"] = new JObject { ["status"] = "completed", ["started_at_utc"] = "2026-10-03T00:00:00Z" },
+                ["oldest"] = new JObject { ["status"] = "failed", ["started_at_utc"] = "2026-10-02T00:00:00Z" }
+            };
+
+            bool removed = (bool)trimOldest.Invoke(null, new object[] { tasks, "completed", "failed" });
+
+            Assert.That(removed, Is.True);
+            Assert.That(tasks.ContainsKey("oldest"), Is.False);
+            Assert.That(tasks.ContainsKey("newest"), Is.True);
+            Assert.That(tasks.ContainsKey("active"), Is.True);
+        }
+
+        [Test]
         [Category("Pose")]
         public void PoseCommands_ShareThePoseReferenceContract()
         {
@@ -90,6 +137,7 @@ namespace KimodoUnityBridge.Command.Tests
             Assert.That(clips?["maxItems"]?.Value<int>(), Is.EqualTo(1));
             Assert.That(analyze["inputSchema"]?["properties"]?["resolution"]?["default"]?.Value<int>(), Is.EqualTo(1920));
             Assert.That(analyze["inputSchema"]?["properties"]?["picture"], Is.Null);
+            Assert.That(analyze["inputSchema"]?["properties"]?["analysis_option"], Is.Null);
             Assert.That(JToken.DeepEquals(analyze["inputSchema"]?["properties"]?["camera"],
                 poseAnalysis["inputSchema"]?["properties"]?["camera"]), Is.True);
             Assert.That(analyze["inputSchema"]?["properties"]?["camera"]?["properties"]?["auto_frame"], Is.Null);
@@ -135,6 +183,7 @@ namespace KimodoUnityBridge.Command.Tests
             JObject duration = (JObject)generate["inputSchema"]?["properties"]?["duration_frames"];
             Assert.That(duration?.Value<int>("minimum"), Is.EqualTo(1));
             Assert.That(duration?.Value<int>("default"), Is.EqualTo(300));
+            Assert.That(generate["inputSchema"]?["properties"]?["analysis_option"]?.Value<string>("type"), Is.EqualTo("object"));
             Assert.That(retarget["inputSchema"]?["properties"]?["source_character"], Is.Not.Null);
             Assert.That(retarget["inputSchema"]?["properties"]?["animation"], Is.Not.Null);
 
