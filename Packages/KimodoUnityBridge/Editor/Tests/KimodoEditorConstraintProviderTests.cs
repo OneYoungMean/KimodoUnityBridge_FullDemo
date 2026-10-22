@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using KimodoBridge;
 using KimodoBridge.Editor;
 using KimodoUnityBridge;
@@ -10,57 +11,6 @@ namespace KimodoUnityBridge.Command.Tests
 {
     public sealed class KimodoEditorConstraintProviderTests
     {
-        [Test]
-        public void DeferredOutRootBaseline_IsExcludedFromSpeedValidationAndKeepsPosePayload()
-        {
-            KimodoMarkerSampleResult inSample = CreateSample(0.0, 12f);
-            KimodoMarkerSampleResult deferredOutSample = CreateSample(1.5, 0f);
-            deferredOutSample.sampleData.data[0] = 0.42f;
-            var samplesForValidation = new List<KimodoMarkerSampleResult> { inSample };
-
-            KimodoEditorConstraintProvider.AppendDeferredOutSamplesForRootMotionValidation(
-                new[] { deferredOutSample },
-                samplesForValidation,
-                sampleTimeOffsetSeconds: 0.25);
-
-            Assert.That(samplesForValidation, Has.Count.EqualTo(2));
-            Assert.That(samplesForValidation[1].sampleTime, Is.EqualTo(1.75).Within(1e-8));
-            Assert.That(samplesForValidation[1].rootOverride, Is.Null,
-                "Deferred Out root coordinates use a separate clip baseline until post-apply calibration.");
-            Assert.That(samplesForValidation[1].sampleData.data[0], Is.EqualTo(0.42f),
-                "Only the uncalibrated root is excluded; the Out pose payload remains available.");
-            Assert.That(deferredOutSample.rootOverride, Is.Not.Null,
-                "Preparing the validation copy must not mutate the deferred generation sample.");
-
-            Assert.That(KimodoGenerationWarningCheckService.TryValidateRootMotionConstraints(
-                samplesForValidation,
-                30f,
-                out string error), Is.True, error);
-        }
-
-        [Test]
-        public void DeferredOutBaselineExclusion_DoesNotAllowFastImmediateRootMotion()
-        {
-            var samplesForValidation = new List<KimodoMarkerSampleResult>
-            {
-                CreateSample(0.0, 0f),
-                CreateSample(0.5, 5f)
-            };
-            KimodoMarkerSampleResult deferredOutSample = CreateSample(1.0, 100f);
-
-            KimodoEditorConstraintProvider.AppendDeferredOutSamplesForRootMotionValidation(
-                new[] { deferredOutSample },
-                samplesForValidation,
-                sampleTimeOffsetSeconds: 0.0);
-
-            Assert.That(KimodoGenerationWarningCheckService.TryValidateRootMotionConstraints(
-                samplesForValidation,
-                30f,
-                out string error), Is.False);
-            Assert.That(error, Does.Contain("10.000 m/s"));
-            Assert.That(error, Does.Contain("exceeding the 7.0 m/s constraint limit"));
-        }
-
         [Test]
         public void RawConstraintValidation_RejectsFastRootTrajectory()
         {
@@ -86,6 +36,23 @@ namespace KimodoUnityBridge.Command.Tests
         }
 
         [Test]
+        public void RawConstraintValidation_RejectsAccelerationEvenWhenSpeedIsWithinLimit()
+        {
+            string json = new JArray
+            {
+                CreateRootConstraint(new[] { 0, 6, 12 }, new[] { 0f, 0f, 0.2f })
+            }.ToString();
+
+            Assert.That(
+                KimodoPostApplyOutConstraintUtility.TryValidateRawConstraintRootMotion(
+                    json,
+                    60f,
+                    out string error),
+                Is.False);
+            Assert.That(error, Does.Contain("20.000 m/s²"));
+        }
+
+        [Test]
         public void PostApplyInOutSameFrame_GivesStartConstraintPriority()
         {
             string inJson = CreateRootConstraint(0, 1f);
@@ -98,6 +65,54 @@ namespace KimodoUnityBridge.Command.Tests
             Assert.That(result, Has.Count.EqualTo(1), result.ToString());
             Assert.That(result[0]["frame_indices"][0].Value<int>(), Is.Zero);
             Assert.That(result[0]["root_positions"][0][2].Value<float>(), Is.EqualTo(1f));
+        }
+
+        [Test]
+        public void PostApplySparseWindow_PreservesImmediateConstraintsBetweenSamples()
+        {
+            string existing = new JArray
+            {
+                new JObject
+                {
+                    ["type"] = "effector",
+                    ["frame_indices"] = new JArray(0, 5, 10),
+                    ["target_positions"] = new JArray(
+                        new JArray(0f, 0f, 0f), new JArray(5f, 0f, 0f), new JArray(10f, 0f, 0f))
+                }
+            }.ToString();
+            string deferredIn = new JArray
+            {
+                CreateRootConstraint(new[] { 0, 10 }, new[] { 1f, 2f })
+            }.ToString();
+
+            JArray result = JArray.Parse(KimodoPostApplyOutConstraintUtility.ApplyInOut(
+                existing, deferredIn, "[]", null,
+                KimodoMotionModelProfiles.DefaultModelName, 30f, 0, null));
+            JObject effector = result.Values<JObject>().Single(item => item.Value<string>("type") == "effector");
+            CollectionAssert.AreEqual(new[] { 5 }, effector["frame_indices"].Values<int>().ToArray());
+            Assert.That(effector["target_positions"].Count(), Is.EqualTo(1));
+            Assert.That(effector["target_positions"][0][0].Value<float>(), Is.EqualTo(5f));
+        }
+
+        [TestCase(true, 0, 90, new[] { 0, 5, 11 }, true,
+            TestName = "InsideIn_AnchorsAtWindowStart")]
+        [TestCase(false, 0, 90, new[] { 78, 84, 89 }, false,
+            TestName = "InsideOut_AnchorsAtWindowEnd")]
+        [TestCase(true, 12, 90, new[] { 0, 5, 11 }, false,
+            TestName = "OutsideIn_AnchorsAtWindowEndNearSeam")]
+        [TestCase(false, 0, 90, new[] { 90, 95, 101 }, true,
+            TestName = "OutsideOut_AnchorsAtWindowStartNearSeam")]
+        public void DeferredWindow_ChoosesTheSampleNearestToTheOutputSeam(
+            bool isIn,
+            int trimStart,
+            int targetFrames,
+            int[] sampleFrames,
+            bool expectedPreferStart)
+        {
+            Assert.That(
+                KimodoPostApplyOutConstraintUtility.PreferStartForDeferredWindow(
+                    sampleFrames, trimStart, targetFrames, isIn),
+                Is.EqualTo(expectedPreferStart));
         }
 
         [Test]
@@ -135,19 +150,15 @@ namespace KimodoUnityBridge.Command.Tests
             }.ToString();
         }
 
-        private static KimodoMarkerSampleResult CreateSample(double sampleTime, float rootZ)
+        private static JObject CreateRootConstraint(int[] frames, float[] rootZ)
         {
-            return new KimodoMarkerSampleResult
+            return new JObject
             {
-                sampleTime = sampleTime,
-                sampleValid = true,
-                constraintMode = "fullbody",
-                rootOverride = new KimodoRigidTransform
-                {
-                    position = new Vector3(0f, 0f, rootZ),
-                    rotation = Quaternion.identity
-                }
+                ["type"] = "fullbody",
+                ["frame_indices"] = new JArray(frames),
+                ["root_positions"] = new JArray(rootZ.Select(value => new JArray(0f, 0f, value)))
             };
         }
+
     }
 }

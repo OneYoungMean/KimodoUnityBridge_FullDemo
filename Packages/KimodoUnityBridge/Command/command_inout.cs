@@ -79,7 +79,7 @@ namespace KimodoUnityBridge.Command
                 if (config.Property(key) == null) continue;
                 JObject side = config[key] as JObject ?? throw new InvalidOperationException($"inout.{key} must be an object.");
                 RequireInOutFields(side, "source", "window_frames", "sample_count", "post_apply");
-                bool postApply = side.Value<bool?>("post_apply") ?? key == "out";
+                bool postApply = side.Value<bool?>("post_apply") ?? true;
                 JObject source = side["source"] as JObject ?? throw new InvalidOperationException($"inout.{key}.source is required.");
                 RequireInOutFields(source, "character", "clip", "frame");
                 string characterName = source.Value<string>("character") ?? trace.Character.Name;
@@ -114,7 +114,8 @@ namespace KimodoUnityBridge.Command
                     ["output_model_frames"] = new JArray(window.OutputFrames)
                 };
             }
-            if (mode == "inside" && plans.Sum(p => p.Window.FrameCount) > targetFrames)
+            if (mode == "inside" && plans.Sum(p => p.Window.FrameCount) > targetFrames &&
+                plans.Any(p => p.Window.SourceTimes.Length > 1))
                 throw new InvalidOperationException("Inside In/Out windows overlap.");
             int runtimeFrames = targetFrames + request.ContextBeforeFrames + request.ContextAfterFrames;
             if (runtimeFrames > KimodoMotionModelProfiles.MaxGenerationFrames)
@@ -130,6 +131,10 @@ namespace KimodoUnityBridge.Command
             };
             if (!KimodoTimelineSamplingSession.TryCreate(context, model, out var sampler, out string error))
                 throw new InvalidOperationException($"In/Out sampling failed: {error}");
+            var inOutputFrames = new HashSet<int>(plans
+                .Where(plan => plan.IsIn)
+                .SelectMany(plan => plan.Window.OutputFrames));
+            bool skippedOutSampleAtInFrame = false;
             using (sampler)
             {
                 foreach (var plan in plans)
@@ -139,6 +144,11 @@ namespace KimodoUnityBridge.Command
                         throw new InvalidOperationException($"In/Out sampling failed: {error}");
                     for (int i = 0; i < times.Length; i++)
                     {
+                        if (!plan.IsIn && inOutputFrames.Contains(plan.Window.OutputFrames[i]))
+                        {
+                            skippedOutSampleAtInFrame = true;
+                            continue;
+                        }
                         if (!KimodoRetargetMarkerSamplingUtility.TryBuildMarkerSampleResultFromBoneSample(
                             bones[i], sampler.TargetCache, model, "fullbody", plan.Window.OutputFrames[i] / (double)fps,
                             out var sample, out error))
@@ -156,6 +166,8 @@ namespace KimodoUnityBridge.Command
                     }
                 }
             }
+            if (skippedOutSampleAtInFrame)
+                diagnostics["overlap_resolution"] = "The In sample takes priority over an Out sample on the same model frame.";
             diagnostics["context_before_model_frames"] = request.ContextBeforeFrames;
             diagnostics["context_after_model_frames"] = request.ContextAfterFrames;
             diagnostics["runtime_model_frame_count"] = runtimeFrames;

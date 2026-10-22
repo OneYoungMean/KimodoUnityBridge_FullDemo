@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using TimelineInject;
+using UnityEditor.Timeline;
 using UnityEngine;
+using UnityEngine.Playables;
 using UnityEngine.Timeline;
 
 namespace KimodoBridge.Editor
@@ -10,6 +12,41 @@ namespace KimodoBridge.Editor
     {
         private const string FullBodyConstraintType = "fullbody";
         private const double BoundarySampleEpsilonSeconds = 1e-7;
+
+        internal static bool TryCaptureOriginalRoot2D(
+            Animator animator,
+            PlayableDirector director,
+            out Vector3 position,
+            out Quaternion rotation)
+        {
+            position = Vector3.zero;
+            rotation = Quaternion.identity;
+            bool restoreTimelinePreview = director != null &&
+                KimodoTimelinePreviewRefreshUtility.TryDisablePreview(director);
+            try
+            {
+                Transform hips = animator != null
+                    ? animator.GetBoneTransform(HumanBodyBones.Hips)
+                    : null;
+                if (hips == null)
+                {
+                    return false;
+                }
+
+                position = hips.position;
+                rotation = hips.rotation.normalized;
+                return true;
+            }
+            finally
+            {
+                if (restoreTimelinePreview)
+                {
+                    KimodoTimelinePreviewRefreshUtility.TryEnablePreview();
+                    KimodoTimelinePreviewRefreshUtility.RefreshEditorWorkflow(
+                        RefreshReason.SceneNeedsUpdate | RefreshReason.WindowNeedsRedraw);
+                }
+            }
+        }
 
         internal static bool TryCaptureOriginalScenePose(
             GameObject sourceRoot,

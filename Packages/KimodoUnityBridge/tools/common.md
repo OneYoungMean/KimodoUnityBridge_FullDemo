@@ -121,6 +121,25 @@ Apply only the work required by the selected route; inspection/comparison does n
 10. If a criterion fails with evidence, change only the relevant input and create a derived candidate. If evidence is missing, gather it or report unknown; do not retry blindly.
 11. Apply the stopping and handoff rules below. Never repeat an identical request without new evidence or a changed input.
 
+## Keyframe-led generation and revision
+
+For a task that depends on keyframe-level motion:
+
+1. Inspect the available Clip and analysis first. If no usable keyframe data exists, generate one initial candidate from the approved semantic prompt and supported constraints, then obtain its full `animation.analysis` result. Use `generation.get`'s `post_analysis` when available; if it is missing or failed, run `animation.analysis` on the completed Clip. Do not invent keyframes from the prompt alone.
+2. Treat analysis keyframes as observations and frame-selection hints, not as editable AnimationClip curve keys. Inspect relevant frames with `pose.get` and the available analysis evidence. Identify the actual curves/keys to edit through the Unity AnimationClip/AnimationCurve API or another verified project API; preserve the original Clip and make a derived candidate.
+3. Revise only keys that conflict with the declared action, phase, trajectory, contact, or endpoint criteria, or are demonstrably redundant. Keep keys needed to preserve intended phase changes, contacts, and transitions. Record which frames/curves changed and the evidence that motivated each change.
+4. After each generation or keyframe edit, evaluate the candidate with the same criteria and comparable analysis settings, then compare it with the immediately previous candidate and the current best. Keep the best candidate that satisfies hard requirements. If a new candidate is materially worse than the immediately previous one on a required criterion, reject it, restore/retain the best candidate, and stop that revision loop; do not continue generating variants of the same failed change. A tie or lack of meaningful improvement follows the finite revision budget and stopping rule below.
+
+## Clip transition constraints
+
+Every transition between adjacent animation Clips must use `animation.generate`'s `inout` constraint, with explicit completed source Clips for the relevant In and/or Out boundaries. Do not leave a requested transition to prompt wording or implicit defaults. Inspect the generated `inout_sampling` and evaluate the assembled Timeline seam.
+
+When a transition is short, increase the In/Out `window_frames` and, where useful, `sample_count` to provide a wider boundary context. The window is capped by available source-Clip frames and generated duration, and the requested sample count must fit distinct model frames; increasing a window cannot create source frames that do not exist. For `outside`, context is padded and cropped while preserving the requested output duration; for `inside`, the wider windows constrain the returned Clip's own start/end. If the available source range cannot provide the needed context, report that limitation and do not claim the transition is verified.
+
+## Prompt wording
+
+Write a concise natural-language action prompt from: action, phase, trajectory/direction, speed, body state, object/contact, and intended ending. Dataset-style labels often encode these as tokens such as `walk_ff_225_stop`, `jog_arc_cw_loop`, or `two_hands_walk_ff_start`.
+
 ## Recognition contract
 
 Recognition is a constrained evidence operation, not a source of new intent. The caller supplies semantic alternatives when action semantics must be distinguished. Never infer from a filename, Clip name, candidate order, ID, or saliency.

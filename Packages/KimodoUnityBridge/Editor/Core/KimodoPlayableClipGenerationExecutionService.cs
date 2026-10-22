@@ -1205,7 +1205,8 @@ namespace KimodoBridge.Editor
                         finalRequest.TargetFrameRate,
                         finalRequest.RuntimeTrimStartFrame,
                         finalRequest.TimelineContextSnapshot,
-                        syntheticAutoBeginFrame);
+                        syntheticAutoBeginFrame,
+                        targetFrameCount: finalRequest.TargetFrameCount);
                 }
                 firstRequest = null;
 

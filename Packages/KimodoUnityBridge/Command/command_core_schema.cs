@@ -100,10 +100,10 @@ namespace KimodoUnityBridge.Command
                     new[] { "The models section reports current availability and may change with runtime configuration." },
                     SceneContextCommand, GenerateAnimationCommand),
                 SceneContextCommand => CommandDocumentation(
-                    "Read the active Unity scene, its Kimodo Timeline, character handles, and current Session identity.",
-                    new[] { "Use returned scene object references for later commands instead of guessing from names or asset paths.", "Set include_history only when the Session-wide animation, generation, and analysis index is needed." },
-                    new[] { "Returns the current live scene context, director details, character/Clip references, frame-rate metadata, and Session identifiers without creating or replacing a context.", "Character discovery uses already assigned, imported, or cached Humanoid Avatars; this read command does not generate an Avatar or reimport a model.", "When requested, history includes compact animation, generation, and analysis records." },
-                    new[] { "Requires an existing live scene Session; it does not create or reset one. History is read from the existing Session metadata and analysis index." },
+                    "Read the active Unity scene, its Kimodo Timeline, character handles, and current Session identity; optionally reload and open a Timeline asset.",
+                    new[] { "Use returned scene object references for later commands instead of guessing from names or asset paths.", "Set include_history only when the Session-wide animation, generation, and analysis index is needed.", "Set timeline_path to reload and open a historical Timeline; root tracks are bound to same-name scene characters when available." },
+                    new[] { "Without timeline_path, returns the current live scene context; if it is missing, emits a warning and creates one in the active scene.", "With timeline_path, reloads the asset, opens it in the Timeline window, and returns opened_timeline details. Missing same-name characters produce warnings while the Timeline remains open.", "When requested, history includes compact animation, generation, and analysis records." },
+                    new[] { "The automatic context is scoped to the active scene. The timeline_path form creates only a transient editor context and does not modify the Timeline asset.", "History is read from the existing Session metadata and analysis index." },
                     new[] { "Context reflects the active loaded scene and current Session; history is omitted by default.", "A Clip asset path is asset metadata and is not itself a scene Clip handle." },
                     GenerateAnimationCommand, AnimationAnalysisCommand, PoseGetCommand),
                 InstallServerCommand => CommandDocumentation(
@@ -138,7 +138,7 @@ namespace KimodoUnityBridge.Command
                     "Submit one animation generation request for a character in the current scene context.",
                     new[] { "Describe one simple semantic action in prompt; aim for 25 words or fewer.", "Represent exact body pose, root position, effector targets, duration, path, loop, and Clip windows in their explicit fields when required.", "Point constraints without an explicit pose use the Avatar skeleton rest pose, as in pose.get mode=skeleton_rest_pose; they never implicitly sample the Timeline. Explicit Pose references and In/Out source Clip sampling are preserved.", "Save request_id and use generation.get to poll; do not resubmit a running request." },
                     new[] { "The accepted response contains request_id, status, preflight check results, and warnings. Root speed above 7 m/s warns; above 10 m/s blocks generation. Root acceleration above 10 m/s² warns; above 15 m/s² blocks generation. Pose/effector safety preflight runs only when the same point constraint explicitly contains both pose and effector; effector requires pose or root as explicit root context.", "On completion, generation.get returns the generated Clip metadata, asset path, animation_id, generation diagnostics, and one full animation.analysis result under post_analysis. Analysis failure is reported separately and does not invalidate the generated Clip." },
-                    new[] { "A completed result is appended as a Timeline Clip; existing completed Clips are retained.", "The Avatar skeleton rest pose is used as the automatic starting anchor unless explicit first-frame or In/Out samples take precedence." },
+                    new[] { "A completed result is appended as a Timeline Clip; existing completed Clips are retained.", "When no explicit first-frame or In/Out anchor takes precedence, AutoBegin adds a Root2D constraint at the character's original scene Hips position and heading." },
                     new[] { "Trajectory overrides require an explicit requirement or confirmed scene/analysis evidence; prompt words do not select path options.", "analysis_option is lightweight generation-time analysis, not the full animation.analysis command.", "Command checks validate supported request boundaries; they do not judge semantic or artistic quality." },
                     SceneContextCommand, PoseGetCommand, GetGenerationCommand, CancelGenerationCommand, AnimationAnalysisCommand),
                 PoseGetCommand => CommandDocumentation(
@@ -236,7 +236,7 @@ namespace KimodoUnityBridge.Command
             string[] fields = command switch
             {
                 HelpCommand => new[] { "manual", "usage", "execution_model", "routing", "handles", "workflow", "commands", "constraints", "constraint_rules", "configs", "count" },
-                SceneContextCommand => new[] { "session", "history", "scene", "scene_name", "director", "directors", "command_context_director", "playable_asset", "playable_asset_path", "duration_frames_60", "frame_rate", "current_frame_60", "characters" },
+                SceneContextCommand => new[] { "session", "history", "scene", "scene_name", "director", "directors", "command_context_director", "playable_asset", "playable_asset_path", "duration_frames_60", "frame_rate", "current_frame_60", "characters", "warnings", "opened_timeline" },
                 InstallServerCommand => new[] { "request_id", "status" },
                 PoseFromVideoCommand or PoseFromPictureCommand => new[] { "request_id", "status" },
                 AnimationAnalysisCommand => new[] { "analysis_schema_version", "clip", "pictures" },
@@ -299,6 +299,16 @@ namespace KimodoUnityBridge.Command
                 case "manual":
                     return new JObject { ["oneOf"] = new JArray(new JObject { ["type"] = "string" }, new JObject { ["type"] = "object" }) };
                 case "session": return ObjectSchema("session_id", "session_revision", "schema_version");
+                case "opened_timeline":
+                {
+                    JObject schema = ObjectSchema("timeline_asset", "timeline_asset_path", "director", "bound_characters", "warnings");
+                    schema["properties"]["timeline_asset"] = new JObject { ["type"] = "string" };
+                    schema["properties"]["timeline_asset_path"] = new JObject { ["type"] = "string" };
+                    schema["properties"]["director"] = new JObject { ["type"] = "string" };
+                    schema["properties"]["bound_characters"] = ArraySchema("object", "track", "character", "scene_object", "animator");
+                    schema["properties"]["warnings"] = ArraySchema("string");
+                    return schema;
+                }
                 case "history":
                 {
                     JObject schema = ObjectSchema("animations", "generations", "analyses");
@@ -387,7 +397,8 @@ namespace KimodoUnityBridge.Command
                 }
                 case "constraints" when command == GetGenerationCommand:
                     return new JObject { ["type"] = "array", ["items"] = RawConstraintSchema() };
-                case "warnings": case "execution_model": case "routing": case "workflow": case "constraints": case "constraint_rules":
+                case "warnings": return ArraySchema("string");
+                case "execution_model": case "routing": case "workflow": case "constraints": case "constraint_rules":
                     return new JObject { ["type"] = "array" };
                 case "world_position": return NumberArraySchema();
                 case "poses":
@@ -789,7 +800,7 @@ namespace KimodoUnityBridge.Command
                 new PropertyDefinition("post_apply", new JObject { ["type"] = "boolean",
                     ["description"] = "Generate a trajectory first, align this boundary against it in SOMA Root2D space, then include the boundary in the final raw constraints." }, false));
             JObject inSide = (JObject)side.DeepClone();
-            inSide["properties"]["post_apply"]["default"] = false;
+            inSide["properties"]["post_apply"]["default"] = true;
             JObject outSide = (JObject)side.DeepClone();
             outSide["properties"]["post_apply"]["default"] = true;
             JObject config = Properties(

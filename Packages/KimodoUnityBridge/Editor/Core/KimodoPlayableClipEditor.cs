@@ -831,7 +831,7 @@ namespace KimodoBridge.Editor
             {
                 EditorGUILayout.PropertyField(
                     autoBeginAnchor,
-                    new GUIContent("Auto Begin Anchor", "When the first second has no effective constraint anchor, use the Avatar skeleton rest pose as a FullBody frame-0 constraint."));
+                    new GUIContent("Auto Begin Anchor", "When the first second has no effective constraint anchor, use the character's original scene Hips position and heading as a Root2D frame-0 constraint."));
             }
 
             EditorGUILayout.Space(4f);

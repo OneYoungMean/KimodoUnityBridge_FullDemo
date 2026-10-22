@@ -565,6 +565,7 @@ namespace KimodoUnityBridge.Command
                     sessionRoot.layer = SessionCaptureLayer;
                     sessionRoot.hideFlags = HideFlags.DontSaveInEditor;
                 }
+                KimodoDisableOnRuntime.Ensure(sessionRoot);
                 if (director == null)
                 {
                     var directorObject = new GameObject($"{KimodoRuntimeUtility.SessionDirectorPrefix}{safeName}");

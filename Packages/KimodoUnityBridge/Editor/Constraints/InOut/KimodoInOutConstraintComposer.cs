@@ -179,16 +179,36 @@ namespace KimodoBridge.Editor
             KimodoTimelineInOutConstraintContext context = request.TimelineContext;
             if (context.Animator == null)
             {
-                error = "Auto Begin FullBody constraint requires the bound Character Animator.";
+                error = "Auto Begin Root2D constraint requires the bound Character Animator.";
                 return false;
             }
 
             if (!KimodoConstraintPoseUtility.TryCreateRestPoseSample(context, out sample, out error))
                 return false;
 
-            sample.constraintMode = "fullbody";
+            if (!context.HasOriginalRootSnapshot)
+            {
+                context.HasOriginalRootSnapshot = KimodoInOutConstraintTools.TryCaptureOriginalRoot2D(
+                    context.Animator,
+                    context.Director,
+                    out context.OriginalRootPosition,
+                    out context.OriginalRootRotation);
+                if (!context.HasOriginalRootSnapshot)
+                {
+                    error = "Auto Begin Root2D constraint could not resolve the scene character root.";
+                    return false;
+                }
+            }
+
+            // Keep the valid rest-pose payload as Root2D's support sample, but
+            // target the character's original scene root. Root2D only consumes
+            // the planar root position and heading, so a scene T-pose cannot
+            // become an accidental FullBody starting constraint.
+            sample.rootOverride.t = context.OriginalRootPosition;
+            sample.rootOverride.q = context.OriginalRootRotation.normalized;
+            sample.constraintMode = "root2d";
             sample.sampleTime = 0.0;
-            sample.enableMask = KimodoConstraintMask.ForType("fullbody");
+            sample.enableMask = KimodoConstraintMask.ForType("root2d");
             sample.sampleValid = true;
             sample.enabled = true;
             return true;

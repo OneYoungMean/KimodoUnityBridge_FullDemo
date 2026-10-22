@@ -254,12 +254,17 @@ namespace KimodoUnityBridge.Command.Tests
             JObject sceneContext = Tool(document, "scene.context");
             Assert.That(sceneContext["inputSchema"]?["additionalProperties"]?.Value<bool>(), Is.False);
             Assert.That(sceneContext["inputSchema"]?["properties"]?["include_history"]?["type"]?.Value<string>(), Is.EqualTo("boolean"));
+            Assert.That(sceneContext["inputSchema"]?["properties"]?["timeline_path"]?["type"]?.Value<string>(), Is.EqualTo("string"));
             Assert.That(sceneContext["description"]?.Value<string>(), Does.Contain("authoritative source"));
+            Assert.That(sceneContext["documentation"]?["result_notes"]?.Values<string>()
+                .Any(note => note.Contains("creates one in the active scene")), Is.True);
             Assert.That(sceneContext["outputSchema"]?["properties"]?["session"]?["properties"]?["session_id"]?.Value<string>("type"), Is.EqualTo("string"));
+            Assert.That(sceneContext["outputSchema"]?["properties"]?["warnings"]?["items"]?["type"]?.Value<string>(), Is.EqualTo("string"));
             Assert.That(sceneContext["outputSchema"]?["properties"]?["session"]?["properties"]?["session_revision"]?.Value<string>("type"), Is.EqualTo("integer"));
             Assert.That(sceneContext["outputSchema"]?["properties"]?["history"]?["properties"]?["analyses"]?["items"]?["properties"]?["analysis_id"], Is.Not.Null);
             Assert.That(sceneContext["outputSchema"]?["properties"]?["history"]?["properties"]?["animations"]?["items"]?["properties"]?["animation_id"], Is.Not.Null);
             Assert.That(sceneContext["outputSchema"]?["properties"]?["history"]?["properties"]?["generations"]?["items"]?["properties"]?["animation_id"], Is.Not.Null);
+            Assert.That(sceneContext["outputSchema"]?["properties"]?["opened_timeline"]?["properties"]?["warnings"]?["items"]?["type"]?.Value<string>(), Is.EqualTo("string"));
             Assert.That(Tool(document, "session.clear")["inputSchema"]["required"], Is.Null.Or.Empty);
 
             JObject poseGet = Tool(document, "pose.get");

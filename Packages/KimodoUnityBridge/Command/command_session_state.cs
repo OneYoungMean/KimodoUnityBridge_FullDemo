@@ -21,6 +21,8 @@ namespace KimodoUnityBridge.Command
     {
         private const string CreateTimelineSessionUndoName = "Create Kimodo Timeline Session";
         private const string AnalysisContractVersion = "5-command-60-single-clip-v1";
+        private const string MissingSceneContextWarning =
+            "No live scene context was available; a new automatic context was created in the active scene.";
         internal const int SessionCaptureLayer = 17;
         internal const int ClipSafeZoneFrames = 4;
         internal const double ClipSafeZoneSeconds = ClipSafeZoneFrames / 60.0;
@@ -65,6 +67,11 @@ namespace KimodoUnityBridge.Command
 
         private static void ActivateTimelineSession(TimelineSessionRecord session)
         {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                KimodoDisableOnRuntime.Ensure(session?.SessionRoot)?.DisableForPlay();
+                return;
+            }
             if (session?.SessionRoot != null) session.SessionRoot.SetActive(true);
             if (session?.Director != null) session.Director.enabled = true;
         }
@@ -112,6 +119,7 @@ namespace KimodoUnityBridge.Command
                 GameObject sessionRoot = new GameObject($"KimodoSession_{safeName}");
                 sessionRoot.layer = SessionCaptureLayer;
                 sessionRoot.hideFlags = HideFlags.DontSaveInEditor;
+                KimodoDisableOnRuntime.Ensure(sessionRoot);
                 GameObject directorObject = new GameObject($"{KimodoRuntimeUtility.SessionDirectorPrefix}{safeName}");
                 directorObject.transform.SetParent(sessionRoot.transform, false);
                 directorObject.hideFlags = HideFlags.DontSaveInEditor;
@@ -705,6 +713,7 @@ namespace KimodoUnityBridge.Command
 
         private static TimelineSessionRecord RequireCurrentTimelineSession(bool recreating)
         {
+            EnsureEditorIsIdle("Kimodo scene Session commands");
             RefreshSceneContextBinding();
             EnsureTimelineSessionsRestored();
             if (currentTimelineSession == null)
@@ -719,6 +728,7 @@ namespace KimodoUnityBridge.Command
                     }
                     if (!IsTimelineSessionValid(session))
                     {
+                        Debug.LogWarning($"[Kimodo] {MissingSceneContextWarning}");
                         session = CreateTimelineSession("__AutoContext", isAutomatic: true);
                         lock (TimelineSessionsLock) TimelineSessions[session.Name] = session;
                     }
@@ -793,6 +803,7 @@ namespace KimodoUnityBridge.Command
 
         private static string ClearSession(JObject arguments)
         {
+                EnsureEditorIsIdle("Kimodo Session clearing");
                 Scene scene = SceneManager.GetActiveScene();
                 EnsureTimelineSessionsRestored();
                 TimelineSessionRecord session = currentTimelineSession;
@@ -1596,13 +1607,20 @@ namespace KimodoUnityBridge.Command
 
         private static string SceneContextGet(JObject arguments)
         {
+            EnsureEditorIsIdle("scene.context");
             bool includeHistory = arguments.Value<bool?>("include_history") ?? false;
+            string timelinePath = arguments.Value<string>("timeline_path");
+            JObject openedTimeline = string.IsNullOrWhiteSpace(timelinePath)
+                ? null
+                : OpenTimelineFromSceneContext(timelinePath);
             RefreshSceneContextBinding();
             EnsureTimelineSessionsRestored();
             TimelineSessionRecord session = currentTimelineSession;
+            bool recreatedContext = false;
             if (!IsTimelineSessionValid(session))
             {
-                throw new InvalidOperationException("No live scene context is available. scene.context is read-only and will not create or reset one.");
+                session = RequireCurrentTimelineSession();
+                recreatedContext = true;
             }
             PlayableDirector commandDirector = session.Director;
             TimelineAsset timeline = session.TimelineAsset;
@@ -1679,6 +1697,14 @@ namespace KimodoUnityBridge.Command
                     : 0,
                 ["characters"] = characters
             };
+            if (recreatedContext)
+            {
+                result["warnings"] = new JArray(MissingSceneContextWarning);
+            }
+            if (openedTimeline != null)
+            {
+                result["opened_timeline"] = openedTimeline;
+            }
             if (includeHistory)
             {
                 result["history"] = new JObject

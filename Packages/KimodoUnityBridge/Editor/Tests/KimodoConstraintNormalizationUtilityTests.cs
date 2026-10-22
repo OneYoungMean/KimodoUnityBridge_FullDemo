@@ -77,7 +77,7 @@ namespace KimodoBridge.Editor.Tests
         [Test]
         public void DeferredAutoBegin_RealConstraintBeatsSyntheticConstraint()
         {
-            var synthetic = new KimodoMarkerSampleResult { constraintMode = "fullbody", sampleTime = 0.0 };
+            var synthetic = new KimodoMarkerSampleResult { constraintMode = "root2d", sampleTime = 0.0 };
             var real = new KimodoMarkerSampleResult { constraintMode = "fullbody", sampleTime = 0.5 };
 
             Assert.That(
@@ -95,14 +95,25 @@ namespace KimodoBridge.Editor.Tests
         }
 
         [Test]
-        public void ConstraintAtExactlyOneSecond_GetsFrameZeroAutoBeginConstraint()
+        public void ConstraintAtExactlyOneSecond_GetsFrameZeroAutoBeginRoot2DConstraint()
         {
             using (AutoBeginSceneFixture fixture = CreateAutoBeginSceneFixture())
             {
+                Transform sceneHips = fixture.Skeleton.animator.GetBoneTransform(HumanBodyBones.Hips);
+                Assert.That(sceneHips, Is.Not.Null);
+                Vector3 expectedRootPosition = sceneHips.position;
+                Quaternion expectedRootRotation = sceneHips.rotation;
                 var sample = new KimodoMarkerSampleResult
                 {
+                    sampleValid = true,
                     constraintMode = "root2d",
                     sampleTime = 1.0,
+                    rootOverride = new KimodoUnityBridge.KimodoRigidTransform
+                    {
+                        t = expectedRootPosition,
+                        q = expectedRootRotation
+                    },
+                    enableMask = KimodoConstraintMask.ForType("root2d")
                 };
 
                 Assert.That(
@@ -114,17 +125,74 @@ namespace KimodoBridge.Editor.Tests
                     Is.True);
 
                 Assert.That(result.CombinedSamples, Has.Count.EqualTo(2));
-                Assert.That(result.CombinedSamples[0].constraintMode, Is.EqualTo("fullbody"));
+                Assert.That(result.CombinedSamples[0].constraintMode, Is.EqualTo("root2d"));
                 Assert.That(result.CombinedSamples[0].sampleTime, Is.EqualTo(0.0).Within(1e-6));
                 Assert.That(result.CombinedSamples[0].sampleData.IsValid, Is.True);
-                Assert.That(KimodoConstraintPoseUtility.TryCreateRestPoseSample(
-                    CreateAutoBeginRequest(fixture).TimelineContext, out var restPose, out var error), Is.True, error);
                 Assert.That(
-                    Vector3.Distance(result.CombinedSamples[0].rootOverride.t, restPose.rootOverride.t),
+                    Vector3.Distance(result.CombinedSamples[0].rootOverride.t, expectedRootPosition),
                     Is.LessThan(0.01f),
-                    "AutoBegin must use Avatar rest pose even when the scene Animator has offsets.");
-                Assert.That(result.ConstraintsJson, Does.Contain("\"type\": \"fullbody\""));
+                    "AutoBegin must use the original scene Hips position.");
+                Assert.That(
+                    Quaternion.Angle(result.CombinedSamples[0].rootOverride.q, expectedRootRotation),
+                    Is.LessThan(0.01f),
+                    "AutoBegin must use the original scene Hips heading.");
+                Assert.That(result.ConstraintsJson, Does.Contain("\"type\": \"root2d\""));
+                Assert.That(result.ConstraintsJson, Does.Not.Contain("\"type\": \"fullbody\""));
                 Assert.That(result.HasSyntheticAutoBeginConstraint, Is.True);
+            }
+        }
+
+        [Test]
+        public void AutoBegin_CachesSceneHipsSnapshotForSubsequentBuilds()
+        {
+            using (AutoBeginSceneFixture fixture = CreateAutoBeginSceneFixture())
+            {
+                TimelineClip sourceClip = fixture.Track.CreateClip<KimodoPlayableClip>();
+                Transform sceneHips = fixture.Skeleton.animator.GetBoneTransform(HumanBodyBones.Hips);
+                Vector3 originalPosition = sceneHips.position;
+                Quaternion originalRotation = sceneHips.rotation;
+
+                Assert.That(
+                    KimodoInOutConstraintAdapter.TryResolveTimelineContext(
+                        sourceClip, out var context, out var contextError),
+                    Is.True,
+                    contextError);
+                Assert.That(context.HasOriginalRootSnapshot, Is.False);
+
+                var request = new KimodoInOutConstraintRequest
+                {
+                    Mode = KimodoInOutConstraintMode.None,
+                    AutoBeginAnchor = true,
+                    GenerationFrames = 90,
+                    TimelineContext = context
+                };
+                Assert.That(
+                    KimodoInOutConstraintComposer.TryBuild(
+                        request, out var initialResult, out _, out var initialError),
+                    Is.True,
+                    initialError);
+                Assert.That(initialResult.HasSyntheticAutoBeginConstraint, Is.True);
+                Assert.That(context.HasOriginalRootSnapshot, Is.True);
+
+                // Simulate a Timeline preview changing the bound pose after
+                // AutoBegin captured the scene's original Root2D anchor.
+                sceneHips.SetPositionAndRotation(
+                    originalPosition + new Vector3(3f, 0f, -2f),
+                    Quaternion.Euler(0f, 70f, 0f));
+
+                Assert.That(
+                    KimodoInOutConstraintComposer.TryBuild(
+                        request, out var result, out _, out var error),
+                    Is.True,
+                    error);
+                Assert.That(result.CombinedSamples, Has.Count.EqualTo(1));
+                Assert.That(result.CombinedSamples[0].constraintMode, Is.EqualTo("root2d"));
+                Assert.That(
+                    Vector3.Distance(result.CombinedSamples[0].rootOverride.t, originalPosition),
+                    Is.LessThan(0.01f));
+                Assert.That(
+                    Quaternion.Angle(result.CombinedSamples[0].rootOverride.q, originalRotation),
+                    Is.LessThan(0.01f));
             }
         }
 
@@ -140,7 +208,7 @@ namespace KimodoBridge.Editor.Tests
                     sampleTime = 1.1,
                     rootOverride = new KimodoUnityBridge.KimodoRigidTransform
                     {
-                        t = new Vector3(9f, 0.8879f, 0f),
+                        t = new Vector3(100f, 0.8879f, 0f),
                         q = Quaternion.identity
                     },
                     enableMask = KimodoConstraintMask.ForType("root2d")
@@ -187,28 +255,33 @@ namespace KimodoBridge.Editor.Tests
         [Test]
         public void BoundaryConstraints_AreRejectedWhenTheyExceedAccelerationLimit()
         {
-            var samples = new List<KimodoMarkerSampleResult>
+            using (AutoBeginSceneFixture fixture = CreateAutoBeginSceneFixture())
             {
-                new KimodoMarkerSampleResult
+                var request = CreateAutoBeginRequest(fixture,
+                    CreateRoot2DSample(0.0, Vector3.zero),
+                    CreateRoot2DSample(0.5, Vector3.zero),
+                    CreateRoot2DSample(1.0, new Vector3(3.5f, 0f, 0f)));
+
+                Assert.That(KimodoInOutConstraintComposer.TryBuild(request,
+                    out _, out _, out string error), Is.False);
+                StringAssert.Contains("10.0 m/s²", error);
+            }
+        }
+
+        private static KimodoMarkerSampleResult CreateRoot2DSample(double time, Vector3 position)
+        {
+            return new KimodoMarkerSampleResult
+            {
+                sampleValid = true,
+                sampleTime = time,
+                constraintMode = "root2d",
+                enableMask = KimodoConstraintMask.ForType("root2d"),
+                rootOverride = new KimodoUnityBridge.KimodoRigidTransform
                 {
-                    sampleValid = true, sampleTime = 0.0,
-                    rootOverride = new KimodoUnityBridge.KimodoRigidTransform { t = Vector3.zero }
-                },
-                new KimodoMarkerSampleResult
-                {
-                    sampleValid = true, sampleTime = 0.5,
-                    rootOverride = new KimodoUnityBridge.KimodoRigidTransform { t = Vector3.zero }
-                },
-                new KimodoMarkerSampleResult
-                {
-                    sampleValid = true, sampleTime = 1.0,
-                    rootOverride = new KimodoUnityBridge.KimodoRigidTransform { t = new Vector3(3.5f, 0f, 0f) }
+                    t = position,
+                    q = Quaternion.identity
                 }
             };
-
-            Assert.That(KimodoGenerationWarningCheckService.TryValidateRootMotionConstraints(
-                samples, 60f, out string error), Is.False);
-            StringAssert.Contains("10.0 m/s²", error);
         }
 
         [TestCase(KimodoConstraintMode.FullBody)]

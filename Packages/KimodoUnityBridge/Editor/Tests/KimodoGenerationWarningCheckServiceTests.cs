@@ -31,7 +31,7 @@ namespace KimodoBridge.Editor.Tests
         }
 
         [Test]
-        public void RootTrajectory_AboveTenMetersPerSecondBlocksGeneration()
+        public void RootTrajectory_AboveTenMetersPerSecondIsReportedButRawValidationOwnsRejection()
         {
             JObject args = new JObject
             {
@@ -44,20 +44,20 @@ namespace KimodoBridge.Editor.Tests
 
             JObject result = KimodoGenerationWarningCheckService.Build(args, 120, 60f);
 
-            Assert.That(result.Value<bool>("blocking"), Is.True);
-            Assert.That(result.Value<string>("overall"), Is.EqualTo("error"));
+            Assert.That(result.Value<bool>("blocking"), Is.False);
+            Assert.That(result.Value<string>("overall"), Is.EqualTo("warning"));
             Assert.That(result["root_trajectory"]["issues"].ToObject<JArray>()
                 .Any(issue => issue.Value<string>("code") == "speed_hard_limit"), Is.True);
         }
 
-        [TestCase(9.99f, false, false)]
-        [TestCase(10f, false, false)]
-        [TestCase(10.01f, true, false)]
-        [TestCase(14.99f, true, false)]
-        [TestCase(15f, true, false)]
-        [TestCase(15.01f, true, true)]
-        [TestCase(16f, true, true)]
-        public void RootTrajectory_AccelerationThresholds(float acceleration, bool warning, bool blocking)
+        [TestCase(9.99f, false)]
+        [TestCase(10f, false)]
+        [TestCase(10.01f, true)]
+        [TestCase(14.99f, true)]
+        [TestCase(15f, true)]
+        [TestCase(15.01f, true)]
+        [TestCase(16f, true)]
+        public void RootTrajectory_AccelerationDiagnosticsDoNotBlockBeforeRawValidation(float acceleration, bool warning)
         {
             JObject args = new JObject
             {
@@ -70,12 +70,12 @@ namespace KimodoBridge.Editor.Tests
 
             JObject result = KimodoGenerationWarningCheckService.Build(args, 180, 60f);
 
-            Assert.That(result.Value<bool>("blocking"), Is.EqualTo(blocking));
-            Assert.That(result.Value<string>("overall"), Is.EqualTo(blocking ? "error" : warning ? "warning" : "ok"));
+            Assert.That(result.Value<bool>("blocking"), Is.False);
+            Assert.That(result.Value<string>("overall"), Is.EqualTo(warning ? "warning" : "ok"));
             Assert.That(result["root_trajectory"].Value<float>("max_acceleration_mps2"), Is.EqualTo(acceleration).Within(0.001f));
             JArray issues = result["root_trajectory"]["issues"].ToObject<JArray>();
             Assert.That(issues.Any(issue => issue.Value<string>("code") == "acceleration_limit"), Is.EqualTo(warning));
-            Assert.That(issues.Any(issue => issue.Value<string>("code") == "acceleration_hard_limit"), Is.EqualTo(blocking));
+            Assert.That(issues.Any(issue => issue.Value<string>("code") == "acceleration_hard_limit"), Is.EqualTo(acceleration > 15f));
         }
 
         [Test]
@@ -101,7 +101,7 @@ namespace KimodoBridge.Editor.Tests
         }
 
         [TestCase(89, true, "error", "duration_below_minimum")]
-        [TestCase(90, false, "ok", null)]
+        [TestCase(90, false, "warning", "duration_short_warning")]
         [TestCase(179, false, "warning", "duration_short_warning")]
         [TestCase(180, false, "ok", null)]
         public void Duration_ReportsMinimumAndShortMotionThresholds(

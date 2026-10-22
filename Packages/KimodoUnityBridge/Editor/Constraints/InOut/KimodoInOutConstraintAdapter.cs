@@ -18,6 +18,11 @@ namespace KimodoBridge.Editor
         public string ModelName = KimodoMotionModelProfiles.DefaultModelName;
         public TimelineClip PreviousTimelineClip;
         public TimelineClip NextTimelineClip;
+        // Captured only when AutoBegin is needed; preview is suspended when
+        // this context is the inspected Timeline so the scene root is stable.
+        public Vector3 OriginalRootPosition;
+        public Quaternion OriginalRootRotation = Quaternion.identity;
+        public bool HasOriginalRootSnapshot;
         // Frozen before any Timeline evaluation so generation projection uses
         // the scene origin rather than the animated Animator pose.
         public Vector3 TrackOffsetPosition;

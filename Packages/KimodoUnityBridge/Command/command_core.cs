@@ -114,7 +114,9 @@ namespace KimodoUnityBridge.Command
                             }, false))),
                     CommandDefinition(SceneContextCommand,
                         "Return the current active-scene context JSON. Use this response as the authoritative source for scene characters, Clips, Timeline ranges, and object references. Set include_history=true to include the compact Session artifact index.",
-                        Properties(Optional("include_history", "boolean", "Include compact animation, generation, and analysis history; defaults to false."))),
+                        Properties(
+                            Optional("include_history", "boolean", "Include compact animation, generation, and analysis history; defaults to false."),
+                            Optional("timeline_path", "string", "Reload and open an Assets/... or Packages/... Timeline asset, then bind root AnimationTracks to same-name scene characters when available."))),
                     CommandDefinition(InstallServerCommand,
                         "Start an asynchronous project-local QuickServer installation task. Returns only request_id and status; poll that request with generation.get. Models and the Python environment are preserved.",
                         Properties()),

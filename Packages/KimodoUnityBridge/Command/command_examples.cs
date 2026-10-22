@@ -15,7 +15,8 @@ namespace KimodoUnityBridge.Command
                     @"{'command':'animation.generate'}");
                 case SceneContextCommand: return new JArray(
                     Example("Read the scene and current Session identity.", @"{}"),
-                    Example("Include the compact Session artifact history when needed.", @"{'include_history':true}"));
+                    Example("Include the compact Session artifact history when needed.", @"{'include_history':true}"),
+                    Example("Reload and open a historical Timeline, binding same-name scene characters when available.", @"{'timeline_path':'Assets/Timelines/WalkHistory.playable'}"));
                 case InstallServerCommand: return Examples("Install the local server, then poll the returned request_id.", @"{}");
                 case PoseFromVideoCommand: return Examples("Estimate SMPL-X poses from a video, then poll for the pose array.",
                     @"{'video_path':'C:/data/mocap.mp4','person':'left'}");

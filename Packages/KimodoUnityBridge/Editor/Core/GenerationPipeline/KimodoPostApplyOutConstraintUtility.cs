@@ -35,13 +35,14 @@ namespace KimodoBridge.Editor
             int runtimeTrimStartFrame,
             KimodoTimelineInOutConstraintContext timelineContext,
             int? syntheticAutoBeginFrame = null,
-            bool preferStart = false)
+            bool preferStart = false,
+            int targetFrameCount = 0)
         {
             return preferStart
                 ? ApplyInOut(existingJson, deferredOutJson, string.Empty, firstPassMotion, modelName, frameRate,
-                    runtimeTrimStartFrame, timelineContext, syntheticAutoBeginFrame)
+                    runtimeTrimStartFrame, timelineContext, syntheticAutoBeginFrame, targetFrameCount)
                 : ApplyInOut(existingJson, string.Empty, deferredOutJson, firstPassMotion, modelName, frameRate,
-                    runtimeTrimStartFrame, timelineContext, syntheticAutoBeginFrame);
+                    runtimeTrimStartFrame, timelineContext, syntheticAutoBeginFrame, targetFrameCount);
         }
 
         internal static string ApplyInOut(
@@ -53,7 +54,8 @@ namespace KimodoBridge.Editor
             float frameRate,
             int runtimeTrimStartFrame,
             KimodoTimelineInOutConstraintContext timelineContext,
-            int? syntheticAutoBeginFrame = null)
+            int? syntheticAutoBeginFrame = null,
+            int targetFrameCount = 0)
         {
             JArray existing = ParseArray(existingJson);
             JArray deferredIn = ParseArray(deferredInJson);
@@ -64,17 +66,24 @@ namespace KimodoBridge.Editor
                 return existing.ToString(Formatting.None);
 
             List<RootRow> existingRows = ReadRows(existing);
+            bool preferStartForIn = ResolveBoundaryPreference(
+                inRows, runtimeTrimStartFrame, targetFrameCount, isIn: true);
             PlanarTransform inTransform = ResolveTransform(
                 existingRows, inRows, firstPassMotion, modelName, frameRate,
-                runtimeTrimStartFrame, timelineContext, syntheticAutoBeginFrame, preferStart: true);
+                runtimeTrimStartFrame, timelineContext, syntheticAutoBeginFrame, isIn: true,
+                preferStart: preferStartForIn);
+            bool preferStartForOut = ResolveBoundaryPreference(
+                outRows, runtimeTrimStartFrame, targetFrameCount, isIn: false);
             PlanarTransform outTransform = ResolveTransform(
                 existingRows, outRows, firstPassMotion, modelName, frameRate,
-                runtimeTrimStartFrame, timelineContext, syntheticAutoBeginFrame, preferStart: false);
+                runtimeTrimStartFrame, timelineContext, syntheticAutoBeginFrame, isIn: false,
+                preferStart: preferStartForOut);
 
             JArray filtered = new JArray();
+            var deferredFrames = new HashSet<int>(inRows.Concat(outRows).Select(row => row.Frame));
             foreach (JObject record in existing.OfType<JObject>())
             {
-                if (!FilterRecordOutsideRanges(record, inRows, outRows)) continue;
+                if (!FilterRecordOutsideFrames(record, deferredFrames)) continue;
                 filtered.Add(record);
             }
             AppendTransformed(deferredIn, inTransform, filtered);
@@ -149,6 +158,7 @@ namespace KimodoBridge.Editor
             int runtimeTrimStartFrame,
             KimodoTimelineInOutConstraintContext timelineContext,
             int? syntheticAutoBeginFrame,
+            bool isIn,
             bool preferStart)
         {
             if (deferredRows == null || deferredRows.Count == 0) return PlanarTransform.Identity;
@@ -164,7 +174,7 @@ namespace KimodoBridge.Editor
                         sourcePosition, sourceHeading, anchor.Position,
                         anchor.HasHeading ? anchor.Heading : sourceHeading);
                 }
-                throw new InvalidOperationException($"Postapply {(preferStart ? "In" : "Out")} could not read the original SOMA FullBody anchor.");
+                throw new InvalidOperationException($"Postapply {(isIn ? "In" : "Out")} could not read the original SOMA FullBody anchor.");
             }
             if (firstPassMotion == null) return PlanarTransform.Identity;
 
@@ -182,10 +192,54 @@ namespace KimodoBridge.Editor
                 !TryReadMotionRoot(firstPassMotion, modelName, outputFrame,
                     out Vector3 generatedPosition, out Quaternion generatedHeading))
             {
-                throw new InvalidOperationException($"Postapply {(preferStart ? "In" : "Out")} could not resolve the first-pass trajectory {(preferStart ? "start" : "end")} Root2D anchor.");
+                throw new InvalidOperationException($"Postapply {(isIn ? "In" : "Out")} could not resolve its first-pass trajectory Root2D anchor at frame {outputFrame}.");
             }
             return PlanarTransform.FromSourceToTarget(
                 originalPosition, originalHeading, generatedPosition, generatedHeading);
+        }
+
+        /// <summary>
+        /// Chooses the sample nearest the generated clip seam. Outside windows
+        /// sit on the opposite side of the seam, so their preferred endpoint is
+        /// reversed from the normal inside-window direction.
+        /// </summary>
+        private static bool ResolveBoundaryPreference(
+            List<RootRow> rows,
+            int runtimeTrimStartFrame,
+            int targetFrameCount,
+            bool isIn)
+        {
+            return PreferStartForDeferredWindow(
+                rows?.Select(row => row.Frame).ToArray(),
+                runtimeTrimStartFrame,
+                targetFrameCount,
+                isIn);
+        }
+
+        internal static bool PreferStartForDeferredWindow(
+            IReadOnlyList<int> sampleFrames,
+            int runtimeTrimStartFrame,
+            int targetFrameCount,
+            bool isIn)
+        {
+            bool preferStart = isIn;
+            if (sampleFrames == null || sampleFrames.Count == 0 || targetFrameCount <= 0)
+                return preferStart;
+
+            int outputStart = Mathf.Max(0, runtimeTrimStartFrame);
+            int outputEndExclusive = outputStart + targetFrameCount;
+            int firstFrame = sampleFrames.Min();
+            int lastFrame = sampleFrames.Max();
+            if (isIn)
+            {
+                // Outside In samples precede the generated range. The last
+                // sample is nearest to the generated start seam.
+                return lastFrame >= outputStart;
+            }
+
+            // Outside Out samples follow the generated range. The first
+            // sample is nearest to the generated end seam.
+            return firstFrame >= outputEndExclusive;
         }
 
         private static void AppendTransformed(
@@ -283,22 +337,12 @@ namespace KimodoBridge.Editor
             return frame < firstFrame ? firstFrame - frame : frame > lastFrame ? frame - lastFrame : 0;
         }
 
-        private static bool FilterRecordOutsideRanges(
+        private static bool FilterRecordOutsideFrames(
             JObject record,
-            List<RootRow> inRows,
-            List<RootRow> outRows)
+            ISet<int> deferredFrames)
         {
             if (record["frame_indices"] is not JArray) return true;
-            int? inFirst = inRows != null && inRows.Count > 0 ? inRows.Min(row => row.Frame) : (int?)null;
-            int? inLast = inRows != null && inRows.Count > 0 ? inRows.Max(row => row.Frame) : (int?)null;
-            int? outFirst = outRows != null && outRows.Count > 0 ? outRows.Min(row => row.Frame) : (int?)null;
-            int? outLast = outRows != null && outRows.Count > 0 ? outRows.Max(row => row.Frame) : (int?)null;
-            return FilterRecordFrames(record, frame =>
-            {
-                bool inRange = inFirst.HasValue && frame >= inFirst.Value && frame <= inLast.Value;
-                bool outRange = outFirst.HasValue && frame >= outFirst.Value && frame <= outLast.Value;
-                return !inRange && !outRange;
-            });
+            return FilterRecordFrames(record, frame => deferredFrames == null || !deferredFrames.Contains(frame));
         }
 
         private static bool FilterRecordFrames(JObject record, Func<int, bool> keepFrame)

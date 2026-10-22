@@ -202,18 +202,20 @@
       "name": "scene.context",
       "description": "Return the current active-scene context JSON. Use this response as the authoritative source for scene characters, Clips, Timeline ranges, and object references. Set include_history=true to include the compact Session artifact index.",
       "documentation": {
-        "when_to_use": "Read the active Unity scene, its Kimodo Timeline, character handles, and current Session identity.",
+        "when_to_use": "Read the active Unity scene, its Kimodo Timeline, character handles, and current Session identity; optionally reload and open a Timeline asset.",
         "behavior": [
           "Use returned scene object references for later commands instead of guessing from names or asset paths.",
-          "Set include_history only when the Session-wide animation, generation, and analysis index is needed."
+          "Set include_history only when the Session-wide animation, generation, and analysis index is needed.",
+          "Set timeline_path to reload and open a historical Timeline; root tracks are bound to same-name scene characters when available."
         ],
         "result_notes": [
-          "Returns current scene and director details, character/Clip references, frame-rate metadata, and Session identifiers.",
-          "Character discovery uses the generation Avatar resolver: check Animator, importer and cache, then try automatic Avatar generation. Only valid Humanoid Avatars matching the character skeleton are indexed; resolution or generation failures skip the object.",
+          "Without timeline_path, returns the current live scene context; if it is missing, emits a warning and creates one in the active scene.",
+          "With timeline_path, reloads the asset, opens it in the Timeline window, and returns opened_timeline details. Missing same-name characters produce warnings while the Timeline remains open.",
           "When requested, history includes compact animation, generation, and analysis records."
         ],
         "scene_effects": [
-          "May initialize the scene Session and generate missing Humanoid Avatars, including model importer updates and reimports. Existing animation clips are preserved."
+          "The automatic context is scoped to the active scene. The timeline_path form creates only a transient editor context and does not modify the Timeline asset.",
+          "History is read from the existing Session metadata and analysis index."
         ],
         "limits": [
           "Context reflects the active loaded scene and current Session; history is omitted by default.",
@@ -231,6 +233,10 @@
           "include_history": {
             "type": "boolean",
             "description": "Include compact animation, generation, and analysis history; defaults to false."
+          },
+          "timeline_path": {
+            "type": "string",
+            "description": "Reload and open an Assets/... or Packages/... Timeline asset, then bind root AnimationTracks to same-name scene characters when available."
           }
         },
         "required": [],
@@ -523,6 +529,54 @@
               },
               "additionalProperties": true
             }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "opened_timeline": {
+            "type": "object",
+            "properties": {
+              "timeline_asset": {
+                "type": "string"
+              },
+              "timeline_asset_path": {
+                "type": "string"
+              },
+              "director": {
+                "type": "string"
+              },
+              "bound_characters": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "track": {
+                      "type": "string"
+                    },
+                    "character": {
+                      "type": "string"
+                    },
+                    "scene_object": {
+                      "type": "string"
+                    },
+                    "animator": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true
           }
         },
         "required": [
@@ -539,6 +593,12 @@
           "description": "Include the compact Session artifact history when needed.",
           "arguments": {
             "include_history": true
+          }
+        },
+        {
+          "description": "Reload and open a historical Timeline, binding same-name scene characters when available.",
+          "arguments": {
+            "timeline_path": "Assets/Timelines/WalkHistory.playable"
           }
         }
       ]
@@ -941,10 +1001,11 @@
         ],
         "result_notes": [
           "Returns one image per constraint by default, or one shared image with per-constraint measured joint positions when combine=true.",
-          "Effector target distances use a 0.05 m default tolerance; the call is synchronous and returns no request_id."
+          "Effector target distances use a 0.05 m default tolerance; the call is synchronous and returns no request_id.",
+          "SceneView lighting, skybox, gizmos, and grid keep their current state unless explicitly set."
         ],
         "scene_effects": [
-          "SceneView lighting, skybox, gizmos, and grid keep their current state unless explicitly set. Renderer visibility is restored after capture."
+          "SceneView camera position, projection and settings remain available for inspection. Renderer visibility is restored after capture."
         ],
         "limits": [
           "Requires an active Scene View and a valid Humanoid character. Only point constraints are supported; inout and root_path do not describe a single sampled pose."
@@ -1905,7 +1966,7 @@
         ],
         "scene_effects": [
           "A completed result is appended as a Timeline Clip; existing completed Clips are retained.",
-          "The Avatar skeleton rest pose is used as the automatic starting anchor unless explicit first-frame or In/Out samples take precedence."
+          "When no explicit first-frame or In/Out anchor takes precedence, AutoBegin adds a Root2D constraint at the character's original scene Hips position and heading."
         ],
         "limits": [
           "Trajectory overrides require an explicit requirement or confirmed scene/analysis evidence; prompt words do not select path options.",
@@ -2431,8 +2492,8 @@
                             },
                             "post_apply": {
                               "type": "boolean",
-                              "default": false,
-                              "description": "Generate a trajectory first, align this boundary against it in SOMA Root2D space, then include the boundary in the final raw constraints."
+                              "description": "Generate a trajectory first, align this boundary against it in SOMA Root2D space, then include the boundary in the final raw constraints.",
+                              "default": true
                             }
                           },
                           "required": [
@@ -2479,8 +2540,8 @@
                             },
                             "post_apply": {
                               "type": "boolean",
-                              "default": true,
-                              "description": "Generate a trajectory first, align this boundary against it in SOMA Root2D space, then include the boundary in the final raw constraints."
+                              "description": "Generate a trajectory first, align this boundary against it in SOMA Root2D space, then include the boundary in the final raw constraints.",
+                              "default": true
                             }
                           },
                           "required": [
@@ -2562,7 +2623,10 @@
             "additionalProperties": true
           },
           "warnings": {
-            "type": "array"
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -3607,10 +3671,10 @@
                     "additionalProperties": true
                   }
                 },
-                "additionalProperties": true,
                 "required": [
                   "ok"
-                ]
+                ],
+                "additionalProperties": true
               },
               "error": {
                 "type": "object",
@@ -3622,11 +3686,11 @@
                     "type": "string"
                   }
                 },
-                "additionalProperties": true,
                 "required": [
                   "code",
                   "message"
-                ]
+                ],
+                "additionalProperties": true
               }
             },
             "additionalProperties": true
