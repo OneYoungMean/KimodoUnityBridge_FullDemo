@@ -190,6 +190,10 @@ namespace KimodoBridge.Editor
                 error = "In and Out sampling windows overlap. Reduce their window frame counts.";
                 return false;
             }
+            float frameRate = KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName);
+            var inFrames = new HashSet<int>();
+            foreach (double time in inExports)
+                inFrames.Add(Mathf.RoundToInt((float)(time * frameRate)));
             var times = new List<double>(inTimes);
             times.AddRange(outTimes);
             var exports = new List<double>(inExports);
@@ -199,13 +203,19 @@ namespace KimodoBridge.Editor
             using (sampler)
             {
                 if (!sampler.TryCaptureTargetBoneSamples(times.ToArray(),
-                    KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName), out var bones, out error)) return false;
+                    frameRate, out var bones, out error)) return false;
                 for (int i = 0; i < times.Count; i++)
                 {
                     if (!KimodoRetargetMarkerSamplingUtility.TryBuildMarkerSampleResultFromBoneSample(
                         bones[i], sampler.TargetCache, request.ModelName, FullBodyConstraintType, exports[i], out var sample, out error))
                         return false;
                     sample.enableMask = KimodoConstraintMask.ForType(FullBodyConstraintType);
+                    if (i >= inTimes.Length &&
+                        inFrames.Contains(Mathf.RoundToInt((float)(exports[i] * frameRate))))
+                    {
+                        warning = "In and Out samples share a model frame; the In constraint takes priority.";
+                        continue;
+                    }
                     (i < inTimes.Length ? beginSamples : endSamples).Add(sample);
                 }
             }

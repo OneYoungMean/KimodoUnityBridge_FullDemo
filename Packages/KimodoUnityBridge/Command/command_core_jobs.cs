@@ -20,51 +20,24 @@ namespace KimodoUnityBridge.Command
 {
     internal static partial class command_context
     {
-        private static ResolvedCharacter ResolveCharacter(TimelineSessionRecord session, string name)
+        private static TimelineCharacterRecord ResolveCharacter(TimelineSessionRecord session, string reference)
         {
-            TimelineCharacterRecord sessionCharacter;
-            try
-            {
-                sessionCharacter = ResolveSessionCharacterByReference(session, name, addIfMissing: false);
-            }
-            catch (InvalidOperationException)
-            {
-                GameObject[] matches = ResolveRequestedSceneCharacters(name);
-                if (matches.Length != 1)
-                    throw;
-                GameObject source = matches[0];
-                Animator sourceAnimator = source.GetComponentInChildren<Animator>(true);
-                source = ResolveCharacterIdentityRoot(source, sourceAnimator);
-                string sourceId = GetObjectReference(source);
-                sessionCharacter = session.Characters.FirstOrDefault(character =>
-                    string.Equals(character.CharacterRef, sourceId, StringComparison.Ordinal));
-                if (sessionCharacter == null)
-                {
-                    if (!AddCharacterTrack(session, source, sourceAnimator, true, out string error, requireAvatar: true))
-                        throw new InvalidOperationException(error);
-                    sessionCharacter = session.Characters.FirstOrDefault(character =>
-                        string.Equals(character.CharacterRef, sourceId, StringComparison.Ordinal));
-                }
-                if (sessionCharacter == null)
-                    throw new InvalidOperationException($"Character '{name}' could not be resolved to a cached scene identity.");
-            }
+            TimelineCharacterRecord sessionCharacter = ResolveSessionCharacterByReference(
+                session,
+                reference,
+                addIfMissing: true);
             GameObject root = sessionCharacter.Root;
             Animator animator = sessionCharacter.Animator;
             if (root == null || animator == null || EditorUtility.IsPersistent(root) || !root.scene.IsValid())
             {
-                throw new InvalidOperationException($"Character '{name}' is no longer a valid scene Humanoid Animator.");
+                throw new InvalidOperationException($"Character '{reference}' is no longer a valid scene Humanoid Animator.");
             }
             if (!KimodoRetargetCoreUtility.IsValidHumanoid(sessionCharacter.Avatar))
             {
                 throw new InvalidOperationException($"Character '{sessionCharacter.Name}' does not provide a valid humanoid Avatar.");
             }
-            GameObject sourceRoot = ResolveSourceCharacterRoot(sessionCharacter);
-            if (sourceRoot == null)
-            {
-                throw new InvalidOperationException($"Character '{sessionCharacter.Name}' has no resolvable scene source.");
-            }
-            return new ResolvedCharacter(root, animator, sessionCharacter.Avatar, sessionCharacter.Name);
             KimodoTimelinePreviewRefreshUtility.InitializeSceneOffset(sessionCharacter.Track, animator);
+            return sessionCharacter;
         }
 
         private static bool BindingMatches(UnityEngine.Object binding, Animator animator)

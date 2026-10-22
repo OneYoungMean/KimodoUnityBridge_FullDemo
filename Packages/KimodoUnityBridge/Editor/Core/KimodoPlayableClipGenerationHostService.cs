@@ -26,7 +26,8 @@ namespace KimodoBridge.Editor
             bool enableAutoBeginAnchor = true,
             TimelineClip timelineClipOverride = null,
             bool? generateLoopOverride = null,
-            bool deferOutConstraint = false)
+            bool deferOutConstraint = false,
+            bool deferInConstraint = false)
         {
             if (clip == null)
             {
@@ -105,9 +106,27 @@ namespace KimodoBridge.Editor
                     enableAutoBeginAnchor,
                     runtimeSampleOffsetSeconds,
                     timelineClip,
-                    deferOutConstraint);
+                    deferOutConstraint,
+                    deferInConstraint);
             string constraintsJson = constraintResult.ConstraintsJson;
+            string deferredInConstraintJson = constraintResult.DeferredInConstraintJson;
             string deferredOutConstraintJson = constraintResult.DeferredOutConstraintJson;
+            if (deferInConstraint)
+            {
+                KimodoInOutConstraintResult deferredIn =
+                    ConstraintProvider.BuildDeferredInConstraintOrThrow(
+                        clip,
+                        runtimeFrameCount,
+                        disableTimelineInOut,
+                        runtimeSampleOffsetSeconds,
+                        timelineClip);
+                if (!string.IsNullOrWhiteSpace(deferredIn.ConstraintsJson))
+                {
+                    deferredInConstraintJson = CombineConstraintJson(
+                        deferredInConstraintJson,
+                        deferredIn.ConstraintsJson);
+                }
+            }
             if (deferOutConstraint)
             {
                 KimodoInOutConstraintResult deferredOut =
@@ -125,13 +144,15 @@ namespace KimodoBridge.Editor
                 }
             }
             List<KimodoMarkerSampleResult> constraintSamples = constraintResult.CombinedSamples;
-            if (deferOutConstraint && externalConstraint?.Enabled == true &&
-                externalConstraint.DeferredOutConstraintSamples?.Count > 0)
+            if ((deferInConstraint || deferOutConstraint) && externalConstraint?.Enabled == true &&
+                ((deferInConstraint && externalConstraint.DeferredInConstraintSamples?.Count > 0) ||
+                 (deferOutConstraint && externalConstraint.DeferredOutConstraintSamples?.Count > 0)))
             {
                 constraintSamples = new List<KimodoMarkerSampleResult>(constraintSamples);
-                KimodoInOutConstraintComposer.AppendSamples(
-                    externalConstraint.DeferredOutConstraintSamples,
-                    constraintSamples);
+                if (deferInConstraint)
+                    KimodoInOutConstraintComposer.AppendSamples(externalConstraint.DeferredInConstraintSamples, constraintSamples);
+                if (deferOutConstraint)
+                    KimodoInOutConstraintComposer.AppendSamples(externalConstraint.DeferredOutConstraintSamples, constraintSamples);
                 int immediateCount = constraintResult.CombinedSamples.Count;
                 for (int i = immediateCount; i < constraintSamples.Count; i++)
                 {
@@ -206,6 +227,7 @@ namespace KimodoBridge.Editor
                     clip.diffusionSteps),
                 EffectiveSeed = effectiveSeed,
                 Constraints = new KimodoConstraintPayload { json = constraintsJson, clips = clipConstraints },
+                DeferredInConstraintJson = deferredInConstraintJson,
                 DeferredOutConstraintJson = deferredOutConstraintJson,
                 AnalysisOptionsJson = string.IsNullOrWhiteSpace(externalConstraint?.AnalysisOptionsJson)
                     ? clip.analysisOptionsJson ?? string.Empty

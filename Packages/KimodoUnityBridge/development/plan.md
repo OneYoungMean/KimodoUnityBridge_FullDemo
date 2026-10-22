@@ -52,6 +52,9 @@
 ## 暂缓 TODO：Command 层收敛
 
 - [ ] 核对多场景切换和 Domain Reload 下 `currentTimelineSession`、`firstTimelineSession` 与持久化 `is_current` 的归属，覆盖切换、重开和恢复流程；此项暂不改 Session 持久化结构。
+- [ ] **Issue 1：会话重载恢复。** 单独设计显式 `session.rebind`，按 `playableAssetPath` 或 `session_id` 校验当前场景、角色 `object_ref`、轨道和片段引用后再恢复；同时修正 `session.clear` 的 `recreated_on_next_command` 契约。不要仅放宽自动恢复门槛，以免旧 Timeline 误绑到新场景。
+- [ ] **Issue 3：跨片段 RootT.y 基线。** 先在同一 Avatar、Animator、`trackOffset`、`removeStartOffset` 和 `applyRootMotion` 条件下复现，再按 root-motion 语义决定有条件的垂直 rebase；站立片段与跳跃片段必须分开验收，暂不引入固定髋高。
+- [x] **Issue 6：inout 幻影速度误报。** deferred Out 样本在速度校验副本中排除未重锚的 `rootOverride`，保留姿态数据和原始生成样本；即时真实根运动仍由 7 m/s 校验拦截。
 - [ ] 为 QuickServer、连接超时、取消和输入错误定义稳定的错误码映射；当前执行器仍将未分类异常映射为 `invalid_argument`。
 - [x] 已删去 `animation.analysis` 不可从公开 schema 到达的 `analysis_option` 读取和旧字段拒绝逻辑；`animation.generate` 的轻量 `analysis_option` 保留。
 - [x] 已让 schema 校验与 handler 共用一次 JSON 解析结果；字符串命令入口仍保留，内部测试的错误响应行为不变。

@@ -28,6 +28,7 @@ namespace KimodoBridge.Editor
         public int EndSampleCount = 1;
         public bool AutoBeginAnchor;
         public bool DeferNormalization;
+        public bool DeferBeginConstraint;
         public bool DeferEndConstraint;
         public KimodoTimelineInOutConstraintContext TimelineContext;
         public List<KimodoMarkerSampleResult> ManualSamples = new List<KimodoMarkerSampleResult>();
@@ -37,10 +38,12 @@ namespace KimodoBridge.Editor
     {
         public List<KimodoMarkerSampleResult> CombinedSamples = new List<KimodoMarkerSampleResult>();
         public string ConstraintsJson = string.Empty;
+        public string DeferredInConstraintJson = string.Empty;
         public string DeferredOutConstraintJson = string.Empty;
         public bool HasSyntheticAutoBeginConstraint;
         public bool DenseRootPath;
         public KimodoMarkerSampleResult BeginBoundarySample;
+        public List<KimodoMarkerSampleResult> BeginBoundarySamples = new List<KimodoMarkerSampleResult>();
         public List<KimodoMarkerSampleResult> EndBoundarySamples = new List<KimodoMarkerSampleResult>();
     }
 }

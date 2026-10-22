@@ -164,11 +164,15 @@ namespace KimodoBridge.Editor.Tests
                     new KimodoMarkerSampleResult
                     {
                         sampleValid = true, sampleTime = 0.0,
+                        constraintMode = "root2d",
+                        enableMask = KimodoConstraintMask.ForType("root2d"),
                         rootOverride = new KimodoUnityBridge.KimodoRigidTransform { t = Vector3.zero }
                     },
                     new KimodoMarkerSampleResult
                     {
                         sampleValid = true, sampleTime = 0.5,
+                        constraintMode = "root2d",
+                        enableMask = KimodoConstraintMask.ForType("root2d"),
                         rootOverride = new KimodoUnityBridge.KimodoRigidTransform { t = new Vector3(5f, 0f, 0f) }
                     });
                 request.AutoBeginAnchor = false;
@@ -354,6 +358,7 @@ namespace KimodoBridge.Editor.Tests
             {
                 Mode = KimodoInOutConstraintMode.None,
                 AutoBeginAnchor = true,
+                GenerationFrames = 90,
                 TimelineContext = new KimodoTimelineInOutConstraintContext
                 {
                     Director = fixture.Director,

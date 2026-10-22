@@ -262,27 +262,7 @@ namespace KimodoUnityBridge.Command
                     out KimodoTimelineInOutConstraintContext context,
                     out _))
             {
-                context = new KimodoTimelineInOutConstraintContext
-                {
-                    SourceClip = null,
-                    Track = character.Track,
-                    Director = session.Director,
-                    Animator = character.Animator,
-                    ModelName = KimodoMotionModelProfiles.NormalizeName("Kimodo-SOMA-RP-v1")
-                };
-                if (!KimodoTimelineConstraintSampler.TrySampleMarker(
-                        context,
-                        sampleTime,
-                        sampleTime,
-                        "fullbody",
-                        context.ModelName,
-                        out KimodoMarkerSampleResult sceneSample,
-                        out string sceneError))
-                {
-                    throw new InvalidOperationException(
-                        $"Scene-time pose sampling failed for character '{character.Name}': {sceneError}");
-                }
-                return sceneSample;
+                return CaptureSceneSampleResult(session, character, sampleTime);
             }
 
             if (KimodoMarkerSamplingUtility.TryResolveAnimationClipFromTimelineClip(
@@ -290,11 +270,11 @@ namespace KimodoUnityBridge.Command
                     out AnimationClip sourceAnimation,
                     out _))
             {
-                return CaptureSampleResultFromSourceClip(
+                return CaptureSampleResultsFromSourceClip(
                     character,
                     sourceClip,
                     sourceAnimation,
-                    sampleTime);
+                    new[] { sampleTime })[0];
             }
 
             string modelName = KimodoMotionModelProfiles.NormalizeName(context.ModelName);
@@ -323,19 +303,60 @@ namespace KimodoUnityBridge.Command
             }
         }
 
-        private static KimodoMarkerSampleResult CaptureSampleResultFromSourceClip(
+        private static KimodoMarkerSampleResult CaptureSceneSampleResult(
+            TimelineSessionRecord session,
+            TimelineCharacterRecord character,
+            double sampleTime)
+        {
+            var context = new KimodoTimelineInOutConstraintContext
+            {
+                SourceClip = null,
+                Track = character.Track,
+                Director = session.Director,
+                Animator = character.Animator,
+                ModelName = KimodoMotionModelProfiles.NormalizeName("Kimodo-SOMA-RP-v1")
+            };
+            if (!KimodoTimelineConstraintSampler.TrySampleMarker(
+                    context,
+                    sampleTime,
+                    sampleTime,
+                    "fullbody",
+                    context.ModelName,
+                    out KimodoMarkerSampleResult sceneSample,
+                    out string sceneError))
+            {
+                throw new InvalidOperationException(
+                    $"Scene-time pose sampling failed for character '{character.Name}': {sceneError}");
+            }
+            return sceneSample;
+        }
+
+        private static KimodoMarkerSampleResult[] CaptureSceneSampleResults(
+            TimelineSessionRecord session,
+            TimelineCharacterRecord character,
+            IReadOnlyList<double> sampleTimes)
+        {
+            var results = new KimodoMarkerSampleResult[sampleTimes.Count];
+            for (int index = 0; index < sampleTimes.Count; index++)
+            {
+                results[index] = CaptureSceneSampleResult(session, character, sampleTimes[index]);
+            }
+            return results;
+        }
+
+        private static KimodoMarkerSampleResult[] CaptureSampleResultsFromSourceClip(
             TimelineCharacterRecord character,
             TimelineClip timelineClip,
             AnimationClip sourceAnimation,
-            double sampleTime)
+            IReadOnlyList<double> sampleTimes)
         {
             RetargetSkeleton cache = null;
-            KimodoRetargetClipSamplingUtility.ClipSamplingSession samplingSession = null;
+            KimodoRetargetClipSamplingUtility.ClipSamplingSession session = null;
             try
             {
                 if (!KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(
                         character.Avatar,
-                        "KimodoPoseGetSampler",
+                        "KimodoSampleResultSampler",
                         out cache,
                         out string error))
                 {
@@ -344,9 +365,9 @@ namespace KimodoUnityBridge.Command
                 if (!KimodoRetargetClipSamplingUtility.ClipSamplingSession.TryCreate(
                         sourceAnimation,
                         cache,
-                        "KimodoPoseGetSampler",
+                        "KimodoSampleResultSampler",
                         KimodoRetargetClipSamplingUtility.ResolveClipSamplingMode(sourceAnimation),
-                        out samplingSession,
+                        out session,
                         out error))
                 {
                     throw new InvalidOperationException($"Timeline pose sampling failed: {error}");
@@ -369,29 +390,30 @@ namespace KimodoUnityBridge.Command
                     }
                 }
 
-                double sourceTime = KimodoMarkerSamplingUtility.ResolveAnimationSourceTime(
-                    timelineClip,
-                    sampleTime);
-                if (!KimodoRetargetClipSamplingUtility.TryEvaluateClipSamplingContext(
-                        samplingSession.Context,
-                        sourceTime,
-                        out error))
+                var results = new KimodoMarkerSampleResult[sampleTimes.Count];
+                for (int index = 0; index < sampleTimes.Count; index++)
                 {
-                    throw new InvalidOperationException($"Timeline pose sampling failed: {error}");
+                    double timelineTime = sampleTimes[index];
+                    double sourceTime = KimodoMarkerSamplingUtility.ResolveAnimationSourceTime(timelineClip, timelineTime);
+                    if (!KimodoRetargetClipSamplingUtility.TryEvaluateClipSamplingContext(
+                            session.Context,
+                            sourceTime,
+                            out error))
+                    {
+                        throw new InvalidOperationException($"Timeline pose sampling failed: {error}");
+                    }
+                    ApplyPoseSamplingWorldOffset(character, cache);
+                    if (!KimodoRetargetSamplingUtility.TryCaptureMuscleSample(cache, out MuscleSample sample, out error))
+                    {
+                        throw new InvalidOperationException($"Timeline pose sampling failed: {error}");
+                    }
+                    results[index] = KimodoConstraintPoseUtility.BuildCapturedSampleResult(sample, cache, timelineTime);
                 }
-                ApplyPoseSamplingWorldOffset(character, cache);
-                if (!KimodoRetargetSamplingUtility.TryCaptureMuscleSample(
-                        cache,
-                        out MuscleSample sample,
-                        out error))
-                {
-                    throw new InvalidOperationException($"Timeline pose sampling failed: {error}");
-                }
-                return KimodoConstraintPoseUtility.BuildCapturedSampleResult(sample, cache, sampleTime);
+                return results;
             }
             finally
             {
-                samplingSession?.Dispose();
+                session?.Dispose();
                 cache?.Dispose();
             }
         }
@@ -429,6 +451,7 @@ namespace KimodoUnityBridge.Command
         }
 
         private static KimodoMarkerSampleResult[] CaptureSampleResults(
+            TimelineSessionRecord session,
             TimelineCharacterRecord character,
             int startFrame,
             int frameCount)
@@ -449,13 +472,17 @@ namespace KimodoUnityBridge.Command
                         KimodoTimelinePreviewRefreshUtility.ApproximatelyTimelineTime(sampleTime, item.start)) &&
                     sampleTime <= item.end)
                 ?? character.Track.GetClips().FirstOrDefault();
-            string contextError = string.Empty;
+            var sampleTimes = new double[frameCount];
+            for (int index = 0; index < frameCount; index++)
+            {
+                sampleTimes[index] = (startFrame + index) / SessionFrameRate;
+            }
             if (sourceClip == null || !KimodoInOutConstraintAdapter.TryResolveTimelineContext(
                     sourceClip,
                     out KimodoTimelineInOutConstraintContext context,
-                    out contextError))
+                    out _))
             {
-                throw new InvalidOperationException($"Character '{character.Name}' has no retargetable Timeline clip: {contextError}");
+                return CaptureSceneSampleResults(session, character, sampleTimes);
             }
 
             if (KimodoMarkerSamplingUtility.TryResolveAnimationClipFromTimelineClip(
@@ -463,7 +490,7 @@ namespace KimodoUnityBridge.Command
                 out AnimationClip sourceAnimation,
                 out _))
             {
-                return CaptureSampleResultsFromSourceClip(character, sourceClip, sourceAnimation, startFrame, frameCount);
+                return CaptureSampleResultsFromSourceClip(character, sourceClip, sourceAnimation, sampleTimes);
             }
 
             string modelName = KimodoMotionModelProfiles.NormalizeName(context.ModelName);
@@ -477,11 +504,6 @@ namespace KimodoUnityBridge.Command
             }
             using (sampler)
             {
-                var sampleTimes = new double[frameCount];
-                for (int index = 0; index < frameCount; index++)
-                {
-                    sampleTimes[index] = (startFrame + index) / SessionFrameRate;
-                }
                 if (!sampler.TryCaptureMuscleSamples(
                         sampleTimes,
                         out MuscleSample[] samples,
@@ -499,81 +521,6 @@ namespace KimodoUnityBridge.Command
                         sampleTimes[index]);
                 }
                 return results;
-            }
-        }
-
-        private static KimodoMarkerSampleResult[] CaptureSampleResultsFromSourceClip(
-            TimelineCharacterRecord character,
-            TimelineClip timelineClip,
-            AnimationClip sourceAnimation,
-            int startFrame,
-            int frameCount)
-        {
-            RetargetSkeleton cache = null;
-            KimodoRetargetClipSamplingUtility.ClipSamplingSession session = null;
-            try
-            {
-                if (!KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(
-                        character.Avatar,
-                        "KimodoSampleResultSampler",
-                        out cache,
-                        out string error))
-                {
-                    throw new InvalidOperationException($"Timeline pose sampler failed: {error}");
-                }
-                if (!KimodoRetargetClipSamplingUtility.ClipSamplingSession.TryCreate(
-                        sourceAnimation,
-                        cache,
-                        "KimodoSampleResultSampler",
-                        KimodoRetargetClipSamplingUtility.ResolveClipSamplingMode(sourceAnimation),
-                        out session,
-                        out error))
-                {
-                    throw new InvalidOperationException($"Timeline pose sampler failed: {error}");
-                }
-
-                KimodoTimelineTrackOffsetUtility.ResolveWorldOffset(
-                    character.Track,
-                    character.Animator,
-                    out _,
-                    out _,
-                    out bool isSceneOffset);
-                if (isSceneOffset)
-                {
-                    Transform characterRoot = character.Animator != null
-                        ? character.Animator.transform
-                        : (character.Root != null ? character.Root.transform : null);
-                    if (characterRoot != null)
-                    {
-                        cache.root.transform.SetPositionAndRotation(characterRoot.position, characterRoot.rotation);
-                    }
-                }
-
-                var results = new KimodoMarkerSampleResult[frameCount];
-                for (int index = 0; index < frameCount; index++)
-                {
-                    double timelineTime = (startFrame + index) / SessionFrameRate;
-                    double sourceTime = KimodoMarkerSamplingUtility.ResolveAnimationSourceTime(timelineClip, timelineTime);
-                    if (!KimodoRetargetClipSamplingUtility.TryEvaluateClipSamplingContext(
-                            session.Context,
-                            sourceTime,
-                            out error))
-                    {
-                        throw new InvalidOperationException($"Timeline pose sampling failed: {error}");
-                    }
-                    ApplyPoseSamplingWorldOffset(character, cache);
-                    if (!KimodoRetargetSamplingUtility.TryCaptureMuscleSample(cache, out MuscleSample sample, out error))
-                    {
-                        throw new InvalidOperationException($"Timeline pose sampling failed: {error}");
-                    }
-                    results[index] = KimodoConstraintPoseUtility.BuildCapturedSampleResult(sample, cache, timelineTime);
-                }
-                return results;
-            }
-            finally
-            {
-                session?.Dispose();
-                cache?.Dispose();
             }
         }
 

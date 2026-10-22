@@ -262,6 +262,10 @@ namespace KimodoBridge
                 payload["output_format"] = string.IsNullOrWhiteSpace(request.output_format)
                     ? "kmb_v1"
                     : request.output_format.Trim();
+                if (request.output_mp4)
+                {
+                    payload["output_mp4"] = true;
+                }
                 if (request.duration.HasValue)
                 {
                     float duration = request.duration.Value;

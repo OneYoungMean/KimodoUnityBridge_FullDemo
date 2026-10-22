@@ -606,7 +606,7 @@ namespace KimodoUnityBridge.Command
                 EnsureCanGenerate();
                 TimelineSessionRecord session = RequireCurrentTimelineSession();
                 string prompt = RequiredStringValue(arguments, "prompt");
-                ResolvedCharacter character = ResolveCharacter(session, RequiredStringValue(arguments, "character"));
+                TimelineCharacterRecord character = ResolveCharacter(session, RequiredStringValue(arguments, "character"));
                 JObject pathOptions = arguments["path"] as JObject;
                 JObject generationOptions = arguments["generation"] as JObject;
                 JObject outputOptions = arguments["output"] as JObject;
@@ -685,7 +685,7 @@ namespace KimodoUnityBridge.Command
                     frameRate,
                     durationFrames,
                     character.Root,
-                    ResolveSessionCharacterByReference(session, character.Name, addIfMissing: false),
+                    character,
                     out List<string> poseWarnings);
 
                 JObject generationCheck = BuildGenerationCheck(
@@ -709,6 +709,11 @@ namespace KimodoUnityBridge.Command
                 KimodoExternalConstraintRequest inOutConstraints = BuildCommandInOutConstraints(
                     arguments, trace, modelName, frameCount, frameRate, loopRequested, poseConstraints);
                 KimodoPlayableClip playableClip = CreateGenerationPlayableClip(trace, requestedAnimationName, inOutConstraints != null);
+                if (inOutConstraints != null)
+                {
+                    playableClip.postApplyInConstraint = inOutConstraints.DeferInConstraint;
+                    playableClip.postApplyOutConstraint = inOutConstraints.DeferOutConstraint;
+                }
                 playableClip.bridgeModelName = modelName;
                 playableClip.textEncoderMode = textEncoderMode;
                 playableClip.motionPrompt = prompt;
@@ -742,7 +747,7 @@ namespace KimodoUnityBridge.Command
                 SaveTimelineSession(session);
 
                 bool started = KimodoEditorGenerationJobService.Start(
-                    character.Target,
+                    character.Root,
                     async (generationSession, token) =>
                     {
                         string previousTaskId = KimodoBridgeService.GenerationTaskIdContext.Value;
@@ -756,7 +761,7 @@ namespace KimodoUnityBridge.Command
                                 playableClip,
                                 trace,
                                 inOutConstraints,
-                                character.Target,
+                                character.Root,
                                 generationSession,
                                 token);
                         }
@@ -775,7 +780,7 @@ namespace KimodoUnityBridge.Command
                     throw new InvalidOperationException(error);
                 }
 
-                Remember(character.Target, generation, trace);
+                Remember(character.Root, generation, trace);
                 PersistGenerationJobStatus(generation);
                 var accepted = new JObject { ["check"] = generationCheck };
                 var warnings = new JArray();

@@ -814,14 +814,7 @@ namespace KimodoBridge.Editor
             }
 
             string prompt = clip.motionPrompt ?? string.Empty;
-            if (KimodoPlayableClipGenerationHostService.IsLoopGenerationEnabled(clip, timelineClipOverride) ||
-                clip.overridePathAngle ||
-                clip.overrideHeading ||
-                (clip.postApplyOutConstraint &&
-                    ((clip.enableOutConstraint &&
-                      clip.inOutConstraintMode != KimodoInOutConstraintMode.None) ||
-                     (externalConstraint?.Enabled == true &&
-                      externalConstraint.DeferredOutConstraintSamples?.Count > 0))))
+            if (RequiresTrajectoryPass(clip, externalConstraint, timelineClipOverride))
             {
                 return await GenerateTrajectoryAndFinalizeAsync(
                     clip,
@@ -889,6 +882,22 @@ namespace KimodoBridge.Editor
                 request.CleanupGeneratedClips();
                 throw;
             }
+        }
+
+        internal static bool RequiresTrajectoryPass(
+            KimodoPlayableClip clip,
+            KimodoExternalConstraintRequest externalConstraint,
+            TimelineClip timelineClipOverride = null)
+        {
+            bool hasDeferredTimelineBoundary = clip.inOutConstraintMode != KimodoInOutConstraintMode.None &&
+                ((clip.postApplyInConstraint && clip.enableInConstraint) ||
+                 (clip.postApplyOutConstraint && clip.enableOutConstraint));
+            bool hasDeferredExternalBoundary = externalConstraint?.Enabled == true &&
+                ((clip.postApplyInConstraint && externalConstraint.DeferredInConstraintSamples?.Count > 0) ||
+                 (clip.postApplyOutConstraint && externalConstraint.DeferredOutConstraintSamples?.Count > 0));
+            return KimodoPlayableClipGenerationHostService.IsLoopGenerationEnabled(clip, timelineClipOverride) ||
+                clip.overridePathAngle || clip.overrideHeading ||
+                hasDeferredTimelineBoundary || hasDeferredExternalBoundary;
         }
 
         private static async Task<KimodoBridgeCommandResult> GenerateWindowedRuntimeAsync(
@@ -1078,7 +1087,8 @@ namespace KimodoBridge.Editor
                     token,
                     timelineClipOverride: timelineClipOverride,
                     generateLoopOverride: false,
-                    deferOutConstraint: clip.postApplyOutConstraint);
+                    deferOutConstraint: clip.postApplyOutConstraint,
+                    deferInConstraint: clip.postApplyInConstraint);
                 firstRequest.AnalysisOptionsJson = string.Empty;
                 firstRequest.Progress = (stage, message) =>
                     progress?.Invoke(stage, $"Trajectory pass 1/2: {message}");
@@ -1112,7 +1122,8 @@ namespace KimodoBridge.Editor
                     timelineClipOverride: timelineClipOverride,
                     enableAutoBeginAnchor: false,
                     generateLoopOverride: generateLoop,
-                    deferOutConstraint: clip.postApplyOutConstraint);
+                    deferOutConstraint: clip.postApplyOutConstraint,
+                    deferInConstraint: clip.postApplyInConstraint);
                 KimodoRawMotionData motion = ParseFirstPassMotion(firstRequest, firstResult, "Trajectory");
                 string combinedConstraints = ShiftConstraintFrames(
                     firstRequest.Constraints.json,
@@ -1178,16 +1189,17 @@ namespace KimodoBridge.Editor
                         headingConstraintJson);
                 }
                 finalRequest.Constraints.json = combinedConstraints;
-                if (clip.postApplyOutConstraint &&
-                    !string.IsNullOrWhiteSpace(finalRequest.DeferredOutConstraintJson))
+                if ((clip.postApplyInConstraint && !string.IsNullOrWhiteSpace(finalRequest.DeferredInConstraintJson)) ||
+                    (clip.postApplyOutConstraint && !string.IsNullOrWhiteSpace(finalRequest.DeferredOutConstraintJson)))
                 {
                     int? syntheticAutoBeginFrame = firstRequest.HasSyntheticAutoBeginConstraint &&
                         firstRequest.ConstraintSamples != null && firstRequest.ConstraintSamples.Count > 0
                             ? Mathf.RoundToInt((float)(firstRequest.ConstraintSamples[0].sampleTime * finalRequest.TargetFrameRate))
                             : (int?)null;
-                    finalRequest.Constraints.json = KimodoPostApplyOutConstraintUtility.Apply(
-                        combinedConstraints,
-                        finalRequest.DeferredOutConstraintJson,
+                    finalRequest.Constraints.json = KimodoPostApplyOutConstraintUtility.ApplyInOut(
+                        finalRequest.Constraints.json,
+                        clip.postApplyInConstraint ? finalRequest.DeferredInConstraintJson : string.Empty,
+                        clip.postApplyOutConstraint ? finalRequest.DeferredOutConstraintJson : string.Empty,
                         motion,
                         modelName,
                         finalRequest.TargetFrameRate,

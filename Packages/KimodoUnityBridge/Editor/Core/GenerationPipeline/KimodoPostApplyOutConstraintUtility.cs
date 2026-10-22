@@ -9,7 +9,7 @@ using UnityEngine.Timeline;
 namespace KimodoBridge.Editor
 {
     /// <summary>
-    /// Re-anchors deferred Out raw constraints after the first trajectory pass.
+    /// Re-anchors deferred In/Out raw constraints after the first trajectory pass.
     /// Raw constraints are already in the SOMA protocol space; only their planar
     /// root transform is changed, while Y, pitch/roll and local body rotations remain intact.
     /// </summary>
@@ -34,96 +34,176 @@ namespace KimodoBridge.Editor
             float frameRate,
             int runtimeTrimStartFrame,
             KimodoTimelineInOutConstraintContext timelineContext,
+            int? syntheticAutoBeginFrame = null,
+            bool preferStart = false)
+        {
+            return preferStart
+                ? ApplyInOut(existingJson, deferredOutJson, string.Empty, firstPassMotion, modelName, frameRate,
+                    runtimeTrimStartFrame, timelineContext, syntheticAutoBeginFrame)
+                : ApplyInOut(existingJson, string.Empty, deferredOutJson, firstPassMotion, modelName, frameRate,
+                    runtimeTrimStartFrame, timelineContext, syntheticAutoBeginFrame);
+        }
+
+        internal static string ApplyInOut(
+            string existingJson,
+            string deferredInJson,
+            string deferredOutJson,
+            KimodoRawMotionData firstPassMotion,
+            string modelName,
+            float frameRate,
+            int runtimeTrimStartFrame,
+            KimodoTimelineInOutConstraintContext timelineContext,
             int? syntheticAutoBeginFrame = null)
         {
-            if (string.IsNullOrWhiteSpace(deferredOutJson))
-            {
-                return existingJson ?? string.Empty;
-            }
-
             JArray existing = ParseArray(existingJson);
-            JArray deferred = ParseArray(deferredOutJson);
-            List<RootRow> deferredRows = ReadRows(deferred);
-            if (deferredRows.Count == 0)
-            {
+            JArray deferredIn = ParseArray(deferredInJson);
+            JArray deferredOut = ParseArray(deferredOutJson);
+            List<RootRow> inRows = ReadRows(deferredIn);
+            List<RootRow> outRows = ReadRows(deferredOut);
+            if (inRows.Count == 0 && outRows.Count == 0)
                 return existing.ToString(Formatting.None);
-            }
 
-            int firstFrame = deferredRows.Min(row => row.Frame);
-            int lastFrame = deferredRows.Max(row => row.Frame);
             List<RootRow> existingRows = ReadRows(existing);
-            RootRow anchor = SelectAnchor(existingRows, firstFrame, lastFrame, syntheticAutoBeginFrame);
-            PlanarTransform transform = PlanarTransform.Identity;
-            if (anchor != null)
-            {
-                if (TryReadOriginalTimelineRoot(
-                        timelineContext,
-                        anchor.Frame,
-                        frameRate,
-                        runtimeTrimStartFrame,
-                        modelName,
-                        out Vector3 generatedPosition,
-                        out Quaternion generatedHeading))
-                {
-                    transform = PlanarTransform.FromSourceToTarget(
-                        generatedPosition,
-                        generatedHeading,
-                        anchor.Position,
-                        anchor.HasHeading ? anchor.Heading : generatedHeading);
-                }
-                else
-                {
-                    throw new InvalidOperationException("Postapply Out could not read the original SOMA FullBody anchor.");
-                }
-            }
-            else if (firstPassMotion != null)
-            {
-                RootRow outAnchor = deferredRows
-                    .OrderByDescending(row => row.Frame)
-                    .ThenByDescending(row => row.RecordIndex)
-                    .ThenByDescending(row => row.RowIndex)
-                    .First();
-                int outputFrame = Mathf.Clamp(
-                    outAnchor.Frame - Mathf.Max(0, runtimeTrimStartFrame),
-                    0,
-                    Mathf.Max(0, firstPassMotion.FrameCount - 1));
-                if (!TryReadOriginalTimelineRoot(
-                        timelineContext,
-                        outAnchor.Frame,
-                        frameRate,
-                        runtimeTrimStartFrame,
-                        modelName,
-                        out Vector3 originalPosition,
-                        out Quaternion originalHeading) ||
-                    !TryReadMotionRoot(firstPassMotion, modelName, outputFrame, out Vector3 generatedPosition, out Quaternion generatedHeading))
-                {
-                    throw new InvalidOperationException("Postapply Out could not resolve the first-pass trajectory end Root2D anchor.");
-                }
-                transform = PlanarTransform.FromSourceToTarget(
-                    originalPosition,
-                    originalHeading,
-                    generatedPosition,
-                    generatedHeading);
-            }
+            PlanarTransform inTransform = ResolveTransform(
+                existingRows, inRows, firstPassMotion, modelName, frameRate,
+                runtimeTrimStartFrame, timelineContext, syntheticAutoBeginFrame, preferStart: true);
+            PlanarTransform outTransform = ResolveTransform(
+                existingRows, outRows, firstPassMotion, modelName, frameRate,
+                runtimeTrimStartFrame, timelineContext, syntheticAutoBeginFrame, preferStart: false);
 
             JArray filtered = new JArray();
             foreach (JObject record in existing.OfType<JObject>())
             {
-                if (!FilterRecordOutsideRange(record, firstFrame, lastFrame))
+                if (!FilterRecordOutsideRanges(record, inRows, outRows)) continue;
+                filtered.Add(record);
+            }
+            AppendTransformed(deferredIn, inTransform, filtered);
+            AppendTransformed(
+                deferredOut,
+                outTransform,
+                filtered,
+                inRows.Count > 0 ? new HashSet<int>(inRows.Select(row => row.Frame)) : null);
+
+            string result = filtered.ToString(Formatting.None);
+            if (!TryValidateRawConstraintRootMotion(result, frameRate, out string error))
+            {
+                throw new InvalidOperationException($"Postapply In/Out constraints violate root motion limits: {error}");
+            }
+            return result;
+        }
+
+        internal static bool TryValidateRawConstraintRootMotion(
+            string rawConstraintJson,
+            float frameRate,
+            out string error)
+        {
+            return TryValidateRootRows(ReadRows(ParseArray(rawConstraintJson)), frameRate, out error);
+        }
+
+        private static bool TryValidateRootRows(List<RootRow> rows, float frameRate, out string error)
+        {
+            error = string.Empty;
+            RootRow previous = null;
+            Vector3 previousVelocity = Vector3.zero;
+            bool hasVelocity = false;
+            foreach (RootRow current in rows.OrderBy(row => row.Frame).ThenBy(row => row.RecordIndex).ThenBy(row => row.RowIndex))
+            {
+                if (previous == null)
+                {
+                    previous = current;
+                    continue;
+                }
+                int frameDelta = current.Frame - previous.Frame;
+                if (frameDelta <= 0)
+                {
+                    previous = current;
+                    continue;
+                }
+                float dt = frameDelta / Mathf.Max(1f, frameRate);
+                Vector3 velocity = (current.Position - previous.Position) / dt;
+                float speed = velocity.magnitude;
+                float acceleration = (velocity - (hasVelocity ? previousVelocity : Vector3.zero)).magnitude / dt;
+                if (speed > KimodoGenerationWarningCheckService.MaxSpeedMetersPerSecond)
+                {
+                    error = $"Raw constraint root speed {speed:F3} m/s exceeds {KimodoGenerationWarningCheckService.MaxSpeedMetersPerSecond:F1} m/s.";
+                    return false;
+                }
+                if (acceleration > KimodoGenerationWarningCheckService.MaxAccelerationMetersPerSecondSquared)
+                {
+                    error = $"Raw constraint root acceleration {acceleration:F3} m/s² exceeds {KimodoGenerationWarningCheckService.MaxAccelerationMetersPerSecondSquared:F1} m/s².";
+                    return false;
+                }
+                previousVelocity = velocity;
+                hasVelocity = true;
+                previous = current;
+            }
+            return true;
+        }
+
+        private static PlanarTransform ResolveTransform(
+            List<RootRow> existingRows,
+            List<RootRow> deferredRows,
+            KimodoRawMotionData firstPassMotion,
+            string modelName,
+            float frameRate,
+            int runtimeTrimStartFrame,
+            KimodoTimelineInOutConstraintContext timelineContext,
+            int? syntheticAutoBeginFrame,
+            bool preferStart)
+        {
+            if (deferredRows == null || deferredRows.Count == 0) return PlanarTransform.Identity;
+            int firstFrame = deferredRows.Min(row => row.Frame);
+            int lastFrame = deferredRows.Max(row => row.Frame);
+            RootRow anchor = SelectAnchor(existingRows, firstFrame, lastFrame, syntheticAutoBeginFrame, preferStart);
+            if (anchor != null)
+            {
+                if (TryReadOriginalTimelineRoot(timelineContext, anchor.Frame, frameRate,
+                        runtimeTrimStartFrame, modelName, out Vector3 sourcePosition, out Quaternion sourceHeading))
+                {
+                    return PlanarTransform.FromSourceToTarget(
+                        sourcePosition, sourceHeading, anchor.Position,
+                        anchor.HasHeading ? anchor.Heading : sourceHeading);
+                }
+                throw new InvalidOperationException($"Postapply {(preferStart ? "In" : "Out")} could not read the original SOMA FullBody anchor.");
+            }
+            if (firstPassMotion == null) return PlanarTransform.Identity;
+
+            RootRow boundary = deferredRows
+                .OrderBy(row => preferStart ? row.Frame : -row.Frame)
+                .ThenByDescending(row => row.RecordIndex)
+                .ThenByDescending(row => row.RowIndex)
+                .First();
+            int outputFrame = Mathf.Clamp(
+                boundary.Frame - Mathf.Max(0, runtimeTrimStartFrame),
+                0,
+                Mathf.Max(0, firstPassMotion.FrameCount - 1));
+            if (!TryReadOriginalTimelineRoot(timelineContext, boundary.Frame, frameRate,
+                    runtimeTrimStartFrame, modelName, out Vector3 originalPosition, out Quaternion originalHeading) ||
+                !TryReadMotionRoot(firstPassMotion, modelName, outputFrame,
+                    out Vector3 generatedPosition, out Quaternion generatedHeading))
+            {
+                throw new InvalidOperationException($"Postapply {(preferStart ? "In" : "Out")} could not resolve the first-pass trajectory {(preferStart ? "start" : "end")} Root2D anchor.");
+            }
+            return PlanarTransform.FromSourceToTarget(
+                originalPosition, originalHeading, generatedPosition, generatedHeading);
+        }
+
+        private static void AppendTransformed(
+            JArray source,
+            PlanarTransform transform,
+            JArray destination,
+            ISet<int> excludedFrames = null)
+        {
+            foreach (JObject record in source.OfType<JObject>())
+            {
+                if (excludedFrames != null &&
+                    !FilterRecordFrames(record, frame => !excludedFrames.Contains(frame)))
                 {
                     continue;
                 }
-
-                filtered.Add(record);
-            }
-
-            foreach (JObject record in deferred.OfType<JObject>())
-            {
                 TransformRecord(record, transform);
-                filtered.Add(record);
+                destination.Add(record);
             }
-
-            return filtered.ToString(Formatting.None);
         }
 
         private static JArray ParseArray(string json)
@@ -174,7 +254,8 @@ namespace KimodoBridge.Editor
             List<RootRow> rows,
             int firstFrame,
             int lastFrame,
-            int? syntheticAutoBeginFrame)
+            int? syntheticAutoBeginFrame,
+            bool preferStart)
         {
             if (rows == null || rows.Count == 0) return null;
             IEnumerable<RootRow> eligibleRows = syntheticAutoBeginFrame.HasValue
@@ -183,7 +264,7 @@ namespace KimodoBridge.Editor
             RootRow inRange = rows
                 .Where(row => !syntheticAutoBeginFrame.HasValue || row.Frame != syntheticAutoBeginFrame.Value)
                 .Where(row => row.Frame >= firstFrame && row.Frame <= lastFrame)
-                .OrderByDescending(row => row.Frame)
+                .OrderBy(row => preferStart ? row.Frame : -row.Frame)
                 .ThenByDescending(row => row.RecordIndex)
                 .ThenByDescending(row => row.RowIndex)
                 .FirstOrDefault();
@@ -191,7 +272,7 @@ namespace KimodoBridge.Editor
 
             return eligibleRows
                 .OrderBy(row => DistanceToRange(row.Frame, firstFrame, lastFrame))
-                .ThenByDescending(row => row.Frame)
+                .ThenBy(row => preferStart ? row.Frame : -row.Frame)
                 .ThenByDescending(row => row.RecordIndex)
                 .ThenByDescending(row => row.RowIndex)
                 .FirstOrDefault();
@@ -202,14 +283,32 @@ namespace KimodoBridge.Editor
             return frame < firstFrame ? firstFrame - frame : frame > lastFrame ? frame - lastFrame : 0;
         }
 
-        private static bool FilterRecordOutsideRange(JObject record, int firstFrame, int lastFrame)
+        private static bool FilterRecordOutsideRanges(
+            JObject record,
+            List<RootRow> inRows,
+            List<RootRow> outRows)
+        {
+            if (record["frame_indices"] is not JArray) return true;
+            int? inFirst = inRows != null && inRows.Count > 0 ? inRows.Min(row => row.Frame) : (int?)null;
+            int? inLast = inRows != null && inRows.Count > 0 ? inRows.Max(row => row.Frame) : (int?)null;
+            int? outFirst = outRows != null && outRows.Count > 0 ? outRows.Min(row => row.Frame) : (int?)null;
+            int? outLast = outRows != null && outRows.Count > 0 ? outRows.Max(row => row.Frame) : (int?)null;
+            return FilterRecordFrames(record, frame =>
+            {
+                bool inRange = inFirst.HasValue && frame >= inFirst.Value && frame <= inLast.Value;
+                bool outRange = outFirst.HasValue && frame >= outFirst.Value && frame <= outLast.Value;
+                return !inRange && !outRange;
+            });
+        }
+
+        private static bool FilterRecordFrames(JObject record, Func<int, bool> keepFrame)
         {
             if (record["frame_indices"] is not JArray frames) return true;
             var keep = new List<int>(frames.Count);
             for (int i = 0; i < frames.Count; i++)
             {
                 int frame = frames[i].Value<int>();
-                if (frame < firstFrame || frame > lastFrame) keep.Add(i);
+                if (keepFrame(frame)) keep.Add(i);
             }
             if (keep.Count == frames.Count) return true;
             if (keep.Count == 0) return false;

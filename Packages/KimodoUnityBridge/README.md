@@ -38,6 +38,8 @@ For a manifest dependency, use the same Git URL:
 
 Runtime diagnostics are written to `NvlabKimodoQuickServer~/log/setup.log` and `NvlabKimodoQuickServer~/log/bridge_server.log` in the Unity project.
 
+The QuickServer TCP `generate` command accepts `output_mp4: true` to save an MP4 render in the QuickServer directory while preserving the selected motion output format. The JSON response includes the absolute `mp4_path`; the binary payload remains only the selected motion format. The launcher discovers `C:\nvlab\UniMate` beside the repositories by default; set `KIMODO_UNIMATE_ROOT` to override it.
+
 ## AI Agent Manual
 
 Read [SKILL.md](SKILL.md) for purpose, installation, and documentation navigation; the animation workflow, task routing, tool coordination, and shared evidence rules are in [`tools/common.md`](tools/common.md). `server.install` and `animation.generate` are asynchronous and return a `request_id`; poll either with `generation.get`. Command definitions are kept in [Command/help.json](Command/help.json).

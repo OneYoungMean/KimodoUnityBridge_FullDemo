@@ -785,12 +785,18 @@ namespace KimodoUnityBridge.Command
                 new PropertyDefinition("window_frames", new JObject { ["type"] = "integer", ["minimum"] = 1, ["default"] = 1,
                     ["description"] = "Coverage at 60 FPS. Converted to model frames by ceil(window_frames * model_fps / 60), minimum 1; never silently shortened." }, false),
                 new PropertyDefinition("sample_count", new JObject { ["type"] = "integer", ["minimum"] = 1, ["default"] = 1,
-                    ["description"] = "Distinct samples within the converted window. One preserves the seam; multiple samples include both endpoints." }, false));
+                    ["description"] = "Distinct samples within the converted window. One preserves the seam; multiple samples include both endpoints." }, false),
+                new PropertyDefinition("post_apply", new JObject { ["type"] = "boolean",
+                    ["description"] = "Generate a trajectory first, align this boundary against it in SOMA Root2D space, then include the boundary in the final raw constraints." }, false));
+            JObject inSide = (JObject)side.DeepClone();
+            inSide["properties"]["post_apply"]["default"] = false;
+            JObject outSide = (JObject)side.DeepClone();
+            outSide["properties"]["post_apply"]["default"] = true;
             JObject config = Properties(
                 new PropertyDefinition("mode", new JObject { ["type"] = "string", ["enum"] = new JArray("outside", "inside"), ["default"] = "outside",
                     ["description"] = "Outside pads generation with source context then crops it off; inside constrains the returned clip's start/end windows. Output duration is preserved." }, false),
-                new PropertyDefinition("in", (JObject)side.DeepClone(), false),
-                new PropertyDefinition("out", (JObject)side.DeepClone(), false));
+                new PropertyDefinition("in", inSide, false),
+                new PropertyDefinition("out", outSide, false));
             config["anyOf"] = new JArray(new JObject { ["required"] = new JArray("in") }, new JObject { ["required"] = new JArray("out") });
             return Properties(new PropertyDefinition("inout", config, true));
         }
@@ -1071,21 +1077,6 @@ namespace KimodoUnityBridge.Command
             public int LockedEndFrame { get; }
             public int RequestedStartFrame { get; }
             public int RequestedEndFrame { get; }
-        }
-
-        private readonly struct ResolvedCharacter
-        {
-            public ResolvedCharacter(GameObject root, Avatar avatar, string name)
-            {
-                Root = root;
-                Avatar = avatar;
-                Name = name;
-            }
-
-            public GameObject Root { get; }
-            public Avatar Avatar { get; }
-            public UnityEngine.Object Target => Root;
-            public string Name { get; }
         }
 
         private readonly struct PropertyDefinition

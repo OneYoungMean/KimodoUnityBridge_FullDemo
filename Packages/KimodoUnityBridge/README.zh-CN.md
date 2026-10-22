@@ -38,6 +38,8 @@ https://github.com/OneYoungMean/KimodoUnityBridge.git
 
 运行时诊断日志位于 Unity 项目中的 `NvlabKimodoQuickServer~/log/setup.log` 和 `NvlabKimodoQuickServer~/log/bridge_server.log`。
 
+QuickServer 的 TCP `generate` 命令支持 `output_mp4: true`，可在保留原动作输出格式的同时将 MP4 保存到 QuickServer 目录。JSON 响应会返回 MP4 的绝对路径 `mp4_path`；二进制数据仍只包含所选的动作格式。默认从同级目录发现 `C:\nvlab\UniMate`，也可以用 `KIMODO_UNIMATE_ROOT` 指定 UniMate 路径。
+
 ## AI Agent 使用手册
 
 [SKILL.md](SKILL.md) 介绍用途、安装和文档导航；动画工作流、任务分流、工具编排和共享证据规则位于 [`tools/common.md`](tools/common.md)。`server.install` 与 `animation.generate` 均为异步命令，都会返回 `request_id`，统一通过 `generation.get` 轮询。命令定义位于 [Command/help.json](Command/help.json)。

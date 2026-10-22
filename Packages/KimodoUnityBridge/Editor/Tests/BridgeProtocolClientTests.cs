@@ -61,7 +61,8 @@ namespace KimodoBridge.Editor.Tests
                             prompt = "idle",
                             duration = 1f,
                             steps = 1,
-                            model = KimodoMotionModelProfiles.DefaultModelName
+                            model = KimodoMotionModelProfiles.DefaultModelName,
+                            output_mp4 = true
                         },
                         null,
                         CancellationToken.None));
@@ -71,6 +72,7 @@ namespace KimodoBridge.Editor.Tests
                 Assert.That(payload["cmd"]?.Value<string>(), Is.EqualTo("generate"));
                 Assert.That(payload["task_id"]?.Value<string>(), Is.EqualTo(request["task_id"]?.Value<string>()));
                 Assert.That(payload["prompt"]?.Value<string>(), Is.EqualTo("idle"));
+                Assert.That(payload["output_mp4"]?.Value<bool>(), Is.True);
             }
             finally
             {
@@ -78,20 +80,65 @@ namespace KimodoBridge.Editor.Tests
             }
         }
 
+        [Test, Timeout(5000)]
+        public void GenerateRequest_ReadsMotionPayloadAndMp4PathFromJsonHeader()
+        {
+            byte[] expectedPayload = { 1, 2, 3 };
+            byte[] actualPayload = null;
+            string actualMp4Path = null;
+            JObject request = SendSingleRequest(
+                new JObject
+                {
+                    ["status"] = "done",
+                    ["output_format"] = "kmb_v1",
+                    ["mp4_path"] = "C:/quickserver/generated_animation_test.mp4"
+                },
+                (client, port) => client.GenerateAsync(
+                    "127.0.0.1",
+                    port,
+                    new KimodoGenerationRequestDto
+                    {
+                        prompt = "walk",
+                        duration = 1f,
+                        steps = 1,
+                        model = KimodoMotionModelProfiles.DefaultModelName,
+                        output_mp4 = true
+                    },
+                    null,
+                    CancellationToken.None),
+                expectedPayload,
+                result =>
+                {
+                    actualPayload = result.BinaryPayload;
+                    actualMp4Path = result.Header.Value<string>("mp4_path");
+                });
+
+            Assert.That(request.Value<string>("cmd"), Is.EqualTo("generate"));
+            Assert.That(actualPayload, Is.EqualTo(expectedPayload));
+            Assert.That(actualMp4Path, Is.EqualTo("C:/quickserver/generated_animation_test.mp4"));
+        }
+
         private static JObject SendSingleRequest(
             JObject response,
-            System.Func<BridgeProtocolClient, int, Task<BridgeProtocolResponse>> send)
+            System.Func<BridgeProtocolClient, int, Task<BridgeProtocolResponse>> send,
+            byte[] binaryPayload = null,
+            System.Action<BridgeProtocolResponse> inspectResponse = null)
         {
+            if (binaryPayload != null)
+            {
+                response["byte_length"] = binaryPayload.Length;
+            }
             var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
             int port = ((IPEndPoint)listener.LocalEndpoint).Port;
-            Task<JObject> requestTask = ReadAndReplyAsync(listener, response);
+            Task<JObject> requestTask = ReadAndReplyAsync(listener, response, binaryPayload);
             try
             {
                 using (var client = new BridgeProtocolClient(connectTimeoutMs: 1000, ioTimeoutMs: 1000))
                 {
                     BridgeProtocolResponse result = send(client, port).GetAwaiter().GetResult();
                     Assert.That(result?.Header?.Value<string>("status"), Is.EqualTo("done"));
+                    inspectResponse?.Invoke(result);
                 }
                 return requestTask.GetAwaiter().GetResult();
             }
@@ -101,7 +148,10 @@ namespace KimodoBridge.Editor.Tests
             }
         }
 
-        private static async Task<JObject> ReadAndReplyAsync(TcpListener listener, JObject response)
+        private static async Task<JObject> ReadAndReplyAsync(
+            TcpListener listener,
+            JObject response,
+            byte[] binaryPayload = null)
         {
             using (TcpClient connection = await listener.AcceptTcpClientAsync().ConfigureAwait(false))
             using (NetworkStream stream = connection.GetStream())
@@ -113,6 +163,10 @@ namespace KimodoBridge.Editor.Tests
                 response["request_id"] = request.Value<string>("request_id") ?? string.Empty;
                 await writer.WriteAsync(response.ToString(Formatting.None) + "\n").ConfigureAwait(false);
                 await writer.FlushAsync().ConfigureAwait(false);
+                if (binaryPayload != null && binaryPayload.Length > 0)
+                {
+                    await stream.WriteAsync(binaryPayload, 0, binaryPayload.Length).ConfigureAwait(false);
+                }
                 return request;
             }
         }

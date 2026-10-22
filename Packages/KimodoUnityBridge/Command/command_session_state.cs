@@ -212,8 +212,10 @@ namespace KimodoUnityBridge.Command
 
             bool isPath = requestedName.Contains("/");
             // Match the requested identity before resolving Avatars: resolution may reimport a model.
+            Scene activeScene = SceneManager.GetActiveScene();
             IEnumerable<GameObject> candidates = Resources.FindObjectsOfTypeAll<Animator>()
                 .Where(animator => animator != null && animator.gameObject.scene.IsValid() &&
+                    animator.gameObject.scene == activeScene &&
                     !EditorUtility.IsPersistent(animator) && !IsSessionObject(animator.gameObject))
                 .Select(animator => animator.transform.root.gameObject);
             return candidates
@@ -413,16 +415,18 @@ namespace KimodoUnityBridge.Command
             return name;
         }
 
-        private static TimelineGenerationTrace PrepareGenerationTrace(JObject arguments, ResolvedCharacter character, double duration)
+        private static TimelineGenerationTrace PrepareGenerationTrace(JObject arguments, TimelineCharacterRecord character, double duration)
         {
             TimelineSessionRecord session = RequireTimelineSession(arguments);
-            TimelineCharacterRecord target = ResolveSessionCharacter(session, character.Root, character.Name)
-                ?? throw new InvalidOperationException($"Character '{character.Name}' is not in the resolved scene context. Add it with automatic scene resolution.");
-            if (!KimodoRetargetCoreUtility.IsValidHumanoid(target.Avatar))
+            if (!session.Characters.Contains(character))
             {
-                throw new InvalidOperationException($"Character '{target.Name}' requires a valid humanoid Avatar before generation.");
+                throw new InvalidOperationException($"Character '{character.Name}' is not in the active scene context.");
             }
-            return new TimelineGenerationTrace(session, target, target.NextStartSeconds, duration);
+            if (!KimodoRetargetCoreUtility.IsValidHumanoid(character.Avatar))
+            {
+                throw new InvalidOperationException($"Character '{character.Name}' requires a valid humanoid Avatar before generation.");
+            }
+            return new TimelineGenerationTrace(session, character, character.NextStartSeconds, duration);
         }
 
         private static KimodoPlayableClip CreateGenerationPlayableClip(
@@ -463,9 +467,8 @@ namespace KimodoUnityBridge.Command
             // samples still take precedence during constraint normalization;
             // the synthetic anchor is removed when a real boundary exists.
             playableClip.autoBeginAnchor = true;
-            // Command generation uses the two-pass Out alignment by default so
-            // boundary constraints are calibrated against the original Timeline
-            // pose before the final trajectory pass.
+            // Command generation keeps the historical two-pass Out alignment
+            // default; explicit inout.post_apply values can override each side.
             playableClip.postApplyOutConstraint = true;
             if (useExplicitInOut)
             {
@@ -1017,7 +1020,7 @@ namespace KimodoUnityBridge.Command
             }
 
             int frameCount = Math.Max(1, endFrameExclusive - startFrame);
-            KimodoMarkerSampleResult[] samples = CaptureCachedSampleResults(record, character, startFrame, frameCount);
+            KimodoMarkerSampleResult[] samples = CaptureCachedSampleResults(session, record, character, startFrame, frameCount);
             if (samples.Length == 0 || !TryGetRoot2DWorld(samples[0], out Vector3 startPosition, out Quaternion startRotation))
             {
                 throw new InvalidOperationException(
@@ -1146,7 +1149,7 @@ namespace KimodoUnityBridge.Command
                 return;
             }
 
-            KimodoMarkerSampleResult[] endpointSamples = CaptureCachedSampleResults(record, character, startFrame, Math.Max(1, endFrameExclusive - startFrame));
+            KimodoMarkerSampleResult[] endpointSamples = CaptureCachedSampleResults(session, record, character, startFrame, Math.Max(1, endFrameExclusive - startFrame));
             KimodoMarkerSampleResult first = endpointSamples[0];
             KimodoMarkerSampleResult last = endpointSamples[endpointSamples.Length - 1];
             bool valid = first?.sampleData?.IsValid == true && last?.sampleData?.IsValid == true;
@@ -1522,18 +1525,29 @@ namespace KimodoUnityBridge.Command
                 throw new InvalidOperationException($"Character reference '{reference}' identifies a session preview object. Use the source scene character name or object_ref instead.");
             }
             TimelineCharacterRecord match = session.Characters.FirstOrDefault(character =>
-                character.CharacterRef == reference || string.Equals(character.Name, reference, StringComparison.OrdinalIgnoreCase));
+                string.Equals(character.CharacterRef, reference, StringComparison.Ordinal));
             if (match == null && addIfMissing)
             {
                 UnityEngine.Object resolved = ResolveObject(reference);
                 if (resolved == null)
                 {
                     GameObject[] named = ResolveRequestedSceneCharacters(reference);
+                    if (named.Length > 1)
+                    {
+                        string paths = string.Join(", ", named.Select(GetSceneHierarchyPath));
+                        throw new InvalidOperationException(
+                            $"Character name '{reference}' is ambiguous in the active scene ({paths}); use a hierarchy path or object_ref.");
+                    }
                     if (named.Length == 1) resolved = named[0];
                 }
                 GameObject root = resolved as GameObject ?? (resolved as Animator)?.gameObject;
                 Animator animator = root != null ? root.GetComponentInChildren<Animator>(true) : null;
                 root = ResolveCharacterIdentityRoot(root, animator);
+                if (root != null && (!root.scene.IsValid() || root.scene != SceneManager.GetActiveScene() || EditorUtility.IsPersistent(root)))
+                {
+                    throw new InvalidOperationException(
+                        $"Character reference '{reference}' must identify a scene Humanoid Animator in the active scene '{SceneManager.GetActiveScene().name}'.");
+                }
                 string sourceId = root != null ? GetObjectReference(root) : string.Empty;
                 match = session.Characters.FirstOrDefault(character =>
                     string.Equals(character.CharacterRef, sourceId, StringComparison.Ordinal));
@@ -1552,6 +1566,11 @@ namespace KimodoUnityBridge.Command
                 {
                     throw new InvalidOperationException($"Could not create a target AnimationTrack: {error}");
                 }
+            }
+            if (match == null)
+            {
+                match = session.Characters.FirstOrDefault(character =>
+                    string.Equals(character.Name, reference, StringComparison.OrdinalIgnoreCase));
             }
             if (match == null) throw new InvalidOperationException($"Character '{reference}' is not available in the active scene.");
             return match;

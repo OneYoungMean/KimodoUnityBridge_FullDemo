@@ -22,6 +22,7 @@ namespace KimodoUnityBridge.Command
         private const string PhaseTrackVersion = "1-temporal-cluster-v2-command-60";
 
         private static KimodoMarkerSampleResult[] CaptureCachedSampleResults(
+            TimelineSessionRecord session,
             AnalysisCacheRecord record,
             TimelineCharacterRecord character,
             int startFrame,
@@ -33,7 +34,7 @@ namespace KimodoUnityBridge.Command
             {
                 return cached;
             }
-            KimodoMarkerSampleResult[] samples = CaptureSampleResults(character, startFrame, frameCount);
+            KimodoMarkerSampleResult[] samples = CaptureSampleResults(session, character, startFrame, frameCount);
             if (!string.IsNullOrWhiteSpace(key)) AnalysisPoseSamples[key] = samples;
             return samples;
         }
@@ -403,7 +404,7 @@ namespace KimodoUnityBridge.Command
             KimodoMarkerSampleResult[] samples;
             try
             {
-                samples = CaptureCachedSampleResults(subject.Record, subject.Character, subject.StartFrame, frameCount);
+                samples = CaptureCachedSampleResults(session, subject.Record, subject.Character, subject.StartFrame, frameCount);
                 posePreview = CreatePipelinePosePreview(subject.Character, samples[0]);
                 Animator poseAnimator = posePreview.Animator
                     ?? throw new InvalidOperationException($"Character '{subject.Character.Name}' pose preview has no Animator.");

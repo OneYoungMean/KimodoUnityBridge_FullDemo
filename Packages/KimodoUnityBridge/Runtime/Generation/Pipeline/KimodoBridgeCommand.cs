@@ -76,6 +76,7 @@ namespace KimodoBridge
                 motionJsonCompact = result.motionJsonCompact,
                 motionData = result.motionData,
                 motionBytes = result.motionBytes,
+                mp4Path = result.mp4Path,
                 kmbAttachments = result.kmbAttachments,
                 motionFormat = result.motionFormat,
                 rawStatus = result.rawStatus ?? "done",

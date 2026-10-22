@@ -17,6 +17,94 @@ namespace KimodoUnityBridge.Command.Tests
 {
     public sealed class CommandSessionLifecycleTests
     {
+        private const string HumanoidModelPath = "Packages/com.unity.kimodo_unity_motion_tools/Editor/Model/Armature.fbx";
+
+        [Test]
+        public void ResolveSessionCharacterByReference_AddsObjectReferenceAndRejectsAmbiguousOrInactiveSceneTargets()
+        {
+            SceneSetup[] previousSceneSetup = EditorSceneManager.GetSceneManagerSetup();
+            Scene activeScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            Scene inactiveScene = default;
+            TimelineAsset timeline = ScriptableObject.CreateInstance<TimelineAsset>();
+            string fixtureId = Guid.NewGuid().ToString("N");
+            string fixtureFolder = "Assets/Archive/KimodoCommandTests/Fixtures";
+            string activeScenePath = $"{fixtureFolder}/RoleResolution_Active_{fixtureId}.unity";
+            string inactiveScenePath = $"{fixtureFolder}/RoleResolution_Inactive_{fixtureId}.unity";
+            string activeCharacterName = "RoleResolution_" + fixtureId;
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(Application.dataPath, "Archive", "KimodoCommandTests", "Fixtures"));
+                GameObject sceneAnchor = new GameObject("RoleResolutionSceneAnchor");
+                SceneManager.MoveGameObjectToScene(sceneAnchor, activeScene);
+                Avatar avatar = AssetDatabase.LoadAllAssetsAtPath(HumanoidModelPath).OfType<Avatar>()
+                    .FirstOrDefault(item => item.isValid && item.isHuman);
+                Assert.That(avatar, Is.Not.Null, "Missing Humanoid Armature fixture Avatar.");
+                GameObject character = CreateHumanoidCharacter(activeCharacterName, avatar);
+                GameObject ambiguousA = CreateHumanoidCharacter("RoleResolution_Ambiguous", avatar);
+                GameObject ambiguousB = CreateHumanoidCharacter("RoleResolution_Ambiguous", avatar);
+                Assert.That(EditorSceneManager.SaveScene(activeScene, activeScenePath), Is.True,
+                    "Could not save the active scene needed for stable GlobalObjectId resolution.");
+
+                Type context = typeof(command_context);
+                Type sessionType = context.GetNestedType("TimelineSessionRecord", BindingFlags.NonPublic);
+                object session = CreateSessionRecord(sessionType, timeline, null, null, null);
+                MethodInfo resolve = context.GetMethod("ResolveSessionCharacterByReference", BindingFlags.Static | BindingFlags.NonPublic);
+                string characterId = GlobalObjectId.GetGlobalObjectIdSlow(character).ToString();
+                object byId = resolve.Invoke(null, new object[] { session, characterId, true });
+                Assert.That(byId.GetType().GetProperty("Root").GetValue(byId), Is.SameAs(character));
+                object byName = resolve.Invoke(null, new object[] { session, activeCharacterName, true });
+                Assert.That(byName, Is.SameAs(byId), "Name and object_ref should reuse the same character record.");
+                Assert.That(((System.Collections.ICollection)sessionType.GetProperty("Characters").GetValue(session)).Count, Is.EqualTo(1));
+                Assert.That(timeline.GetRootTracks().Count(), Is.EqualTo(1));
+
+                TargetInvocationException ambiguous = Assert.Throws<TargetInvocationException>(() =>
+                    resolve.Invoke(null, new object[] { session, "RoleResolution_Ambiguous", true }));
+                Assert.That(ambiguous.InnerException, Is.TypeOf<InvalidOperationException>());
+                Assert.That(ambiguous.InnerException.Message, Does.Contain("ambiguous in the active scene"));
+                Assert.That(ambiguous.InnerException.Message, Does.Contain("object_ref"));
+                Assert.That(((System.Collections.ICollection)sessionType.GetProperty("Characters").GetValue(session)).Count, Is.EqualTo(1));
+                Assert.That(timeline.GetRootTracks().Count(), Is.EqualTo(1), "Ambiguous resolution must not add tracks.");
+
+                inactiveScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+                GameObject inactiveCharacter = new GameObject("RoleResolution_InactiveCharacter_" + fixtureId);
+                inactiveCharacter.AddComponent<Animator>();
+                SceneManager.MoveGameObjectToScene(inactiveCharacter, inactiveScene);
+                Assert.That(EditorSceneManager.SaveScene(inactiveScene, inactiveScenePath), Is.True,
+                    "Could not save the additive scene needed for stable GlobalObjectId resolution.");
+                Assert.That(SceneManager.SetActiveScene(activeScene), Is.True);
+
+                MethodInfo find = context.GetMethod("ResolveRequestedSceneCharacters", BindingFlags.Static | BindingFlags.NonPublic);
+                Assert.That((GameObject[])find.Invoke(null, new object[] { inactiveCharacter.name }), Is.Empty,
+                    "Name lookup must stay within the active scene.");
+                string inactiveId = GlobalObjectId.GetGlobalObjectIdSlow(inactiveCharacter).ToString();
+                TargetInvocationException inactive = Assert.Throws<TargetInvocationException>(() =>
+                    resolve.Invoke(null, new object[] { session, inactiveId, true }));
+                Assert.That(inactive.InnerException.Message, Does.Contain("in the active scene"));
+                Assert.That(((System.Collections.ICollection)sessionType.GetProperty("Characters").GetValue(session)).Count, Is.EqualTo(1));
+                Assert.That(timeline.GetRootTracks().Count(), Is.EqualTo(1));
+            }
+            finally
+            {
+                if (inactiveScene.IsValid() && inactiveScene.isLoaded)
+                {
+                    if (activeScene.IsValid() && activeScene.isLoaded) SceneManager.SetActiveScene(activeScene);
+                    EditorSceneManager.CloseScene(inactiveScene, true);
+                }
+                if (previousSceneSetup.Any(setup => setup.isLoaded))
+                {
+                    EditorSceneManager.RestoreSceneManagerSetup(previousSceneSetup);
+                }
+                else
+                {
+                    EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+                }
+                UnityEngine.Object.DestroyImmediate(timeline);
+                ArchiveFixtureScene(activeScenePath, fixtureId + "_active");
+                ArchiveFixtureScene(inactiveScenePath, fixtureId + "_inactive");
+                AssetDatabase.Refresh();
+            }
+        }
+
         [TestCase("mesh")]
         [TestCase("missing_avatar")]
         [TestCase("generic_avatar")]
@@ -331,5 +419,34 @@ namespace KimodoUnityBridge.Command.Tests
                 Guid.NewGuid(), "Test", director, timeline, string.Empty, true, metadata, sessionRoot
             });
         }
+
+        private static GameObject CreateHumanoidCharacter(string name, Avatar avatar)
+        {
+            GameObject model = AssetDatabase.LoadAssetAtPath<GameObject>(HumanoidModelPath);
+            Assert.That(model, Is.Not.Null, "Missing Humanoid Armature fixture.");
+            GameObject character = UnityEngine.Object.Instantiate(model);
+            character.name = name;
+            Animator animator = character.GetComponentInChildren<Animator>(true);
+            Assert.That(animator, Is.Not.Null, "Humanoid Armature fixture has no Animator.");
+            animator.avatar = avatar;
+            animator.runtimeAnimatorController = null;
+            return character;
+        }
+
+        private static void ArchiveFixtureScene(string sourcePath, string suffix)
+        {
+            string project = Path.GetFullPath(Directory.GetCurrentDirectory()) + Path.DirectorySeparatorChar;
+            string source = Path.GetFullPath(sourcePath);
+            string archive = Path.GetFullPath(Path.Combine("archive", "kimodo-command-resolution-tests", Path.GetFileNameWithoutExtension(source) + "_" + suffix + ".unity"));
+            if (!source.StartsWith(project, StringComparison.OrdinalIgnoreCase) ||
+                !archive.StartsWith(project, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Fixture archive paths must remain inside the project.");
+            }
+            Directory.CreateDirectory(Path.GetDirectoryName(archive));
+            if (File.Exists(source)) File.Move(source, archive);
+            if (File.Exists(source + ".meta")) File.Move(source + ".meta", archive + ".meta");
+        }
+
     }
 }

@@ -32,6 +32,7 @@ namespace KimodoBridge
         public double? ardy_history_weight;
         public double? ardy_playback_reserve_seconds;
         public string output_format = "kmb_v1";
+        public bool output_mp4;
     }
 
     [Serializable]
@@ -70,6 +71,7 @@ namespace KimodoBridge
         public string motionJsonCompact;
         [NonSerialized] public KimodoRawMotionData motionData;
         [NonSerialized] public byte[] motionBytes;
+        public string mp4Path;
         // `kmb_attachments_v1` keeps each analysis clip independently parseable.
         [NonSerialized] public IReadOnlyList<KimodoBridgeKmbAttachment> kmbAttachments;
         public string motionFormat;
@@ -118,6 +120,12 @@ namespace KimodoBridge
         {
             get => motionBytes;
             set => motionBytes = value;
+        }
+
+        public string Mp4Path
+        {
+            get => mp4Path;
+            set => mp4Path = value;
         }
 
         public IReadOnlyList<KimodoBridgeKmbAttachment> KmbAttachments

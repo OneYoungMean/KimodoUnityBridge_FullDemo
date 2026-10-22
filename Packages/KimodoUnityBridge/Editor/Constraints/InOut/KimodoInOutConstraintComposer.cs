@@ -43,8 +43,12 @@ namespace KimodoBridge.Editor
             {
                 // Keep the boundary first so the previous Timeline frame wins same-frame conflicts.
                 // ARDY still promotes its single In sample to a ClipConstraint.
-                built.CombinedSamples.AddRange(beginSamples);
                 built.BeginBoundarySample = beginSamples[0];
+                built.BeginBoundarySamples.AddRange(beginSamples);
+                if (!request.DeferBeginConstraint)
+                {
+                    built.CombinedSamples.AddRange(beginSamples);
+                }
             }
 
             AppendSamples(request.ManualSamples, built.CombinedSamples);
@@ -57,21 +61,11 @@ namespace KimodoBridge.Editor
             }
             built.EndBoundarySamples.AddRange(endSamples);
 
-            if (!request.DeferEndConstraint &&
-                !KimodoGenerationWarningCheckService.TryValidateRootMotionConstraints(
-                    built.CombinedSamples,
-                    KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName),
-                    out error))
-            {
-                error = $"Boundary constraints violate root motion limits: {error}";
-                return false;
-            }
-
             double normalizationAnchorWindowSeconds = request.AutoBeginAnchor
                 ? AutoBeginAnchorWindowSeconds
                 : double.PositiveInfinity;
             KimodoMarkerSampleResult autoBegin = null;
-            if (request.AutoBeginAnchor &&
+            if (request.AutoBeginAnchor && !request.DeferBeginConstraint &&
                 !KimodoConstraintNormalizationUtility.HasNormalizationAnchor(
                     built.CombinedSamples,
                     normalizationAnchorWindowSeconds) &&
@@ -86,14 +80,18 @@ namespace KimodoBridge.Editor
                     autoBegin
                 };
                 withAutoBegin.AddRange(built.CombinedSamples);
-                if (KimodoGenerationWarningCheckService.TryValidateRootMotionConstraints(
-                        withAutoBegin,
+                bool autoBeginWithinRawMotionLimits = KimodoPostApplyOutConstraintUtility.TryValidateRawConstraintRootMotion(
+                        ExportSamples(request, withAutoBegin),
                         KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName),
-                        out _))
+                        out _);
+                if (autoBeginWithinRawMotionLimits)
                 {
                     built.CombinedSamples.Insert(0, autoBegin);
                     built.HasSyntheticAutoBeginConstraint = true;
                 }
+                // Auto Begin is a synthetic normalization anchor. A raw speed or
+                // acceleration violation removes this optional anchor; authored
+                // boundary constraints are validated below and still report errors.
             }
 
             float generationFrameRate = KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName);
@@ -116,9 +114,34 @@ namespace KimodoBridge.Editor
                 clipStartSeconds: 0.0,
                 clipDurationSeconds: clipDurationSeconds,
                 exportFps: generationFrameRate);
+            if (!KimodoPostApplyOutConstraintUtility.TryValidateRawConstraintRootMotion(
+                    built.ConstraintsJson,
+                    generationFrameRate,
+                    out error))
+            {
+                error = $"Boundary constraints violate root motion limits: {error}";
+                return false;
+            }
 
             result = built;
             return true;
+        }
+
+        private static string ExportSamples(
+            KimodoInOutConstraintRequest request,
+            IReadOnlyList<KimodoMarkerSampleResult> samples)
+        {
+            float frameRate = KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName);
+            Func<KimodoMarkerSampleResult, KimodoConstraintProjectedPose> projector =
+                request.TimelineContext?.Animator != null
+                    ? KimodoConstraintExportProjector.Create(request.TimelineContext)
+                    : KimodoConstraintExportProjector.CreateProfileNative(request.ModelName);
+            return KimodoConstraintJsonExporter.ToConstraintsJson(
+                samples,
+                new KimodoConstraintExportContext { projectedPoseProjector = projector },
+                0.0,
+                KimodoInOutConstraintTools.ResolveConstraintClipDurationSeconds(request.GenerationFrames, frameRate),
+                frameRate);
         }
 
         internal static void AppendSamples(

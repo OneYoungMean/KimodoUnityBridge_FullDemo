@@ -25,6 +25,7 @@ namespace KimodoUnityBridge.Generation.Tests
             "RawStatus",
             "Message",
             "MotionBytes",
+            "Mp4Path",
             "KmbAttachments",
             "MotionRepFingerprint",
             "ResolvedSeed",
@@ -39,6 +40,7 @@ namespace KimodoUnityBridge.Generation.Tests
             "motionJsonCompact",
             "motionData",
             "motionBytes",
+            "mp4Path",
             "kmbAttachments",
             "motionFormat",
             "rawStatus",
@@ -57,6 +59,16 @@ namespace KimodoUnityBridge.Generation.Tests
             AssertMembers(typeof(KimodoBridgeGenerationResult), ResultFieldNames);
             AssertMembers(typeof(KimodoGenerationResultDto), DtoFieldNames);
             AssertMembers(typeof(KimodoBridgeCommandResult), ResultFieldNames);
+        }
+
+        [Test]
+        public void BridgeCommandResultFrom_PreservesMp4Path()
+        {
+            const string mp4Path = "C:/quickserver/generated_animation_test.mp4";
+            KimodoBridgeCommandResult result = KimodoBridgeCommandResult.From(
+                new KimodoGenerationResultDto { Mp4Path = mp4Path });
+
+            Assert.That(result.Mp4Path, Is.EqualTo(mp4Path));
         }
 
         [Test]

@@ -73,12 +73,13 @@ namespace KimodoUnityBridge.Command
                 throw new InvalidOperationException("inout requires in, out, or both.");
             var request = new KimodoExternalConstraintRequest { Enabled = true, IncludeTimelineConstraints = true };
             var diagnostics = new JObject { ["mode"] = mode, ["command_fps"] = SessionFrameRate, ["model_fps"] = fps };
-            var plans = new List<(bool IsIn, TimelineAnimationRecord Animation, CommandInOutWindow Window)>();
+            var plans = new List<(bool IsIn, bool PostApply, TimelineAnimationRecord Animation, CommandInOutWindow Window)>();
             foreach (string key in new[] { "in", "out" })
             {
                 if (config.Property(key) == null) continue;
                 JObject side = config[key] as JObject ?? throw new InvalidOperationException($"inout.{key} must be an object.");
-                RequireInOutFields(side, "source", "window_frames", "sample_count");
+                RequireInOutFields(side, "source", "window_frames", "sample_count", "post_apply");
+                bool postApply = side.Value<bool?>("post_apply") ?? key == "out";
                 JObject source = side["source"] as JObject ?? throw new InvalidOperationException($"inout.{key}.source is required.");
                 RequireInOutFields(source, "character", "clip", "frame");
                 string characterName = source.Value<string>("character") ?? trace.Character.Name;
@@ -92,7 +93,9 @@ namespace KimodoUnityBridge.Command
                 int startFrame = (int)Math.Floor((animation.TimelineStartSeconds + window.SourceTimes[0]) * SessionFrameRate);
                 int endFrame = (int)Math.Ceiling((animation.TimelineStartSeconds + window.SourceTimes.Last()) * SessionFrameRate) + 1;
                 ThrowIfGenerationRangeLocked(trace.Session, character, startFrame, endFrame, GenerateAnimationCommand);
-                plans.Add((key == "in", animation, window));
+                plans.Add((key == "in", postApply, animation, window));
+                if (key == "in") request.DeferInConstraint = postApply;
+                else request.DeferOutConstraint = postApply;
                 if (mode == "outside")
                 {
                     if (key == "in") request.ContextBeforeFrames = window.FrameCount;
@@ -104,6 +107,7 @@ namespace KimodoUnityBridge.Command
                     ["window_frames"] = side.Value<int?>("window_frames") ?? 1,
                     ["model_window_frames"] = window.FrameCount,
                     ["sample_count"] = window.SourceTimes.Length,
+                    ["post_apply"] = postApply,
                     ["source_frames_60"] = new JArray(window.SourceTimes.Select(t => Mathf.RoundToInt((float)(t * SessionFrameRate)))),
                     ["source_timeline_frames_60"] = new JArray(window.SourceTimes.Select(t =>
                         Mathf.RoundToInt((float)((animation.TimelineStartSeconds + t) * SessionFrameRate)))),
@@ -141,7 +145,11 @@ namespace KimodoUnityBridge.Command
                             throw new InvalidOperationException($"In/Out pose capture failed: {error}");
                         sample.constraintMode = "fullbody";
                         request.ConstraintSamples.Add(sample);
-                        if (!plan.IsIn)
+                        if (plan.IsIn && plan.PostApply)
+                        {
+                            request.DeferredInConstraintSamples.Add(sample);
+                        }
+                        else if (!plan.IsIn && plan.PostApply)
                         {
                             request.DeferredOutConstraintSamples.Add(sample);
                         }

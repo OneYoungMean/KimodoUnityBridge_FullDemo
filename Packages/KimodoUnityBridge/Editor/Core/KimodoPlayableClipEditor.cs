@@ -37,6 +37,7 @@ namespace KimodoBridge.Editor
         private SerializedProperty enableInConstraint;
         private SerializedProperty enableOutConstraint;
         private SerializedProperty postApplyOutConstraint;
+        private SerializedProperty postApplyInConstraint;
         private SerializedProperty inConstraintWindowFrames;
         private SerializedProperty inConstraintSampleCount;
         private SerializedProperty outConstraintWindowFrames;
@@ -141,6 +142,7 @@ namespace KimodoBridge.Editor
             enableInConstraint = serializedObject.FindProperty("enableInConstraint");
             enableOutConstraint = serializedObject.FindProperty("enableOutConstraint");
             postApplyOutConstraint = serializedObject.FindProperty("postApplyOutConstraint");
+            postApplyInConstraint = serializedObject.FindProperty("postApplyInConstraint");
             inConstraintWindowFrames = serializedObject.FindProperty("inConstraintWindowFrames");
             inConstraintSampleCount = serializedObject.FindProperty("inConstraintSampleCount");
             outConstraintWindowFrames = serializedObject.FindProperty("outConstraintWindowFrames");
@@ -423,6 +425,13 @@ namespace KimodoBridge.Editor
                         float previousLabelWidth = EditorGUIUtility.labelWidth;
                         EditorGUIUtility.labelWidth = 28f;
                         EditorGUILayout.PropertyField(enableInConstraint, new GUIContent("In"), GUILayout.Width(60f));
+                        if (enableInConstraint.boolValue && postApplyInConstraint != null)
+                        {
+                            EditorGUILayout.PropertyField(
+                                postApplyInConstraint,
+                                new GUIContent("Post In", "Defer In until after the first trajectory pass, align it in SOMA Root2D space, then apply it in the second pass."),
+                                GUILayout.Width(82f));
+                        }
                         EditorGUIUtility.labelWidth = 36f;
                         EditorGUILayout.PropertyField(enableOutConstraint, new GUIContent("Out"), GUILayout.Width(60f));
                         EditorGUIUtility.labelWidth = previousLabelWidth;

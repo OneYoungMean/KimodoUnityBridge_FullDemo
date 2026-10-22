@@ -9,7 +9,7 @@ namespace KimodoUnityBridge.Command
     {
         private static JObject BuildGenerationCheck(
             JObject arguments,
-            ResolvedCharacter character,
+            TimelineCharacterRecord character,
             int durationFrames,
             float frameRate,
             string modelName,

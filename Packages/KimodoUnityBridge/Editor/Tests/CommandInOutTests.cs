@@ -124,6 +124,8 @@ namespace KimodoUnityBridge.Command.Tests
                 var trace = Activator.CreateInstance(traceType, new object[] { session, character, 8.0, 2.0 });
                 var arguments = JObject.Parse(@"{'constraints':[{'inout':{'in':{'source':{'clip':'Previous'},'window_frames':30,'sample_count':5},'out':{'source':{'clip':'Next'},'window_frames':12,'sample_count':3}}}]}");
                 arguments["constraints"][0]["inout"]["mode"] = inside ? "inside" : "outside";
+                arguments["constraints"][0]["inout"]["in"]["post_apply"] = true;
+                arguments["constraints"][0]["inout"]["out"]["post_apply"] = true;
                 var build = typeof(command_context).GetMethod("BuildCommandInOutConstraints", PrivateStatic);
                 director.RebuildGraph();
                 director.Evaluate();
@@ -142,6 +144,8 @@ namespace KimodoUnityBridge.Command.Tests
                     "Command diagnostics retain both explicit In and Out samples.");
                 Assert.That(external.DeferredOutConstraintSamples.Count, Is.EqualTo(3),
                     "Explicit Out samples are deferred for postapply calibration.");
+                Assert.That(external.DeferredInConstraintSamples.Count, Is.EqualTo(5),
+                    "Explicit In samples are deferred for postapply calibration.");
                 Assert.That(director.time, Is.EqualTo(0).Within(1e-8), "Sampling must restore Timeline time.");
                 var diagnostics = (JObject)traceType.GetProperty("InOutSampling").GetValue(trace);
                 Assert.That(diagnostics["in"]["source_times_seconds"], Is.Null);
@@ -169,14 +173,16 @@ namespace KimodoUnityBridge.Command.Tests
                 var request = KimodoPlayableClipGenerationHostService.BuildRequest(
                     playable, "stand", external, CancellationToken.None,
                     timelineClipOverride: output,
-                    deferOutConstraint: true);
+                    deferOutConstraint: true,
+                    deferInConstraint: true);
                 Assert.That(request.TargetFrameCount, Is.EqualTo(60));
                 Assert.That(request.RuntimeFrameCount, Is.EqualTo(inside ? 60 : 81));
                 Assert.That(request.RuntimeTrimStartFrame, Is.EqualTo(inside ? 0 : 15));
-                var exported = JArray.Parse(request.Constraints.json).Values<JObject>().Single(c => c.Value<string>("type") == "fullbody");
+                var deferredIn = JArray.Parse(request.DeferredInConstraintJson)
+                    .Values<JObject>().Single(c => c.Value<string>("type") == "fullbody");
                 CollectionAssert.AreEqual(
                     diagnostics["in"]["runtime_model_frames"].Values<int>().ToArray(),
-                    exported["frame_indices"].Values<int>().ToArray());
+                    deferredIn["frame_indices"].Values<int>().ToArray());
                 var deferredOut = JArray.Parse(request.DeferredOutConstraintJson)
                     .Values<JObject>().Single(c => c.Value<string>("type") == "fullbody");
                 CollectionAssert.AreEqual(

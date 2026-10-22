@@ -2428,6 +2428,11 @@
                               "minimum": 1,
                               "default": 1,
                               "description": "Distinct samples within the converted window. One preserves the seam; multiple samples include both endpoints."
+                            },
+                            "post_apply": {
+                              "type": "boolean",
+                              "default": false,
+                              "description": "Generate a trajectory first, align this boundary against it in SOMA Root2D space, then include the boundary in the final raw constraints."
                             }
                           },
                           "required": [
@@ -2471,6 +2476,11 @@
                               "minimum": 1,
                               "default": 1,
                               "description": "Distinct samples within the converted window. One preserves the seam; multiple samples include both endpoints."
+                            },
+                            "post_apply": {
+                              "type": "boolean",
+                              "default": true,
+                              "description": "Generate a trajectory first, align this boundary against it in SOMA Root2D space, then include the boundary in the final raw constraints."
                             }
                           },
                           "required": [
