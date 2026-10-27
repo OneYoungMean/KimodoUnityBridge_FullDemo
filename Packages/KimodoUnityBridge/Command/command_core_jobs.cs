@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using KimodoUnityBridge;
@@ -252,7 +253,11 @@ namespace KimodoUnityBridge.Command
                 result["path"] = generated.GeneratedClip != null
                     ? AssetDatabase.GetAssetPath(generated.GeneratedClip) ?? string.Empty
                     : string.Empty;
-                result["post_analysis"] = BuildPostAnalysisStatus(generated, session.Status);
+                result["post_analysis"] = BuildPostAnalysisStatus(
+                    generated,
+                    session.Status,
+                    record.TimelineGenerationTrace?.Session,
+                    session.RequestId);
             }
             else
             {
@@ -264,6 +269,24 @@ namespace KimodoUnityBridge.Command
                         ["status"] = session.Status == KimodoEditorGenerationJobStatus.Running ? "pending" : "skipped"
                     };
                 }
+            }
+            if (record.TimelineGenerationTrace?.PlayableClip != null)
+            {
+                KimodoPlayableClip placeholder = record.TimelineGenerationTrace.PlayableClip;
+                placeholder.commandGenerationStatus = session.Status.ToString().ToLowerInvariant();
+                if (session.Status == KimodoEditorGenerationJobStatus.Failed ||
+                    session.Status == KimodoEditorGenerationJobStatus.Canceled)
+                {
+                    placeholder.isGenerated = false;
+                    placeholder.commandGenerationError = string.IsNullOrWhiteSpace(session.Error)
+                        ? session.Message ?? string.Empty
+                        : session.Error;
+                }
+                else
+                {
+                    placeholder.commandGenerationError = string.Empty;
+                }
+                EditorUtility.SetDirty(placeholder);
             }
             if (record.TimelineGenerationTrace != null)
             {
@@ -283,17 +306,20 @@ namespace KimodoUnityBridge.Command
 
         private static JObject BuildPostAnalysisStatus(
             KimodoEditorGenerationResult generated,
-            KimodoEditorGenerationJobStatus generationStatus)
+            KimodoEditorGenerationJobStatus generationStatus,
+            TimelineSessionRecord session = null,
+            Guid requestId = default)
         {
+            if (generated?.PostAnalysisSkipped == true)
+            {
+                return new JObject { ["status"] = "skipped" };
+            }
             if (!string.IsNullOrWhiteSpace(generated?.PostAnalysisJson))
             {
+                JObject parsed;
                 try
                 {
-                    return new JObject
-                    {
-                        ["status"] = "completed",
-                        ["result"] = JToken.Parse(generated.PostAnalysisJson)
-                    };
+                    parsed = JObject.Parse(generated.PostAnalysisJson);
                 }
                 catch
                 {
@@ -304,6 +330,45 @@ namespace KimodoUnityBridge.Command
                         {
                             ["code"] = "post_analysis_result_invalid",
                             ["message"] = "Post-generation analysis returned invalid JSON."
+                        }
+                    };
+                }
+
+                if (session == null)
+                {
+                    return new JObject
+                    {
+                        ["status"] = "failed",
+                        ["error"] = new JObject
+                        {
+                            ["code"] = "post_analysis_path_unavailable",
+                            ["message"] = "Post-generation analysis cannot be exposed without its owning scene session."
+                        }
+                    };
+                }
+
+                string path = Path.Combine(
+                    GetSessionGeneratedFolder(session),
+                    "Analyses",
+                    $"generation_{requestId:D}_post_analysis.json");
+                try
+                {
+                    if (!File.Exists(path)) WriteJsonAtomically(path, parsed);
+                    return new JObject
+                    {
+                        ["status"] = "completed",
+                        ["analysis_path"] = ToProjectRelativePath(path)
+                    };
+                }
+                catch (Exception exception)
+                {
+                    return new JObject
+                    {
+                        ["status"] = "failed",
+                        ["error"] = new JObject
+                        {
+                            ["code"] = "post_analysis_persist_failed",
+                            ["message"] = exception.Message
                         }
                     };
                 }
@@ -432,8 +497,7 @@ namespace KimodoUnityBridge.Command
             result.Remove("start_timeline_frame_60");
             result.Remove("duration_frames");
             result.Remove("inout_sampling");
-            if (string.Equals(result.Value<string>("status"), "completed", StringComparison.OrdinalIgnoreCase) &&
-                source["inout_sampling"] is JObject inoutSampling)
+            if (source["inout_sampling"] is JObject inoutSampling)
             {
                 result["inout_sampling"] = inoutSampling.DeepClone();
             }
@@ -469,7 +533,16 @@ namespace KimodoUnityBridge.Command
         {
             if (ex is GenerationRangeLockedException locked) return Error(locked);
             if (ex is CommandException command) return Error(command.Code, command.Message);
-            return Error("invalid_argument", ex.Message);
+            if (ex is OperationCanceledException) return Error("canceled", ex.Message);
+            if (ex is TimeoutException) return Error("timeout", ex.Message);
+            if (ex is SocketException || ex is IOException &&
+                !(ex is FileNotFoundException || ex is DirectoryNotFoundException ||
+                  ex is DriveNotFoundException || ex is PathTooLongException))
+                return Error("bridge_unavailable", ex.Message);
+            if (ex is ArgumentException || ex is FormatException || ex is JsonException)
+                return Error("invalid_argument", ex.Message);
+            if (ex is InvalidOperationException) return Error("invalid_operation", ex.Message);
+            return Error("internal_error", ex.Message);
         }
 
         private static JObject ParseCommandArguments(string argumentsJson)

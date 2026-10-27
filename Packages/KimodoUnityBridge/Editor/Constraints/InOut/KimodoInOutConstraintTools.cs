@@ -139,22 +139,56 @@ namespace KimodoBridge.Editor
                 !(isBegin ? request.EnableBegin : request.EnableEnd)) return 0;
             int requested = Mathf.Clamp(isBegin ? request.BeginWindowFrames : request.EndWindowFrames,
                 1, KimodoMotionModelProfiles.MaxGenerationFrames);
+            KimodoTimelineInOutConstraintContext explicitContext = isBegin
+                ? request.BeginTimelineContext
+                : request.EndTimelineContext;
+            bool hasExplicitSource = isBegin ? request.HasExplicitBeginSource : request.HasExplicitEndSource;
+            if (hasExplicitSource)
+            {
+                TimelineClip explicitClip = explicitContext?.SourceClip;
+                if (explicitClip == null || !KimodoInOutConstraintAdapter.IsUsableSourceClip(explicitClip))
+                {
+                    return 0;
+                }
+
+                double sourceDuration = Math.Max(0.0, explicitClip.duration);
+                double sourceFps = KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName);
+                double explicitBoundary = ResolveExplicitSourceBoundaryTime(request, isBegin, explicitClip, sourceFps);
+                bool explicitForward = (request.Mode == KimodoInOutConstraintMode.Inside) == isBegin;
+                double available = explicitForward
+                    ? Math.Max(0.0, sourceDuration - (explicitBoundary - explicitClip.start) - 1.0 / sourceFps)
+                    : Math.Max(0.0, explicitBoundary - explicitClip.start);
+                int availableFrames = Math.Max(1, Mathf.FloorToInt((float)(available * sourceFps + 1e-5)) + 1);
+                return Math.Min(Math.Min(requested, availableFrames), Math.Max(1, request.GenerationFrames));
+            }
             var context = request.TimelineContext;
             if (context == null) return Math.Min(requested, Math.Max(1, request.GenerationFrames));
             TimelineClip range = request.Mode == KimodoInOutConstraintMode.Inside
                 ? context.SourceClip : isBegin ? context.PreviousTimelineClip : context.NextTimelineClip;
             if (range == null) return 0;
-            double fps = KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName);
+            double modelFps = KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName);
             double boundary = ResolveWindowBoundaryTime(request, isBegin);
             bool forward = (request.Mode == KimodoInOutConstraintMode.Inside) == isBegin;
-            double available = forward ? Math.Max(range.start, range.end - 1.0 / fps) - boundary
+            double availableRange = forward ? Math.Max(range.start, range.end - 1.0 / modelFps) - boundary
                 : boundary - range.start;
-            int count = Math.Max(1, (int)Math.Floor(Math.Max(0.0, available) * fps + 1e-5) + 1);
-            return Math.Min(Math.Min(requested, count), Math.Max(1, request.GenerationFrames));
+            int availableRangeFrames = Math.Max(1, (int)Math.Floor(Math.Max(0.0, availableRange) * modelFps + 1e-5) + 1);
+            return Math.Min(Math.Min(requested, availableRangeFrames), Math.Max(1, request.GenerationFrames));
         }
 
         private static double ResolveWindowBoundaryTime(KimodoInOutConstraintRequest request, bool isBegin)
         {
+            KimodoTimelineInOutConstraintContext explicitContext = isBegin
+                ? request.BeginTimelineContext
+                : request.EndTimelineContext;
+            bool hasExplicitSource = isBegin ? request.HasExplicitBeginSource : request.HasExplicitEndSource;
+            if (hasExplicitSource && explicitContext?.SourceClip != null)
+            {
+                return ResolveExplicitSourceBoundaryTime(
+                    request,
+                    isBegin,
+                    explicitContext.SourceClip,
+                    KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName));
+            }
             var context = request.TimelineContext;
             double step = 1.0 / KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName);
             if (request.Mode == KimodoInOutConstraintMode.Outside)
@@ -162,6 +196,29 @@ namespace KimodoBridge.Editor
                     isBegin ? context.SourceClip.start - step : context.SourceClip.end + BoundarySampleEpsilonSeconds, step);
             return ClampTimelineSampleTime(context.SourceClip,
                 isBegin ? context.SourceClip.start : context.SourceClip.end - step, step);
+        }
+
+        private static double ResolveExplicitSourceBoundaryTime(
+            KimodoInOutConstraintRequest request,
+            bool isBegin,
+            TimelineClip sourceClip,
+            double modelFrameRate)
+        {
+            double sourceDuration = Math.Max(0.0, sourceClip?.duration ?? 0.0);
+            double frameDuration = 1.0 / Math.Max(1.0, modelFrameRate);
+            int explicitFrame = isBegin ? request.BeginSourceFrame : request.EndSourceFrame;
+            if (explicitFrame >= 0)
+            {
+                double relativeTime = explicitFrame / KimodoTimelineConstraintSampler.DefaultSessionFrameRate;
+                return sourceClip.start + Math.Max(0.0, Math.Min(
+                    Math.Max(0.0, sourceDuration - frameDuration),
+                    relativeTime));
+            }
+
+            bool forward = (request.Mode == KimodoInOutConstraintMode.Inside) == isBegin;
+            return forward
+                ? sourceClip.start
+                : sourceClip.start + Math.Max(0.0, sourceDuration - frameDuration);
         }
 
         internal static void BuildBoundarySampleTimes(KimodoInOutConstraintRequest request, bool isBegin,
@@ -175,7 +232,7 @@ namespace KimodoBridge.Editor
             double fps = KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName);
             bool forward = (request.Mode == KimodoInOutConstraintMode.Inside) == isBegin;
             double first = ResolveWindowBoundaryTime(request, isBegin) - (forward ? 0 : (frames - 1) / fps);
-            int exportStart = isBegin ? 0 : Math.Max(0, request.GenerationFrames - frames);
+            int exportStart = ResolveWindowExportStart(request, isBegin, frames);
             int[] sampleFrames = BuildWindowSampleFrames(frames, count, forward);
             for (int i = 0; i < count; i++)
             {
@@ -194,6 +251,21 @@ namespace KimodoBridge.Editor
                 result[i] = count == 1 ? (forward ? 0 : frames - 1)
                     : (int)Math.Round(i * (frames - 1.0) / (count - 1), MidpointRounding.AwayFromZero);
             return result;
+        }
+
+        private static int ResolveWindowExportStart(
+            KimodoInOutConstraintRequest request,
+            bool isBegin,
+            int windowFrames)
+        {
+            if (request.Mode != KimodoInOutConstraintMode.Outside)
+                return isBegin ? 0 : Math.Max(0, request.GenerationFrames - windowFrames);
+            if (isBegin)
+                return Math.Max(0, request.OutputStartFrame - windowFrames);
+            if (request.OutputFrameCount > 0)
+                return Math.Min(request.GenerationFrames,
+                    request.OutputStartFrame + request.OutputFrameCount);
+            return Math.Max(0, request.GenerationFrames - windowFrames);
         }
 
         internal static bool TrySampleBoundaries(KimodoInOutConstraintRequest request,
@@ -217,6 +289,19 @@ namespace KimodoBridge.Editor
                 if (end != null) endSamples.Add(end);
                 return true;
             }
+            float frameRate = KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName);
+            if (request.HasExplicitBeginSource || request.HasExplicitEndSource)
+            {
+                bool sampled = TrySampleExplicitSourceBoundaries(
+                    request,
+                    frameRate,
+                    out beginSamples,
+                    out endSamples,
+                    out warning,
+                    out error);
+                return sampled;
+            }
+
             BuildBoundarySampleTimes(request, true, out var inTimes, out var inExports);
             BuildBoundarySampleTimes(request, false, out var outTimes, out var outExports);
             if (inTimes.Length + outTimes.Length == 0) return true;
@@ -227,7 +312,6 @@ namespace KimodoBridge.Editor
                 error = "In and Out sampling windows overlap. Reduce their window frame counts.";
                 return false;
             }
-            float frameRate = KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName);
             var inFrames = new HashSet<int>();
             foreach (double time in inExports)
                 inFrames.Add(Mathf.RoundToInt((float)(time * frameRate)));
@@ -259,19 +343,229 @@ namespace KimodoBridge.Editor
             return true;
         }
 
+        private static bool TrySampleExplicitSourceBoundaries(
+            KimodoInOutConstraintRequest request,
+            float frameRate,
+            out List<KimodoMarkerSampleResult> beginSamples,
+            out List<KimodoMarkerSampleResult> endSamples,
+            out string warning,
+            out string error)
+        {
+            beginSamples = new List<KimodoMarkerSampleResult>();
+            endSamples = new List<KimodoMarkerSampleResult>();
+            warning = error = string.Empty;
+            var inFrames = new HashSet<int>();
+            if (!ValidateExplicitSourceBoundary(request, true, frameRate, out error) ||
+                !ValidateExplicitSourceBoundary(request, false, frameRate, out error))
+            {
+                return false;
+            }
+            if (!TrySampleExplicitSourceBoundary(
+                    request,
+                    isBegin: true,
+                    frameRate,
+                    beginSamples,
+                    inFrames,
+                    out error))
+            {
+                return false;
+            }
+            if (!TrySampleExplicitSourceBoundary(
+                    request,
+                    isBegin: false,
+                    frameRate,
+                    endSamples,
+                    inFrames,
+                    out error))
+            {
+                return false;
+            }
+
+            if (request.Mode == KimodoInOutConstraintMode.Inside &&
+                ResolveWindowFrameCount(request, true) + ResolveWindowFrameCount(request, false) > request.GenerationFrames &&
+                (beginSamples.Count > 1 || endSamples.Count > 1))
+            {
+                error = "In and Out sampling windows overlap. Reduce their window frame counts.";
+                return false;
+            }
+
+            var filteredEnd = new List<KimodoMarkerSampleResult>(endSamples.Count);
+            foreach (KimodoMarkerSampleResult sample in endSamples)
+            {
+                int frame = Mathf.RoundToInt((float)(sample.sampleTime * frameRate));
+                if (inFrames.Contains(frame))
+                {
+                    warning = "In and Out samples share a model frame; the In constraint takes priority.";
+                    continue;
+                }
+                filteredEnd.Add(sample);
+            }
+            endSamples = filteredEnd;
+            return true;
+        }
+
+        private static bool TrySampleExplicitSourceBoundary(
+            KimodoInOutConstraintRequest request,
+            bool isBegin,
+            float frameRate,
+            List<KimodoMarkerSampleResult> destination,
+            HashSet<int> inFrames,
+            out string error)
+        {
+            error = string.Empty;
+            if (!(isBegin ? request.EnableBegin : request.EnableEnd))
+            {
+                return true;
+            }
+
+            KimodoTimelineInOutConstraintContext sourceContext = isBegin
+                ? request.BeginTimelineContext
+                : request.EndTimelineContext;
+            if (sourceContext == null || sourceContext.SourceClip == null ||
+                !KimodoInOutConstraintAdapter.IsUsableSourceClip(sourceContext.SourceClip))
+            {
+                error = $"In/Out {(isBegin ? "In" : "Out")} source Clip is unavailable or has no animation.";
+                return false;
+            }
+
+            int frames = ResolveWindowFrameCount(request, isBegin);
+            int count = isBegin ? request.BeginSampleCount : request.EndSampleCount;
+            if (frames == 0)
+            {
+                return true;
+            }
+
+            bool forward = (request.Mode == KimodoInOutConstraintMode.Inside) == isBegin;
+            double boundary = ResolveExplicitSourceBoundaryTime(
+                request,
+                isBegin,
+                sourceContext.SourceClip,
+                frameRate);
+            double first = boundary - (forward ? 0.0 : (frames - 1) / (double)frameRate);
+            int exportStart = ResolveWindowExportStart(request, isBegin, frames);
+            int[] sampleFrames = BuildWindowSampleFrames(frames, count, forward);
+            if (!KimodoTimelineSamplingSession.TryCreate(
+                    sourceContext,
+                    request.ModelName,
+                    out KimodoTimelineSamplingSession sampler,
+                    out error))
+            {
+                return false;
+            }
+
+            using (sampler)
+            {
+                var sourceTimes = new double[sampleFrames.Length];
+                for (int i = 0; i < sampleFrames.Length; i++)
+                {
+                    sourceTimes[i] = Math.Max(sourceContext.SourceClip.start, first) + sampleFrames[i] / (double)frameRate;
+                }
+                if (!sampler.TryCaptureTargetBoneSamples(sourceTimes, frameRate, out BoneSample[] bones, out error))
+                {
+                    return false;
+                }
+                for (int i = 0; i < sampleFrames.Length; i++)
+                {
+                    double outputTime = (exportStart + sampleFrames[i]) / (double)frameRate;
+                    if (!KimodoRetargetMarkerSamplingUtility.TryBuildMarkerSampleResultFromBoneSample(
+                            bones[i],
+                            sampler.TargetCache,
+                            request.ModelName,
+                            FullBodyConstraintType,
+                            outputTime,
+                            out KimodoMarkerSampleResult sample,
+                            out error))
+                    {
+                        return false;
+                    }
+                    sample.enableMask = KimodoConstraintMask.ForType(FullBodyConstraintType);
+                    destination.Add(sample);
+                    if (isBegin)
+                    {
+                        inFrames.Add(Mathf.RoundToInt((float)(outputTime * frameRate)));
+                    }
+                }
+            }
+            return true;
+        }
+
+        private static bool ValidateExplicitSourceBoundary(
+            KimodoInOutConstraintRequest request,
+            bool isBegin,
+            float frameRate,
+            out string error)
+        {
+            error = string.Empty;
+            bool enabled = isBegin ? request.EnableBegin : request.EnableEnd;
+            bool explicitSource = isBegin ? request.HasExplicitBeginSource : request.HasExplicitEndSource;
+            if (!enabled || !explicitSource)
+            {
+                return true;
+            }
+
+            KimodoTimelineInOutConstraintContext context = isBegin
+                ? request.BeginTimelineContext
+                : request.EndTimelineContext;
+            if (context?.SourceClip == null)
+            {
+                error = $"In/Out {(isBegin ? "In" : "Out")} source Clip is unavailable.";
+                return false;
+            }
+            int frames = ResolveWindowFrameCount(request, isBegin);
+            int requested = Mathf.Clamp(
+                isBegin ? request.BeginWindowFrames : request.EndWindowFrames,
+                1,
+                KimodoMotionModelProfiles.MaxGenerationFrames);
+            int samples = isBegin ? request.BeginSampleCount : request.EndSampleCount;
+            if (frames < requested)
+            {
+                error = $"In/Out {(isBegin ? "In" : "Out")} source Clip is too short for the configured {requested}-frame window.";
+                return false;
+            }
+            if (samples < 1 || samples > requested)
+            {
+                error = $"In/Out {(isBegin ? "In" : "Out")} sample count must be between 1 and its window frame count ({requested}).";
+                return false;
+            }
+            double boundary = ResolveExplicitSourceBoundaryTime(request, isBegin, context.SourceClip, frameRate);
+            bool forward = (request.Mode == KimodoInOutConstraintMode.Inside) == isBegin;
+            double first = boundary - (forward ? 0.0 : (requested - 1.0) / frameRate);
+            double last = boundary + (forward ? (requested - 1.0) / frameRate : 0.0);
+            if (first < context.SourceClip.start - BoundarySampleEpsilonSeconds ||
+                last >= context.SourceClip.end - BoundarySampleEpsilonSeconds)
+            {
+                error = $"In/Out {(isBegin ? "In" : "Out")} source frame/window exceeds the selected Timeline Clip range.";
+                return false;
+            }
+            return true;
+        }
+
         internal static void ResolveOutsideContextFrames(TimelineClip clip, out int before, out int after)
         {
             before = after = 0;
             if (clip?.asset is not KimodoPlayableClip playable ||
                 playable.inOutConstraintMode != KimodoInOutConstraintMode.Outside ||
                 KimodoMotionModelProfiles.TryGetArdy(playable.bridgeModelName, out _)) return;
-            KimodoInOutConstraintAdapter.TryResolveNeighborTimelineClips(clip, out var previous, out var next);
-            var request = KimodoInOutConstraintAdapter.BuildTimelineRequest(new KimodoTimelineInOutConstraintContext
+            if (!KimodoInOutConstraintAdapter.TryResolveTimelineContext(
+                    clip,
+                    out KimodoTimelineInOutConstraintContext context,
+                    out _))
             {
-                SourceClip = clip, PreviousTimelineClip = previous, NextTimelineClip = next,
-                ModelName = playable.bridgeModelName
-            }, playable.inOutConstraintMode, false, true, playable.enableInConstraint, playable.enableOutConstraint,
-                KimodoMotionModelProfiles.MaxGenerationFrames, null);
+                return;
+            }
+            var request = KimodoInOutConstraintAdapter.BuildTimelineRequest(
+                context,
+                playable.inOutConstraintMode,
+                false,
+                true,
+                playable.enableInConstraint,
+                playable.enableOutConstraint,
+                KimodoMotionModelProfiles.MaxGenerationFrames,
+                null);
+            if (request == null)
+            {
+                return;
+            }
             before = ResolveWindowFrameCount(request, true);
             after = ResolveWindowFrameCount(request, false);
         }

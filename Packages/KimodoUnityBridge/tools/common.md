@@ -11,7 +11,7 @@ This file is the active shared contract for the root Skill. It replaces the form
 
 ## Scope and task routing
 
-Work on Humanoid Clips, generation Poses, and simple Transform-driven props such as doors, balls, and weapons. Animator Controllers, state machines, gameplay scripting, complex rigs, quadrupeds, vehicles, and physics authoring are outside this workflow. Final frame-by-frame acting polish may require an animator.
+This workflow focuses on Humanoid Clips, generation Poses, and simple Transform-driven props such as doors, balls, and weapons. For Animator Controllers, state machines, gameplay scripting, complex rigs, quadrupeds, vehicles, or physics, inspect the available Unity and project APIs and complete the supported parts through the best route; specialized frame-by-frame acting polish can be handed to an animator when needed.
 
 Choose a primary route from the requested outcome; combine routes for dependent subtasks:
 
@@ -32,11 +32,11 @@ string schema = KimodoUnityBridge.Command.command_dispatcher.GetCommandDefinitio
 string result = KimodoUnityBridge.Command.command_dispatcher.Invoke(commandName, argumentsJson);
 ```
 
-Plan the complete visible Unity result before choosing tools. Kimodo commands, Unity Editor APIs, Timeline APIs, AnimationClip/AnimationCurve APIs, runtime APIs, and project-local tools are peer routes in the same execution loop. Respect any user-required route or tool restriction; API success does not validate a Kimodo command path that was bypassed. Read the live schema or `kimodo.help` before choosing a Kimodo command or parameter. Use protocol command names, not internal C# handler names. With Unity CLI, execute the dispatcher in the connected Editor. Command frames use 60 FPS; use the documented Clip-relative or Timeline-global origin for each field. For each subtask, record `subtask → route → output → acceptance check`. If an operation is better represented by an allowed Unity or project API, use that API directly and record the route.
+Plan the complete visible Unity result before choosing tools. Kimodo commands, Unity Editor APIs, Timeline APIs, AnimationClip/AnimationCurve APIs, runtime APIs, and project-local tools are peer routes in the same execution loop. Honor a user-specified command or tool route and invoke it. When the user has not specified a route, choose the route that directly produces the requested result. Read the live schema or `kimodo.help` when available; when the connected Editor is unavailable, use the checked-in help as the starting reference and adapt to structured errors from the call. Use protocol command names, not internal C# handler names. With Unity CLI, execute the dispatcher in the connected Editor. Command frames use 60 FPS; use the documented Clip-relative or Timeline-global origin for each field. For each subtask, record `subtask → route → output → acceptance check`. If an operation is better represented by an allowed Unity or project API, use that API directly and record the route.
 
-[`Command/help.json`](../Command/help.json) is the checked-in reference, not a substitute for the connected Editor's live schema.
+[`Command/help.json`](../Command/help.json) is the checked-in command reference; compare it with the connected Editor's live schema whenever that schema is available.
 
-Resolve character, Clip, Timeline, and Session references through `scene.context` and the relevant command results. Use returned handles rather than guessing from display names. Asset paths are valid only for fields that accept them; they do not substitute for a required scene handle or `{track,index}` reference.
+Resolve character, Clip, Timeline, and Session references through `scene.context` and the relevant command results. Use returned handles for scene objects, `{track,index}` for Pose slots, and asset paths for fields that accept paths.
 
 The active Unity scene, Timeline, and Kimodo Session are an editable working pipeline. The agent may switch context and extend an existing Timeline by inserting tracks, clips, bindings, or synchronized prop motion. Preserve existing tracks and clips by default; prefer adding a track or making a derived Timeline over rewriting or rebuilding existing content. Modify existing content only when required by the task, and preserve a recoverable original first. After editing, verify the active scene/session, track bindings, clip ranges, and synchronization in the intended Timeline.
 
@@ -45,7 +45,7 @@ When removal is requested, move the affected files and associated Unity `.meta` 
 Coordinate-space contract:
 
 - Public command positions and targets (`root`, `effector`, and `pose.set`) are expressed in Unity World space.
-- Point constraint `root.rotation` and `effector.*.rotation` accept Euler degrees `[x,y,z]`. Each transform requires position and/or rotation; omitted channels retain sampled values. The command selects Root2D from root, Effector from root + effector, and FullBody from pose with optional root/effector (IK solved). Empty input and effector alone are invalid; duplicate command frames are rejected.
+- Build point constraints using the supported Root2D, Effector, and FullBody compositions described by the live input schema. `root.rotation` and `effector.*.rotation` use Euler degrees `[x,y,z]`; omitted transform channels retain sampled values. The schema and structured command errors describe invalid transforms, missing root context, and duplicate frames.
 - `animation.analysis.root_trajectory` is returned in World space. The analyzed Clip begins at frame zero, so its trajectory's zero origin is the World reference used by the command. When `animation.generate` consumes its `root_path`, generation resolves that World path once against the target character's World root position and planar heading.
 - Local joint rotations and camera-specific fields keep their documented spaces; the World-space rule applies to position and target fields.
 
@@ -65,7 +65,7 @@ revision history, best candidate, attempt budget, and no-improvement count
 capability evidence and unresolved choices per subtask
 ```
 
-Do not create another public state protocol or copy complete scene/analysis payloads. Use the persisted Session history and returned IDs to navigate candidates.
+Navigate candidates through persisted Session history and returned IDs, keeping the public state and scene/analysis payloads in their existing sources.
 
 ## Route and check contract
 
@@ -77,8 +77,8 @@ For each subtask, distinguish the implementation route from its capability evide
 |---|---|
 | Current Kimodo command | Present in the live schema; check current scene and runtime prerequisites. |
 | Unity or project API route | Inspect the relevant API and integration, then verify the produced result in the current project. |
-| Planned capability | A proposed command or integration; do not invoke it or claim it is implemented. |
-| Unavailable route | The relevant command and API routes have been checked and cannot perform the operation in this environment. |
+| Proposed capability | Check the package and live schema to establish its implementation state before relying on it. |
+| Unavailable route | Record the command/API routes checked, then use another available route or report the remaining limitation. |
 
 Schema presence proves an interface exists, not that its output meets the task. Keep criterion results (`verified`, `failed`, `unknown`) and an animator handoff separate from capability availability.
 
@@ -92,7 +92,7 @@ Use re-enterable checks, skipping work irrelevant to the route:
 | Execution | Submitted inputs and IDs, terminal result or API-produced assets, and the actual evaluated Timeline bindings/ranges. Inspection-only tasks reuse existing Clips. |
 | Verification | Candidate-matched measurements/images and playback when needed; changes trigger checks on affected dependencies. |
 
-Resolve missing facts through available context first. Ask only if unresolved alternatives would materially change the requested result; hold dependent generation/edits until answered and continue independent work. Missing acceptance evidence remains `unknown`; it cannot be bypassed by treating the task as passed. No extra confirmation is needed merely to enter a check.
+Resolve missing facts through available context first. Ask when unresolved alternatives would materially change the requested result; hold dependent generation/edits until answered and continue independent work. Keep each criterion `unknown` until matching evidence establishes its result. Entering a check does not require extra confirmation.
 
 ## Response and asynchronous rules
 
@@ -101,7 +101,7 @@ Resolve missing facts through available context first. Ask only if unresolved al
 - A successful poll can still have task `status` `failed` or `canceled`; report that terminal state and its error.
 - Save the exact `request_id`; poll at a fixed interval until a terminal state or bounded timeout.
 - Apply this to any asynchronous command returning a pending `request_id`, including `server.install` and `animation.generate`. A polling timeout leaves the task pending, not failed or canceled; retain the ID for resumption.
-- Never duplicate a request that is still running. Cancel only when the task should stop.
+- Retain and poll a running request by its ID; cancel it when the task should stop.
 - Treat warnings and non-blocking checks as evidence to inspect.
 - Preserve completed Clips and use derived outputs for revisions.
 
@@ -110,31 +110,31 @@ Resolve missing facts through available context first. Ask only if unresolved al
 Apply only the work required by the selected route; inspection/comparison does not generate or edit source animation:
 
 1. Resolve participating characters and objects from the current scene. Identify the visible result, action order, contact points, duration, and ending state. State assumptions.
-2. Identify independently testable action beats. Split into Clips when local revision and continuation needs justify it; different beats do not automatically require different Clips. Record dependencies between character Clips, prop motion, and Timeline bindings.
-3. Select relevant criteria, distinguishing required constraints from quality preferences. Criteria may be semantic, spatial, temporal, contact-related, structural, visual, or playback-related. State their observable checks and tolerances where needed; do not invent a universal score or pass threshold.
-4. Gather the smallest evidence needed: `scene.context`, `pose.get`, `pose.analysis`, an existing Clip analysis, or a confirmed object Transform. Before generation, pass the proposed point `constraints` unchanged to `pose.analysis` and inspect each captured pose; set `combine=true` to render them together as opaque poses in one SceneView image. The command reports measured world-space joints and distances from effector targets. Its `camera` object is shared with `animation.analysis`; SceneView lighting, skybox, gizmos, and grid keep their current settings unless explicitly supplied. Generation-time pose/effector safety preflight runs only when one point constraint explicitly contains both `pose` and `effector`; root + effector constraints skip this check; effector alone is invalid because it has no explicit root context. Such preflight warnings remain non-blocking and do not replace measured pose results.
-5. When a task requires a new or revised action Pose, prefer a Clip-derived source: generate or select a preliminary Clip, materialize the intended frame with `pose.get`, and use its `{track,index}` reference inside the point constraints passed to `pose.analysis`. Inspect the captured pose before reusing the same constraint for generation. Use Avatar rest pose only as the default initialization when no action-context Pose exists, or when the user explicitly requests a neutral baseline. Do not use rest pose as a substitute for a bend, reach, contact, or other performance-specific Pose.
-6. For generation, construct a short semantic prompt and supported structured constraints from confirmed scene evidence or explicit requirements. Exact root position, heading, Pose, hand/foot target, loop, duration, and continuation belong in Kimodo fields when supported; object curves, Timeline tracks, bindings, and other asset edits belong in the appropriate Unity or project API. Inspect a `pose.get` result before reusing its `{track,index}`; an unchecked scene T-pose or a Clip name is not a confirmed continuation source. Generate dependent Clips in order from their evaluated predecessor endings. When a constraint has no explicit Pose, its initialization may use Avatar rest pose, but that default must be reported separately from a Clip-derived action Pose.
+2. Identify independently testable action beats. Split into Clips when local revision and continuation needs justify it. Record dependencies between character Clips, prop motion, and Timeline bindings.
+3. Select relevant criteria, distinguishing required constraints from quality preferences. Criteria may be semantic, spatial, temporal, contact-related, structural, visual, or playback-related. State their observable checks and tolerances where needed, and judge each criterion against its own evidence.
+4. Gather the smallest evidence needed: `scene.context`, `pose.get`, `pose.analysis`, an existing Clip analysis, or a confirmed object Transform. When a point-constraint preview will help assess the requested pose, pass the same constraints to `pose.analysis` and inspect its image, measured world-space joints, target distances, and warnings. Set `combine=true` to render multiple previews together as opaque poses in one SceneView image. Its `camera` object is shared with `animation.analysis`; SceneView lighting, skybox, gizmos, and grid keep their current settings unless explicitly supplied. For measurements of the generated pose, sample the completed Clip with `pose.get` and analyze that sample.
+5. When a task calls for an action-specific starting Pose or Clip continuation, resolve a suitable source with `pose.get` and use its returned `{track,index}` reference. If such a Pose is required and no suitable source exists, select or generate a preliminary Clip, materialize the intended frame, and inspect it with `pose.analysis`. When no explicit action Pose is needed, generation can use the Avatar rest-pose initialization described by the command schema.
+6. For generation, construct a short semantic prompt and supported structured constraints from the user's explicit requirements and confirmed scene evidence. Map explicit root position, heading, path, Pose, hand/foot target, loop, duration, and continuation requirements to supported Kimodo fields; use confirmed evidence for unspecified details and leave other optional fields at their schema defaults. Use Unity or project APIs for object curves, Timeline tracks, bindings, and other asset edits. Inspect a `pose.get` result and use its returned reference for a continuation source. Generate dependent Clips in order from their evaluated predecessor endings. Report whether a constraint used an explicit Pose or the command's Avatar rest-pose initialization.
 7. Generate or edit candidates only when required, poll asynchronous requests, and retain the IDs and submitted settings. For API outputs without Kimodo IDs, retain the actual asset/track references. Inspection routes use the existing output as their subject.
 8. Evaluate relevant hard requirements, then structure, scene interaction, and playback/quality criteria as applicable. Use `animation.analysis` for Humanoid Clip evaluation; use evaluated scene measurements and appropriate APIs for prop/Timeline checks. Open returned images before visual claims. Validate the evidence-to-output mapping below before accepting any criterion.
-9. Compare candidates only when there are multiple candidates or the user requests a comparison. Use identical conditions and decide each criterion independently.
-10. If a criterion fails with evidence, change only the relevant input and create a derived candidate. If evidence is missing, gather it or report unknown; do not retry blindly.
-11. Apply the stopping and handoff rules below. Never repeat an identical request without new evidence or a changed input.
+9. When there are multiple candidates or the user requests a comparison, use identical conditions and decide each criterion independently.
+10. When evidence shows a criterion failed, target the relevant input and create a derived candidate. When evidence is incomplete, gather the corresponding measurement or report `unknown`.
+11. Apply the stopping and handoff rules below. Submit a revised request when new evidence or a changed input gives it a distinct purpose.
 
 ## Keyframe-led generation and revision
 
 For a task that depends on keyframe-level motion:
 
-1. Inspect the available Clip and analysis first. If no usable keyframe data exists, generate one initial candidate from the approved semantic prompt and supported constraints, then obtain its full `animation.analysis` result. Use `generation.get`'s `post_analysis` when available; if it is missing or failed, run `animation.analysis` on the completed Clip. Do not invent keyframes from the prompt alone.
-2. Treat analysis keyframes as observations and frame-selection hints, not as editable AnimationClip curve keys. Inspect relevant frames with `pose.get` and the available analysis evidence. Identify the actual curves/keys to edit through the Unity AnimationClip/AnimationCurve API or another verified project API; preserve the original Clip and make a derived candidate.
+1. Inspect the available Clip and analysis first. When usable keyframe data is absent, generate an initial candidate from the task's established semantic prompt and supported constraints, then obtain its full `animation.analysis` result. Reuse `generation.get`'s `post_analysis` when it completed successfully and contains the full usable keyframe data; when it is missing, failed, or incomplete, run `animation.analysis` on the completed Clip.
+2. Use analysis keyframes as observations and frame-selection hints. Inspect relevant frames with `pose.get` and the available analysis evidence, then identify and edit the actual curves through the Unity AnimationClip/AnimationCurve API or another verified project API. Preserve the original Clip and make a derived candidate.
 3. Revise only keys that conflict with the declared action, phase, trajectory, contact, or endpoint criteria, or are demonstrably redundant. Keep keys needed to preserve intended phase changes, contacts, and transitions. Record which frames/curves changed and the evidence that motivated each change.
-4. After each generation or keyframe edit, evaluate the candidate with the same criteria and comparable analysis settings, then compare it with the immediately previous candidate and the current best. Keep the best candidate that satisfies hard requirements. If a new candidate is materially worse than the immediately previous one on a required criterion, reject it, restore/retain the best candidate, and stop that revision loop; do not continue generating variants of the same failed change. A tie or lack of meaningful improvement follows the finite revision budget and stopping rule below.
+4. After each generation or keyframe edit, evaluate the candidate with the same criteria and comparable analysis settings, then compare it with the immediately previous candidate and the current best. Keep the best candidate that satisfies hard requirements. If a new candidate does not improve on the immediately previous candidate under the declared target criterion, reject that branch, retain the best candidate, and stop that revision loop.
 
 ## Clip transition constraints
 
-Every transition between adjacent animation Clips must use `animation.generate`'s `inout` constraint, with explicit completed source Clips for the relevant In and/or Out boundaries. Do not leave a requested transition to prompt wording or implicit defaults. Inspect the generated `inout_sampling` and evaluate the assembled Timeline seam.
+Represent every transition between adjacent animation Clips with `animation.generate`'s `inout` constraint and completed source Clips for the relevant In and/or Out boundaries. Inspect the generated `inout_sampling` and evaluate the assembled Timeline seam.
 
-When a transition is short, increase the In/Out `window_frames` and, where useful, `sample_count` to provide a wider boundary context. The window is capped by available source-Clip frames and generated duration, and the requested sample count must fit distinct model frames; increasing a window cannot create source frames that do not exist. For `outside`, context is padded and cropped while preserving the requested output duration; for `inside`, the wider windows constrain the returned Clip's own start/end. If the available source range cannot provide the needed context, report that limitation and do not claim the transition is verified.
+When a transition is short, increase the In/Out `window_frames` and, where useful, `sample_count` to provide a wider boundary context. The window is capped by available source-Clip frames and generated duration, and the requested sample count must fit distinct model frames. For `outside`, context is padded and cropped while preserving the requested output duration; for `inside`, the wider windows constrain the returned Clip's own start/end. Use the available source range and returned `inout_sampling` to determine whether the transition has enough context for verification.
 
 ## Prompt wording
 
@@ -142,7 +142,7 @@ Write a concise natural-language action prompt from: action, phase, trajectory/d
 
 ## Recognition contract
 
-Recognition is a constrained evidence operation, not a source of new intent. The caller supplies semantic alternatives when action semantics must be distinguished. Never infer from a filename, Clip name, candidate order, ID, or saliency.
+Use recognition to test the task's stated intent against evidence. When action semantics must be distinguished, use alternatives supplied by the caller or derive relevant alternatives from the prompt and acceptance criteria. Treat filenames, Clip names, candidate order, IDs, and saliency as provenance or navigation data, not semantic evidence.
 
 Use only relevant tasks from this set:
 
@@ -160,15 +160,15 @@ visual_motion_quality: smooth_appearance | visible_break | unclear
 contact_pattern: alternating | left_dominant | right_dominant | unclear
 ```
 
-For every task, return a value, confidence, and evidence. Return `unknown` or `unclear` when the image is unreadable, fields are absent, evidence conflicts, or the claim requires playback that was not observed. `smooth_appearance` describes an unbroken static drawing; it does not mean playback smoothness. Structured trajectory values come from named returned fields, never from pixel estimates.
+For every task, return a value, confidence, and evidence. Use structured fields, readable images, and playback or temporal measurements according to the criterion. Mark a result `unknown` or `unclear` when the available evidence is absent, unreadable, or conflicting. Use `smooth_appearance` for the static image and temporal evidence for playback smoothness. Read structured trajectory values from named returned fields.
 
-When comparing action semantics, use only caller-provided alternatives and phase/pose/contact evidence. A single accidental contact or anchor frame does not prove a required phase. If alternatives cannot be separated, preserve `unknown`.
+When comparing action semantics, use the stated or prompt-derived alternatives and phase/pose/contact evidence. Check phase coverage across relevant frames so a single contact or anchor frame is interpreted in context. If the available evidence cannot distinguish alternatives, report `unknown`.
 
 ## Comparison contract
 
 Analyze and render each candidate separately with the same picture request, resolution, and evidence procedure. Validate the candidate-to-image mapping before comparing. Compare only criteria declared for the task, such as semantic correctness, trajectory coherence, foot contacts, required phase coverage, required Pose coverage, expression strength, endpoint continuity, or a declared neighboring-Clip transition.
 
-For each criterion, report `candidate_1`, `candidate_2`, `tie`, or `unknown`, with a short reason and evidence. Do not calculate an overall winner by summing scores, votes, magnitudes, displacement, contact counts, or selected frames. Prefer one candidate only when the target criterion and evidence make the difference decisive; otherwise report no reliable difference or insufficient evidence.
+For each criterion, report `candidate_1`, `candidate_2`, `tie`, or `unknown`, with a short reason and evidence. Judge candidates criterion by criterion using the declared target and matching evidence. Prefer one candidate when the difference is decisive; otherwise report a tie or insufficient evidence.
 
 ## Evidence boundaries
 
@@ -182,7 +182,7 @@ relevant character/prop transforms, offsets, and source asset state
 returned evidence path or measurement field, criterion result, and limitation
 ```
 
-Use existing IDs and Session history rather than duplicating payloads. When the tool does not return an ID, cite its actual asset, frame, and evidence path. Before reusing evidence, verify that the evaluated source and relevant scene/Timeline state still match. Evidence for an unchanged dependency may be reused; a changed character Clip invalidates dependent prop-follow samples, and changed bindings, offsets, or prop state invalidate affected interaction evidence. Re-run those checks after integration. A screenshot of another candidate, old Timeline, or incorrect camera framing cannot establish acceptance.
+Use existing IDs and Session history to locate evidence. When the tool does not return an ID, cite its actual asset, frame, and evidence path. Before reusing evidence, verify that the evaluated source and relevant scene/Timeline state still match. Reuse evidence for unchanged dependencies and recheck prop-follow samples after character Clip changes, or interaction evidence after binding, offset, or prop-state changes. After integration, confirm that each image maps to the intended candidate, Timeline, and camera framing.
 
 Report these separately:
 
@@ -190,9 +190,9 @@ Report these separately:
 - **Structured**: what the command returned as a measured field.
 - **Playback**: what was observed during actual playback or a supported runtime check.
 
-Static pictures cannot establish velocity or acceleration smoothness, foot sliding, popping, or playback continuity. A supported temporal measurement may establish a specific numerical property within its sampling limits; it does not imply that full playback was observed. A missing criterion is `unknown`, not a failure. A sampled joint distance proves only that sampled relation, not finger grip, collision clearance, or contact throughout an interval.
+Use static pictures for visible pose and composition; use supported temporal measurements or actual playback to assess velocity/acceleration smoothness, foot sliding, popping, and continuity. State the sampling limits of numerical measurements and distinguish them from full-playback observation. Mark missing evidence `unknown`, not failed. Use multi-frame measurements for interval claims; a single sampled joint distance describes that sample's relation.
 
-Attribute failures before choosing a revision: invalid references/prerequisites or request/protocol errors are toolchain failures; a completed character result that violates its criteria is a generation-quality failure; wrong prop motion, bindings, offsets, or synchronization are integration failures; missing, stale, or inconclusive observations are evidence gaps. More than one category may apply. Repeating generation does not fix a protocol error or missing evidence.
+Attribute failures before choosing a revision: use structured errors to correct invalid references, prerequisites, or request fields; revise generation inputs when a completed character Clip fails its criteria; inspect bindings, offsets, and synchronization for prop integration failures; and run the relevant analysis, sampling, or playback route to close evidence gaps. More than one category may apply.
 
 ## Revision and human handoff
 
@@ -202,11 +202,11 @@ Use a targeted revision table internally:
 failed criterion → supporting evidence → changed input → new candidate → result
 ```
 
-Before a generation/revision loop, record a bounded candidate or time budget using the user's limits when supplied. As a local default, allow one initial candidate and up to two targeted revisions of the same failing criterion. This is a cost-control default, not a quality threshold; choose a different finite budget when the task and existing authorization justify it. Count prior attempts and shared candidates, and do not reset the budget by renaming a criterion or restarting the loop.
+Before a generation/revision loop, record the user's candidate or time budget and stopping condition when supplied. Apply a user-specified stopping condition even when no separate budget is given, and apply any user-specified budget as the attempt cap. Use the local budget of one initial candidate and up to two targeted revisions only when the user provides neither a budget nor a stopping condition. Track attempts and shared candidates, and report cost or runtime warnings while continuing within available authorization. Keep the count stable when criteria or loop labels change.
 
-Stop revising when the required criteria pass, the budget is exhausted, two consecutive targeted attempts bring no meaningful improvement under comparable evidence, no allowed route can perform the required operation after the relevant checks, or the remaining defect needs human artistic judgment. Define improvement against the declared criterion; changing a Seed or receiving `completed` is not evidence of improvement. Missing evidence calls for inspection, not a speculative generation retry.
+Apply the user's stopping condition when provided, stopping earlier when a hard operation is unavailable or the remaining decision requires human artistic judgment. Without a user-provided stopping condition, stop when the required criteria pass or two consecutive targeted attempts bring no meaningful improvement under comparable evidence. Apply the user's candidate or time budget as the cap; use the local default budget only when the user provides neither a budget nor a stopping condition. Define improvement against the declared criterion; changing a Seed or receiving `completed` is not evidence of improvement. Missing evidence calls for inspection before another generation attempt.
 
-Keep the best candidate that satisfies hard requirements and reject regressions on previously passing requirements. If none satisfies them, preserve the best partial output and report its failed/unknown criteria instead of claiming acceptance. Do not regenerate unrelated passing dependencies; recheck any outputs actually affected by a revision. A missing command alone is not a stop condition: inspect the relevant package and API route within the user's tool restrictions before reporting a tooling limitation. If required tooling cannot be obtained, stop dependent execution, report the issue, and wait for the user's repair rather than substituting a subagent.
+Keep the best candidate that satisfies hard requirements and reject regressions on previously passing requirements. If none satisfies them, preserve the best partial output and report its failed/unknown criteria. Limit each revision to affected outputs and recheck their dependencies. A missing command alone is not a stop condition: inspect the relevant package and API route within the user's tool restrictions before reporting a tooling limitation. If required tooling cannot be obtained, stop dependent execution, report the issue, and wait for the user's repair rather than substituting a subagent.
 
 For simple props, use Kimodo commands where exposed and Unity APIs where needed to author Transform curves, Timeline tracks, or hand attachment. Keep them tied to the character candidate through shared contact frames, offsets, Timeline range, and evidence IDs. Verify both character pose and object motion; if an API route is genuinely unavailable, mark that criterion unknown and explain the limitation.
 
@@ -216,4 +216,4 @@ Name the selected Clip/assets and intended Timeline. Report required criteria as
 
 Summarize targeted attempts, best result, failure category, and the actual stop reason. If work remains, identify the affected interval, body part, curve, binding, or missing evidence and the precise next action. A toolchain repair or evidence gap need not be an animator handoff; reserve that handoff for work that actually needs an animator.
 
-Consult [`known-issues.md`](known-issues.md) only when a relevant symptom appears. It records observations and optional workarounds, not mandatory steps or stopping rules. Archived manuals are historical reference rather than active instructions.
+When a relevant symptom appears, consult [`known-issues.md`](known-issues.md) for observations and optional workarounds. Use this common contract for the active workflow; archived manuals can provide historical context.

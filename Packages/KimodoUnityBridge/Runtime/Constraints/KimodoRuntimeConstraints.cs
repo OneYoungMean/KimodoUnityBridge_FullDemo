@@ -212,9 +212,8 @@ namespace KimodoBridge
             Vector3 currentWorldPosition,
             Vector2 targetWorldPosition,
             float thresholdMeters) =>
-            Vector2.Distance(
-                new Vector2(currentWorldPosition.x, currentWorldPosition.z),
-                targetWorldPosition) <= Mathf.Max(0f, thresholdMeters);
+            (KimodoMotionMath.ToPlanar(currentWorldPosition) - targetWorldPosition).magnitude <=
+            Mathf.Max(0f, thresholdMeters);
 
         internal static float EstimateDuration(
             float distanceMeters,
@@ -239,10 +238,9 @@ namespace KimodoBridge
             Quaternion modelToWorldRotation,
             Vector3 targetWorldPosition)
         {
-            Vector3 worldDelta = targetWorldPosition - currentWorldPosition;
-            worldDelta.y = 0f;
-            Vector3 localDelta = Quaternion.Inverse(modelToWorldRotation) * worldDelta;
-            return new Vector2(localDelta.x, localDelta.z);
+            return KimodoMotionMath.ToPlanarLocalDelta(
+                targetWorldPosition - currentWorldPosition,
+                modelToWorldRotation);
         }
 
         internal static Vector2 ToModelHeading(
@@ -250,9 +248,10 @@ namespace KimodoBridge
             Vector2 worldHeading)
         {
             Vector2 normalizedWorldHeading = NormalizeHeading(worldHeading);
-            Vector3 modelHeading = Quaternion.Inverse(modelToWorldRotation) *
-                new Vector3(normalizedWorldHeading.x, 0f, normalizedWorldHeading.y);
-            return NormalizeHeading(new Vector2(modelHeading.x, modelHeading.z));
+            Vector2 modelHeading = KimodoMotionMath.ToPlanarLocalDelta(
+                new Vector3(normalizedWorldHeading.x, 0f, normalizedWorldHeading.y),
+                modelToWorldRotation);
+            return NormalizeHeading(modelHeading);
         }
 
         internal static Vector2 NormalizeHeading(Vector2 heading)

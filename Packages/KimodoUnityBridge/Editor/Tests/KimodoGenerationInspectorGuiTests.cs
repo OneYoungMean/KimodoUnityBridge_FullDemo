@@ -11,6 +11,214 @@ namespace KimodoBridge.Editor.Tests
 {
     public sealed class KimodoGenerationInspectorGuiTests
     {
+        [Test]
+        public void LightweightAnalysisToggle_EnablesKeyframesAndCanBeDisabled()
+        {
+            string enabledJson = KimodoGenerationInspectorGui.SetLightweightAnalysisEnabled(
+                "{\"keyframes\":{\"max_count\":12}}",
+                enabled: true);
+            JObject enabled = JObject.Parse(enabledJson);
+            Assert.That(enabled["keyframes"]?.Value<bool>("enabled"), Is.True);
+            Assert.That(enabled["keyframes"]?.Value<int>("max_count"), Is.EqualTo(12));
+
+            Assert.That(
+                KimodoGenerationInspectorGui.SetLightweightAnalysisEnabled(enabledJson, enabled: false),
+                Is.Empty);
+        }
+
+        [Test]
+        public void LightweightAnalysisSummary_ReportsReturnedDataCounts()
+        {
+            string summary = KimodoGenerationInspectorGui.GetLightweightAnalysisSummary(
+                "{\"keyframes\":[{},{}],\"foot_contact_changes\":[{},{},{}]}");
+
+            Assert.That(summary, Is.EqualTo("2 keyframes, 3 foot-contact changes"));
+            Assert.That(KimodoGenerationInspectorGui.GetLightweightAnalysisSummary("invalid"), Is.Empty);
+        }
+
+        [Test]
+        public void FootContactTrackDetectionRequiresAllGeneratedChannels()
+        {
+            AnimationClip clip = new AnimationClip { name = "FootContactTrackDetection" };
+            try
+            {
+                Assert.That(KimodoTimelineFootContactSampler.HasAuthoredTrack(clip), Is.False);
+
+                for (int channel = 0; channel < KimodoFootContactTrackUtility.ChannelCount; channel++)
+                {
+                    AnimationCurve curve = AnimationCurve.Constant(0f, 1f, channel % 2);
+                    AnimationUtility.SetEditorCurve(
+                        clip,
+                        EditorCurveBinding.FloatCurve(
+                            string.Empty,
+                            typeof(Animator),
+                            KimodoFootContactTrackUtility.GetPropertyName(channel)),
+                        curve);
+
+                    Assert.That(
+                        KimodoTimelineFootContactSampler.HasAuthoredTrack(clip),
+                        Is.EqualTo(channel == KimodoFootContactTrackUtility.ChannelCount - 1));
+                }
+
+                AnimationUtility.SetEditorCurve(
+                    clip,
+                    EditorCurveBinding.FloatCurve(
+                        string.Empty,
+                        typeof(Animator),
+                        KimodoFootContactTrackUtility.GetPropertyName(0)),
+                    null);
+                Assert.That(KimodoTimelineFootContactSampler.HasAuthoredTrack(clip), Is.False);
+            }
+            finally
+            {
+                Object.DestroyImmediate(clip);
+            }
+        }
+
+        [Test]
+        public void RelativeOffset_NormalizesRootBeforeBakeAndCarriesWorldPlacementOnRequest()
+        {
+            var timeline = ScriptableObject.CreateInstance<TimelineAsset>();
+            var root = new GameObject("RelativeOffsetRequestTest");
+            RetargetSkeleton skeleton = null;
+            AnimationClip clip = null;
+            try
+            {
+                AnimationTrack track = timeline.CreateTrack<AnimationTrack>();
+                track.trackOffset = TrackOffset.ApplyTransformOffsets;
+                track.position = new Vector3(3f, 0.5f, -2f);
+                track.rotation = Quaternion.Euler(0f, 35f, 0f);
+                TimelineClip timelineClip = track.CreateClip<KimodoPlayableClip>();
+                timelineClip.duration = 2.0;
+                var director = root.AddComponent<PlayableDirector>();
+                director.playableAsset = timeline;
+                skeleton = BindTestSkeleton(director, track, "RelativeOffsetRequestSkeleton");
+                var playable = (KimodoPlayableClip)timelineClip.asset;
+                playable.bridgeModelName = KimodoMotionModelProfiles.DefaultModelName;
+                playable.useRelativeOffset = true;
+                playable.relativeOffset = new Vector3(4f, 1f, -2f);
+                playable.autoBeginAnchor = false;
+                playable.inOutConstraintMode = KimodoInOutConstraintMode.None;
+
+                KimodoEditorGenerateRequest request = KimodoPlayableClipGenerationHostService.BuildRequest(
+                    playable, "walk", null, default, timelineClipOverride: timelineClip);
+
+                Assert.That(request.UseRelativeOffset, Is.True);
+                Assert.That(request.RelativeOffset, Is.EqualTo(playable.relativeOffset));
+                request.RelativeRootOriginY = 0.98f;
+                KimodoTimelineTrackOffsetUtility.CaptureWorldOffset(
+                    track, skeleton.animator, out Vector3 trackPosition, out Quaternion trackRotation, out _);
+                KimodoTimelineTrackOffsetUtility.WorldToTrackPose(
+                    playable.relativeOffset, Quaternion.identity, trackPosition, trackRotation,
+                    out Vector3 expectedTrackPosition, out _);
+                Vector3 actualTrackPosition = KimodoPlayableClipGenerationHostService.ResolveRelativeOffsetInTrackSpace(
+                    playable, request);
+                Assert.That(Vector3.Distance(
+                    actualTrackPosition,
+                    expectedTrackPosition - Vector3.up * request.RelativeRootOriginY),
+                    Is.LessThan(0.0001f));
+                KimodoTimelineTrackOffsetUtility.TrackToWorldPose(
+                    actualTrackPosition + Vector3.up * request.RelativeRootOriginY,
+                    Quaternion.identity, trackPosition, trackRotation,
+                    out Vector3 resolvedWorldPosition, out _);
+                Assert.That(Vector3.Distance(resolvedWorldPosition, playable.relativeOffset), Is.LessThan(0.0001f));
+
+                clip = new AnimationClip { frameRate = 30f };
+                clip.SetCurve(string.Empty, typeof(Animator), "RootT.x",
+                    new AnimationCurve(new Keyframe(0f, 2f), new Keyframe(1f, 5f)));
+                clip.SetCurve(string.Empty, typeof(Animator), "RootT.y",
+                    new AnimationCurve(new Keyframe(0f, 3f), new Keyframe(1f, 4f)));
+                clip.SetCurve(string.Empty, typeof(Animator), "RootT.z",
+                    new AnimationCurve(new Keyframe(0f, -1f), new Keyframe(1f, 2f)));
+
+                KimodoPlayableClipGenerationHostService.NormalizeRootPathToFrameZero(
+                    clip, out float rootOriginY, out Quaternion rootOriginRotation);
+                Assert.That(AnimationUtility.GetCurveBindings(clip).Length, Is.GreaterThanOrEqualTo(3));
+                Assert.That(rootOriginY, Is.EqualTo(3f).Within(0.0001f));
+                Assert.That(Quaternion.Angle(rootOriginRotation, Quaternion.identity), Is.LessThan(0.001f));
+                Assert.That(Vector3.Distance(ReadRootTranslation(clip, 0f), new Vector3(0f, 3f, 0f)), Is.LessThan(0.0001f));
+                Assert.That(Vector3.Distance(ReadRootTranslation(clip, 1f), new Vector3(3f, 4f, 3f)), Is.LessThan(0.0001f));
+                Assert.That(KimodoPlayableClipGenerationHostService.TryReadRootOriginY(clip, out float finalRootY), Is.True);
+                Assert.That(finalRootY, Is.EqualTo(3f).Within(0.0001f));
+            }
+            finally
+            {
+                skeleton?.Dispose();
+                if (clip != null) Object.DestroyImmediate(clip);
+                Object.DestroyImmediate(root);
+                Object.DestroyImmediate(timeline);
+            }
+        }
+
+        [Test]
+        public void RelativeOffset_NormalizesRetargetRootTransformCurvesBeforeHumanoidBake()
+        {
+            var clip = new AnimationClip { frameRate = 30f };
+            try
+            {
+                // BakeMotionCurvesDirect writes root translation as Transform local-position
+                // curves on the sanitized root-joint path, before the Humanoid RootT curves
+                // are produced. This is the representation relative-offset normalization
+                // must handle in the generation pipeline.
+                const string rootJointPath = "Hips";
+                clip.SetCurve(rootJointPath, typeof(Transform), "m_LocalPosition.x",
+                    new AnimationCurve(new Keyframe(0f, 2f), new Keyframe(1f, 5f)));
+                clip.SetCurve(rootJointPath, typeof(Transform), "m_LocalPosition.y",
+                    new AnimationCurve(new Keyframe(0f, 3f), new Keyframe(1f, 4f)));
+                clip.SetCurve(rootJointPath, typeof(Transform), "m_LocalPosition.z",
+                    new AnimationCurve(new Keyframe(0f, -1f), new Keyframe(1f, 2f)));
+                // A complete child position triplet must not be mistaken for the
+                // animated root when the clip contains additional transform curves.
+                const string childJointPath = "Hips/Spine";
+                clip.SetCurve(childJointPath, typeof(Transform), "m_LocalPosition.x",
+                    new AnimationCurve(new Keyframe(0f, 100f), new Keyframe(1f, 101f)));
+                clip.SetCurve(childJointPath, typeof(Transform), "m_LocalPosition.y",
+                    new AnimationCurve(new Keyframe(0f, 200f), new Keyframe(1f, 201f)));
+                clip.SetCurve(childJointPath, typeof(Transform), "m_LocalPosition.z",
+                    new AnimationCurve(new Keyframe(0f, 300f), new Keyframe(1f, 301f)));
+                Quaternion initialYaw = Quaternion.Euler(0f, 45f, 0f);
+                Quaternion finalYaw = Quaternion.Euler(0f, 90f, 0f);
+                clip.SetCurve(rootJointPath, typeof(Transform), "m_LocalRotation.x",
+                    new AnimationCurve(new Keyframe(0f, initialYaw.x), new Keyframe(1f, finalYaw.x)));
+                clip.SetCurve(rootJointPath, typeof(Transform), "m_LocalRotation.y",
+                    new AnimationCurve(new Keyframe(0f, initialYaw.y), new Keyframe(1f, finalYaw.y)));
+                clip.SetCurve(rootJointPath, typeof(Transform), "m_LocalRotation.z",
+                    new AnimationCurve(new Keyframe(0f, initialYaw.z), new Keyframe(1f, finalYaw.z)));
+                clip.SetCurve(rootJointPath, typeof(Transform), "m_LocalRotation.w",
+                    new AnimationCurve(new Keyframe(0f, initialYaw.w), new Keyframe(1f, finalYaw.w)));
+
+                KimodoPlayableClipGenerationHostService.NormalizeRootPathToFrameZero(
+                    clip, out float rootOriginY, out Quaternion rootOriginRotation);
+
+                Assert.That(rootOriginY, Is.EqualTo(3f).Within(0.0001f));
+                Assert.That(Quaternion.Angle(rootOriginRotation, Quaternion.Euler(0f, 45f, 0f)), Is.LessThan(0.001f));
+                Assert.That(KimodoPlayableClipGenerationHostService.TryReadRootOriginY(clip, out float finalRootY), Is.True);
+                Assert.That(finalRootY, Is.EqualTo(3f).Within(0.0001f));
+                Assert.That(ReadTransformPosition(clip, rootJointPath, 0f).x, Is.EqualTo(0f).Within(0.0001f));
+                Assert.That(ReadTransformPosition(clip, rootJointPath, 0f).y, Is.EqualTo(3f).Within(0.0001f));
+                Assert.That(ReadTransformPosition(clip, rootJointPath, 0f).z, Is.EqualTo(0f).Within(0.0001f));
+                Vector3 expectedFinalPath = Quaternion.Euler(0f, -45f, 0f) * new Vector3(3f, 0f, 3f);
+                Assert.That(Vector3.Distance(
+                    ReadTransformPosition(clip, rootJointPath, 1f),
+                    new Vector3(expectedFinalPath.x, 4f, expectedFinalPath.z)),
+                    Is.LessThan(0.0001f),
+                    "Horizontal path is normalized into the initial facing frame while vertical root motion is preserved.");
+                Assert.That(Vector3.Distance(ReadTransformPosition(clip, childJointPath, 0f), new Vector3(100f, 200f, 300f)),
+                    Is.LessThan(0.0001f), "Child local-position curves must not be normalized as root translation.");
+                Assert.That(Quaternion.Angle(ReadTransformRotation(clip, rootJointPath, 0f), Quaternion.identity),
+                    Is.LessThan(0.001f), "Root yaw is normalized to the Clip origin.");
+                Assert.That(Quaternion.Angle(ReadTransformRotation(clip, rootJointPath, 1f), Quaternion.Euler(0f, 45f, 0f)),
+                    Is.LessThan(0.001f), "The root's relative turn is preserved.");
+                Assert.That(AnimationUtility.GetCurveBindings(clip).Any(binding =>
+                    binding.type == typeof(Animator) && binding.propertyName.StartsWith("RootT.")), Is.False,
+                    "The pre-Humanoid bake clip should retain root Transform curves without synthesizing Animator RootT curves.");
+            }
+            finally
+            {
+                Object.DestroyImmediate(clip);
+            }
+        }
+
         [TestCase(true, true)]
         [TestCase(true, false)]
         [TestCase(false, true)]
@@ -333,7 +541,7 @@ namespace KimodoBridge.Editor.Tests
         }
 
         [Test]
-        public void TimelineRequest_UsesGenerationClipAnalysisOptions()
+        public void TimelineRequest_IgnoresLegacyLightweightAnalysisOptions()
         {
             TimelineAsset timeline = ScriptableObject.CreateInstance<TimelineAsset>();
             GameObject directorRoot = new GameObject("KimodoGenerationRequestOptionsTest");
@@ -361,8 +569,8 @@ namespace KimodoBridge.Editor.Tests
                     "walk",
                     clip.bridgeModelName).GenerationRequest;
 
-                Assert.That(request.AnalysisOptionsJson, Is.EqualTo(clip.analysisOptionsJson));
-                Assert.That(generation.analysis_option_json, Is.EqualTo(clip.analysisOptionsJson));
+                Assert.That(request.AnalysisOptionsJson, Is.Empty);
+                Assert.That(generation.analysis_option_json, Is.Empty);
 
                 clip.generationOutputMode = KimodoGenerationOutputMode.ModelBone;
                 Assert.That(
@@ -489,6 +697,52 @@ namespace KimodoBridge.Editor.Tests
                 error);
             director.SetGenericBinding(track, skeleton.animator);
             return skeleton;
+        }
+
+        private static Vector3 ReadRootTranslation(AnimationClip clip, float time)
+        {
+            Vector3 value = Vector3.zero;
+            foreach (EditorCurveBinding binding in AnimationUtility.GetCurveBindings(clip))
+            {
+                if (binding.type != typeof(Animator) || binding.path != string.Empty)
+                    continue;
+                float component = AnimationUtility.GetEditorCurve(clip, binding)?.Evaluate(time) ?? 0f;
+                if (binding.propertyName == "RootT.x") value.x = component;
+                else if (binding.propertyName == "RootT.y") value.y = component;
+                else if (binding.propertyName == "RootT.z") value.z = component;
+            }
+            return value;
+        }
+
+        private static Vector3 ReadTransformPosition(AnimationClip clip, string path, float time)
+        {
+            Vector3 value = Vector3.zero;
+            foreach (EditorCurveBinding binding in AnimationUtility.GetCurveBindings(clip))
+            {
+                if (binding.type != typeof(Transform) || binding.path != path)
+                    continue;
+                float component = AnimationUtility.GetEditorCurve(clip, binding)?.Evaluate(time) ?? 0f;
+                if (binding.propertyName == "m_LocalPosition.x") value.x = component;
+                else if (binding.propertyName == "m_LocalPosition.y") value.y = component;
+                else if (binding.propertyName == "m_LocalPosition.z") value.z = component;
+            }
+            return value;
+        }
+
+        private static Quaternion ReadTransformRotation(AnimationClip clip, string path, float time)
+        {
+            Vector4 value = new Vector4(0f, 0f, 0f, 1f);
+            foreach (EditorCurveBinding binding in AnimationUtility.GetCurveBindings(clip))
+            {
+                if (binding.type != typeof(Transform) || binding.path != path)
+                    continue;
+                float component = AnimationUtility.GetEditorCurve(clip, binding)?.Evaluate(time) ?? 0f;
+                if (binding.propertyName == "m_LocalRotation.x") value.x = component;
+                else if (binding.propertyName == "m_LocalRotation.y") value.y = component;
+                else if (binding.propertyName == "m_LocalRotation.z") value.z = component;
+                else if (binding.propertyName == "m_LocalRotation.w") value.w = component;
+            }
+            return new Quaternion(value.x, value.y, value.z, value.w).normalized;
         }
     }
 }

@@ -65,7 +65,10 @@ namespace KimodoBridge.Editor
                 ? AutoBeginAnchorWindowSeconds
                 : double.PositiveInfinity;
             KimodoMarkerSampleResult autoBegin = null;
-            if (request.AutoBeginAnchor && !request.DeferBeginConstraint &&
+            // AutoBegin is a synthetic normalization anchor for the first pass.
+            // Deferring the authored In boundary must not suppress this anchor;
+            // the deferred boundary is appended separately after pass 1.
+            if (request.AutoBeginAnchor &&
                 !KimodoConstraintNormalizationUtility.HasNormalizationAnchor(
                     built.CombinedSamples,
                     normalizationAnchorWindowSeconds) &&

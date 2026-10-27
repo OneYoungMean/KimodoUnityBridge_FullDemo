@@ -71,12 +71,14 @@ namespace KimodoBridge.Editor
             PlanarTransform inTransform = ResolveTransform(
                 existingRows, inRows, firstPassMotion, modelName, frameRate,
                 runtimeTrimStartFrame, timelineContext, syntheticAutoBeginFrame, isIn: true,
+                targetFrameCount: targetFrameCount,
                 preferStart: preferStartForIn);
             bool preferStartForOut = ResolveBoundaryPreference(
                 outRows, runtimeTrimStartFrame, targetFrameCount, isIn: false);
             PlanarTransform outTransform = ResolveTransform(
                 existingRows, outRows, firstPassMotion, modelName, frameRate,
                 runtimeTrimStartFrame, timelineContext, syntheticAutoBeginFrame, isIn: false,
+                targetFrameCount: targetFrameCount,
                 preferStart: preferStartForOut);
 
             JArray filtered = new JArray();
@@ -113,9 +115,14 @@ namespace KimodoBridge.Editor
         {
             error = string.Empty;
             RootRow previous = null;
-            Vector3 previousVelocity = Vector3.zero;
-            bool hasVelocity = false;
-            foreach (RootRow current in rows.OrderBy(row => row.Frame).ThenBy(row => row.RecordIndex).ThenBy(row => row.RowIndex))
+            RootRow beforePrevious = null;
+            IEnumerable<RootRow> orderedRows = rows
+                .OrderBy(row => row.Frame)
+                .ThenBy(row => row.RecordIndex)
+                .ThenBy(row => row.RowIndex)
+                .GroupBy(row => row.Frame)
+                .Select(group => group.Last());
+            foreach (RootRow current in orderedRows)
             {
                 if (previous == null)
                 {
@@ -123,27 +130,33 @@ namespace KimodoBridge.Editor
                     continue;
                 }
                 int frameDelta = current.Frame - previous.Frame;
-                if (frameDelta <= 0)
-                {
-                    previous = current;
-                    continue;
-                }
                 float dt = frameDelta / Mathf.Max(1f, frameRate);
                 Vector3 velocity = (current.Position - previous.Position) / dt;
                 float speed = velocity.magnitude;
-                float acceleration = (velocity - (hasVelocity ? previousVelocity : Vector3.zero)).magnitude / dt;
                 if (speed > KimodoGenerationWarningCheckService.MaxSpeedMetersPerSecond)
                 {
                     error = $"Raw constraint root speed {speed:F3} m/s exceeds {KimodoGenerationWarningCheckService.MaxSpeedMetersPerSecond:F1} m/s.";
                     return false;
                 }
-                if (acceleration > KimodoGenerationWarningCheckService.MaxAccelerationMetersPerSecondSquared)
+                if (beforePrevious != null)
                 {
-                    error = $"Raw constraint root acceleration {acceleration:F3} m/s² exceeds {KimodoGenerationWarningCheckService.MaxAccelerationMetersPerSecondSquared:F1} m/s².";
-                    return false;
+                    float previousDt = (previous.Frame - beforePrevious.Frame) / Mathf.Max(1f, frameRate);
+                    if (previousDt > 0f)
+                    {
+                        Vector3 previousVelocity = (previous.Position - beforePrevious.Position) / previousDt;
+                        // The two velocities are centered at different times. Use the
+                        // non-uniform three-point Lagrange second derivative instead of
+                        // dividing their difference by only the latest interval.
+                        float centerDistance = 0.5f * (previousDt + dt);
+                        float acceleration = (velocity - previousVelocity).magnitude / centerDistance;
+                        if (acceleration > KimodoGenerationWarningCheckService.MaxAccelerationMetersPerSecondSquared)
+                        {
+                            error = $"Raw constraint root acceleration {acceleration:F3} m/s² exceeds {KimodoGenerationWarningCheckService.MaxAccelerationMetersPerSecondSquared:F1} m/s².";
+                            return false;
+                        }
+                    }
                 }
-                previousVelocity = velocity;
-                hasVelocity = true;
+                beforePrevious = previous;
                 previous = current;
             }
             return true;
@@ -159,16 +172,30 @@ namespace KimodoBridge.Editor
             KimodoTimelineInOutConstraintContext timelineContext,
             int? syntheticAutoBeginFrame,
             bool isIn,
+            int targetFrameCount,
             bool preferStart)
         {
             if (deferredRows == null || deferredRows.Count == 0) return PlanarTransform.Identity;
             int firstFrame = deferredRows.Min(row => row.Frame);
             int lastFrame = deferredRows.Max(row => row.Frame);
-            RootRow anchor = SelectAnchor(existingRows, firstFrame, lastFrame, syntheticAutoBeginFrame, preferStart);
+            // An Outside Out window lives after the generated output range. Its
+            // seam is therefore the last sample of the pass-1 raw motion, not
+            // an arbitrary earlier constraint from existingJson (for example a
+            // synthetic AutoBegin or a path anchor). Prefer that seam whenever
+            // the deferred rows are on the output's far side and raw motion is
+            // available. Otherwise retain the existing anchor behavior used by
+            // inside windows and In boundaries.
+            bool deferredOutAfterOutput = !isIn && targetFrameCount > 0 &&
+                firstFrame >= Mathf.Max(0, runtimeTrimStartFrame) + targetFrameCount;
+            bool useFirstPassOutSeam = deferredOutAfterOutput && firstPassMotion != null;
+            RootRow anchor = useFirstPassOutSeam
+                ? null
+                : SelectAnchor(existingRows, firstFrame, lastFrame, syntheticAutoBeginFrame, preferStart);
             if (anchor != null)
             {
                 if (TryReadOriginalTimelineRoot(timelineContext, anchor.Frame, frameRate,
-                        runtimeTrimStartFrame, modelName, out Vector3 sourcePosition, out Quaternion sourceHeading))
+                        runtimeTrimStartFrame, modelName, false,
+                        out Vector3 sourcePosition, out Quaternion sourceHeading))
                 {
                     return PlanarTransform.FromSourceToTarget(
                         sourcePosition, sourceHeading, anchor.Position,
@@ -188,7 +215,9 @@ namespace KimodoBridge.Editor
                 0,
                 Mathf.Max(0, firstPassMotion.FrameCount - 1));
             if (!TryReadOriginalTimelineRoot(timelineContext, boundary.Frame, frameRate,
-                    runtimeTrimStartFrame, modelName, out Vector3 originalPosition, out Quaternion originalHeading) ||
+                    runtimeTrimStartFrame, modelName,
+                    !isIn && deferredOutAfterOutput,
+                    out Vector3 originalPosition, out Quaternion originalHeading) ||
                 !TryReadMotionRoot(firstPassMotion, modelName, outputFrame,
                     out Vector3 generatedPosition, out Quaternion generatedHeading))
             {
@@ -431,6 +460,7 @@ namespace KimodoBridge.Editor
             float frameRate,
             int runtimeTrimStartFrame,
             string modelName,
+            bool sampleAfterBoundary,
             out Vector3 position,
             out Quaternion heading)
         {
@@ -448,6 +478,11 @@ namespace KimodoBridge.Editor
                 : 1.0;
             double timelineTime = context.SourceClip.start +
                 (clipTime - context.SourceClip.clipIn) / timeScale;
+            double epsilon = 1.0 / Math.Max(1.0, KimodoTimelineConstraintSampler.ResolveTimelineFrameRate(context));
+            if (sampleAfterBoundary)
+            {
+                timelineTime += epsilon;
+            }
             TimelineClip range = timelineTime < context.SourceClip.start
                 ? context.PreviousTimelineClip
                 : timelineTime > context.SourceClip.end
@@ -455,7 +490,6 @@ namespace KimodoBridge.Editor
                     : context.SourceClip;
             if (range != null)
             {
-                double epsilon = 1.0 / Math.Max(1.0, KimodoTimelineConstraintSampler.ResolveTimelineFrameRate(context));
                 timelineTime = Math.Max(range.start, Math.Min(range.end - epsilon, timelineTime));
             }
 
@@ -577,8 +611,10 @@ namespace KimodoBridge.Editor
             {
                 Quaternion yaw = Quaternion.Inverse(KimodoMotionMath.ResolvePlanarHeading(sourceHeading));
                 yaw = KimodoMotionMath.ResolvePlanarHeading(targetHeading) * yaw;
-                Vector3 sourcePlanar = new Vector3(source.x, 0f, source.z);
-                Vector3 targetPlanar = new Vector3(target.x, 0f, target.z);
+                Vector3 sourcePlanar = KimodoMotionMath.FromPlanar(
+                    KimodoMotionMath.ToPlanar(source), 0f);
+                Vector3 targetPlanar = KimodoMotionMath.FromPlanar(
+                    KimodoMotionMath.ToPlanar(target), 0f);
                 Vector3 translation = targetPlanar - yaw * sourcePlanar;
                 return new PlanarTransform(yaw, translation);
             }

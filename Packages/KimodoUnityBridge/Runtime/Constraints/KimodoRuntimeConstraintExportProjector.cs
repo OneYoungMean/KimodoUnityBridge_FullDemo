@@ -302,7 +302,7 @@ namespace KimodoBridge
                 Vector3 delta = actual.profileRootPosition - expected.profileRootPosition;
                 result["root_position_error_m"] = fullBody
                     ? delta.magnitude
-                    : new Vector2(delta.x, delta.z).magnitude;
+                    : KimodoMotionMath.ToPlanar(delta).magnitude;
             }
             if (root2D && KimodoConstraintMask.IsActive(sample, "rootheading"))
                 result["root_heading_error_degrees"] = PlanarHeadingError(actual, expected);
@@ -370,8 +370,8 @@ namespace KimodoBridge
             Vector3 actualForward = actualRotation * Vector3.forward;
             Vector3 expectedForward = expectedRotation * Vector3.forward;
             return Vector2.Angle(
-                new Vector2(actualForward.x, actualForward.z),
-                new Vector2(expectedForward.x, expectedForward.z));
+                KimodoMotionMath.ToPlanar(actualForward),
+                KimodoMotionMath.ToPlanar(expectedForward));
         }
 
         private static int FindJoint(string[] names, string expected)

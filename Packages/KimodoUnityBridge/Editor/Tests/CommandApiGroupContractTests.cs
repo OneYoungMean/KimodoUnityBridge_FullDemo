@@ -183,6 +183,8 @@ namespace KimodoUnityBridge.Command.Tests
             JObject duration = (JObject)generate["inputSchema"]?["properties"]?["duration_frames"];
             Assert.That(duration?.Value<int>("minimum"), Is.EqualTo(1));
             Assert.That(duration?.Value<int>("default"), Is.EqualTo(300));
+            Assert.That(generate["inputSchema"]?["properties"]?["analyze"]?.Value<string>("type"), Is.EqualTo("boolean"));
+            Assert.That(generate["inputSchema"]?["properties"]?["analyze"]?.Value<bool>("default"), Is.True);
             Assert.That(generate["inputSchema"]?["properties"]?["analysis_option"]?.Value<string>("type"), Is.EqualTo("object"));
             Assert.That(retarget["inputSchema"]?["properties"]?["source_character"], Is.Not.Null);
             Assert.That(retarget["inputSchema"]?["properties"]?["animation"], Is.Not.Null);
@@ -199,6 +201,24 @@ namespace KimodoUnityBridge.Command.Tests
                 .First(item => item["root"] != null && item["effector"] != null);
             Assert.That(pointExample["type"], Is.Null);
             Assert.That(pointExample["pose"], Is.Not.Null);
+        }
+
+        [Test]
+        [Category("Generation")]
+        public void PlayableClip_ExposesFullAnalysisToggleEnabledByDefault()
+        {
+            KimodoBridge.KimodoPlayableClip clip = ScriptableObject.CreateInstance<KimodoBridge.KimodoPlayableClip>();
+            try
+            {
+                Assert.That(clip.analyzeAfterGeneration, Is.True);
+                var serialized = new SerializedObject(clip);
+                Assert.That(serialized.FindProperty("analyzeAfterGeneration"), Is.Not.Null,
+                    "The Inspector needs a serialized setting so command and UI generation can share the same choice.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(clip);
+            }
         }
 
         [Test]
@@ -378,6 +398,80 @@ namespace KimodoUnityBridge.Command.Tests
                     Is.True,
                     command.Value<string>("name"));
             }
+
+            JObject liveGeneration = Tool(live, "animation.generate");
+            JObject packagedGeneration = Tool(packaged, "animation.generate");
+            Assert.That(JToken.DeepEquals(
+                liveGeneration["inputSchema"]?["properties"]?["analyze"],
+                packagedGeneration["inputSchema"]?["properties"]?["analyze"]), Is.True,
+                "The packaged help must expose the same analyze switch and default as the live schema.");
+            Assert.That(JToken.DeepEquals(
+                liveGeneration["inputSchema"]?["properties"]?["path"]?["properties"]?["relative_offset"],
+                packagedGeneration["inputSchema"]?["properties"]?["path"]?["properties"]?["relative_offset"]), Is.True);
+            JObject postAnalysis = (JObject)Tool(live, "generation.get")["outputSchema"]?["properties"]?["post_analysis"]?["properties"];
+            Assert.That(postAnalysis["analysis_path"]?.Value<string>("type"), Is.EqualTo("string"));
+            Assert.That(postAnalysis["result"], Is.Null,
+                "The full animation.analysis payload is persisted separately instead of being embedded in generation.get.");
+            Assert.That(JToken.DeepEquals(postAnalysis,
+                Tool(packaged, "generation.get")["outputSchema"]?["properties"]?["post_analysis"]?["properties"]), Is.True);
+        }
+
+        [Test]
+        [Category("Other")]
+        public void HelpCompactModels_RetainsSelectionFieldsAndOmitsRuntimeDetails()
+        {
+            JObject help = Tool(Definitions(), "kimodo.help");
+            Assert.That(help["inputSchema"]?["properties"]?["compact"]?.Value<string>("type"), Is.EqualTo("boolean"));
+            Assert.That(help["inputSchema"]?["properties"]?["compact"]?.Value<bool>("default"), Is.False);
+            TextAsset helpAsset = AssetDatabase.LoadAssetAtPath<TextAsset>("Packages/com.unity.kimodo_unity_motion_tools/Command/help.json");
+            Assert.That(helpAsset, Is.Not.Null);
+            JObject packagedHelp = Tool(JObject.Parse(helpAsset.text), "kimodo.help");
+            Assert.That(JToken.DeepEquals(help["inputSchema"]?["properties"]?["compact"],
+                packagedHelp["inputSchema"]?["properties"]?["compact"]), Is.True);
+
+            Type context = typeof(command_dispatcher).Assembly.GetType("KimodoUnityBridge.Command.command_context");
+            MethodInfo compactModels = context.GetMethod("CompactModelConfigurations", BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(compactModels, Is.Not.Null);
+
+            var source = new JObject
+            {
+                ["status"] = "done",
+                ["models_root"] = "C:/models",
+                ["default"] = new JObject { ["model"] = "walk", ["text_encoder_model"] = "high_precision" },
+                ["configs"] = new JArray
+                {
+                    new JObject
+                    {
+                        ["model"] = "walk",
+                        ["text_encoder_model"] = "high_precision",
+                        ["default"] = true,
+                        ["backend"] = "cuda",
+                        ["source_fps"] = 30
+                    },
+                    new JObject
+                    {
+                        ["model"] = "walk",
+                        ["text_encoder_model"] = "high_performance",
+                        ["default"] = false,
+                        ["backend"] = "cuda",
+                        ["source_fps"] = 30
+                    }
+                }
+            };
+
+            JObject compact = (JObject)compactModels.Invoke(null, new object[] { source });
+            Assert.That(compact.Properties().Select(property => property.Name), Is.EquivalentTo(new[] { "default", "count", "configs" }));
+            Assert.That(compact["count"]?.Value<int>(), Is.EqualTo(2));
+            Assert.That(JToken.DeepEquals(compact["default"], source["default"]), Is.True);
+            JArray configs = (JArray)compact["configs"];
+            Assert.That(configs.Count, Is.EqualTo(2));
+            Assert.That(configs[0].Children<JProperty>().Select(property => property.Name),
+                Is.EquivalentTo(new[] { "model", "text_encoder_model", "default" }));
+            Assert.That(configs[0]["model"]?.Value<string>(), Is.EqualTo("walk"));
+            Assert.That(configs[0]["text_encoder_model"]?.Value<string>(), Is.EqualTo("high_precision"));
+            Assert.That(configs[0]["default"]?.Value<bool>(), Is.True);
+            Assert.That(configs[0]["backend"], Is.Null);
+            Assert.That(source["configs"][0]["backend"]?.Value<string>(), Is.EqualTo("cuda"));
         }
 
         [Test]
@@ -467,24 +561,35 @@ namespace KimodoUnityBridge.Command.Tests
             };
             JObject completed = (JObject)builder.Invoke(null, new object[]
             {
-                completedPayload, KimodoEditorGenerationJobStatus.Completed
+                completedPayload, KimodoEditorGenerationJobStatus.Completed, null, Guid.Empty
             });
-            Assert.That(completed.Value<string>("status"), Is.EqualTo("completed"));
-            Assert.That(completed["result"]?["clip"]?.Value<string>("name"), Is.EqualTo("PickUp"));
+            Assert.That(completed.Value<string>("status"), Is.EqualTo("failed"));
+            Assert.That(completed["analysis_path"], Is.Null,
+                "A full post-analysis result must be written to a session file before it is exposed.");
+            Assert.That(completed["error"]?.Value<string>("code"), Is.EqualTo("post_analysis_path_unavailable"));
 
             var failedPayload = new KimodoEditorGenerationResult { PostAnalysisError = "picture render failed" };
             JObject failed = (JObject)builder.Invoke(null, new object[]
             {
-                failedPayload, KimodoEditorGenerationJobStatus.Completed
+                failedPayload, KimodoEditorGenerationJobStatus.Completed, null, Guid.Empty
             });
             Assert.That(failed.Value<string>("status"), Is.EqualTo("failed"));
             Assert.That(failed["error"]?.Value<string>("code"), Is.EqualTo("post_analysis_failed"));
 
             JObject skipped = (JObject)builder.Invoke(null, new object[]
             {
-                new KimodoEditorGenerationResult(), KimodoEditorGenerationJobStatus.Canceled
+                new KimodoEditorGenerationResult(), KimodoEditorGenerationJobStatus.Canceled, null, Guid.Empty
             });
             Assert.That(skipped.Value<string>("status"), Is.EqualTo("skipped"));
+
+            JObject explicitlySkipped = (JObject)builder.Invoke(null, new object[]
+            {
+                new KimodoEditorGenerationResult { PostAnalysisSkipped = true },
+                KimodoEditorGenerationJobStatus.Completed,
+                null,
+                Guid.Empty
+            });
+            Assert.That(explicitlySkipped.Value<string>("status"), Is.EqualTo("skipped"));
         }
 
         private static JObject Definitions()

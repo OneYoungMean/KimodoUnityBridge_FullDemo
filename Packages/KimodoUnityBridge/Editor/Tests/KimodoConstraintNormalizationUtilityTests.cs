@@ -143,6 +143,42 @@ namespace KimodoBridge.Editor.Tests
         }
 
         [Test]
+        public void DeferredBeginStillGetsSyntheticAutoBeginAnchor()
+        {
+            using (AutoBeginSceneFixture fixture = CreateAutoBeginSceneFixture())
+            {
+                Transform sceneHips = fixture.Skeleton.animator.GetBoneTransform(HumanBodyBones.Hips);
+                KimodoInOutConstraintRequest request = CreateAutoBeginRequest(
+                    fixture,
+                    new KimodoMarkerSampleResult
+                    {
+                        sampleValid = true,
+                        constraintMode = "root2d",
+                        sampleTime = 1.0,
+                        rootOverride = new KimodoUnityBridge.KimodoRigidTransform
+                        {
+                            t = sceneHips.position,
+                            q = sceneHips.rotation
+                        },
+                        enableMask = KimodoConstraintMask.ForType("root2d")
+                    });
+                request.DeferBeginConstraint = true;
+
+                Assert.That(
+                    KimodoInOutConstraintComposer.TryBuild(
+                        request,
+                        out KimodoInOutConstraintResult result,
+                        out _,
+                        out string error),
+                    Is.True,
+                    error);
+                Assert.That(result.HasSyntheticAutoBeginConstraint, Is.True);
+                Assert.That(result.CombinedSamples[0].constraintMode, Is.EqualTo("root2d"));
+                Assert.That(result.CombinedSamples[0].sampleTime, Is.EqualTo(0.0).Within(1e-6));
+            }
+        }
+
+        [Test]
         public void AutoBegin_CachesSceneHipsSnapshotForSubsequentBuilds()
         {
             using (AutoBeginSceneFixture fixture = CreateAutoBeginSceneFixture())

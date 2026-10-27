@@ -7,6 +7,28 @@ namespace KimodoBridge.Editor
 {
     internal static class KimodoTimelineFootContactSampler
     {
+        internal static bool HasAuthoredTrack(AnimationClip clip)
+        {
+            if (clip == null)
+            {
+                return false;
+            }
+
+            for (int channel = 0; channel < KimodoFootContactTrackUtility.ChannelCount; channel++)
+            {
+                string propertyName = KimodoFootContactTrackUtility.GetPropertyName(channel);
+                if (string.IsNullOrWhiteSpace(propertyName) ||
+                    AnimationUtility.GetEditorCurve(
+                        clip,
+                        EditorCurveBinding.FloatCurve(string.Empty, typeof(Animator), propertyName)) == null)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         internal static bool TrySample(
             KimodoTimelineInOutConstraintContext context,
             double timelineTime,

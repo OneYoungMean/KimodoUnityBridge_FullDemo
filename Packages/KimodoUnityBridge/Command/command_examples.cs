@@ -22,10 +22,16 @@ namespace KimodoUnityBridge.Command
                     @"{'video_path':'C:/data/mocap.mp4','person':'left'}");
                 case PoseFromPictureCommand: return Examples("Estimate one SMPL-X pose from a still image, then poll for the pose array.",
                     @"{'image_path':'C:/data/pose.jpg'}");
-                case AnimationAnalysisCommand: return Examples("Analyze one returned Clip; open the returned image to inspect it.",
-                    @"{'clips':[{'character':'<character>','clip':'<clip>'}],'resolution':1920,'camera':{'resolution':[1280,720]}}");
-                case PoseAnalysisCommand: return Examples("Preview the same point constraints before sending them to animation.generate.",
-                    @"{'character':'<character>','constraints':[{'frame':90,'pose':{'track':'<track>','index':0},'root':{'position':[1.1,0,2.4]},'effector':{'right_hand':{'position':[1.2,0.9,2.4]}}}],'combine':false,'camera':{'resolution':[1280,720]}}");
+                case AnimationAnalysisCommand: return new JArray(
+                    Example("Analyze one Clip and open its returned image to inspect it.",
+                        @"{'clips':[{'character':'<character>','clip':'<clip>'}],'resolution':1920,'camera':{'resolution':[1280,720]}}"),
+                    Example("Analyze another Clip separately, then map each result to its source for comparison.",
+                        @"{'clips':[{'character':'<character>','clip':'<another clip>'}],'resolution':1920,'camera':{'resolution':[1280,720]}}"));
+                case PoseAnalysisCommand: return new JArray(
+                    Example("Preview a point constraint when pose inspection will help assess the requested result.",
+                        @"{'character':'<character>','constraints':[{'frame':90,'pose':{'track':'<track>','index':0},'root':{'position':[1.1,0,2.4]},'effector':{'right_hand':{'position':[1.2,0.9,2.4]}}}],'combine':false,'camera':{'resolution':[1280,720]}}"),
+                    Example("Preview a Root2D point constraint and inspect the returned measurements.",
+                        @"{'character':'<character>','constraints':[{'frame':60,'root':{'position':[2.4,0.95,5.0],'rotation':[0,0,0]}}]}"));
                 case RetargetAnimationCommand: return Examples("Retarget a loaded Clip to another scene character.",
                     @"{'source_character':'<source character>','animation':'<clip>','target_character':'<target character>','output':{'name':'RetargetedMotion'}}");
                 case GenerateAnimationCommand: return new JArray(
@@ -42,8 +48,8 @@ namespace KimodoUnityBridge.Command
                     Example("Create an IK-solved FullBody constraint from a referenced pose, root override, and hand target.",
                         @"{'character':'<character>','prompt':'<short action for one Clip>','duration_frames':180,'loop':false,'constraints':[{'frame':90,'pose':{'track':'<pose track>','index':0},'root':{'position':[2.4,0.95,5.0],'rotation':[0,0,0]},'effector':{'right_hand':{'position':[2.55,0.95,5.35]}}}]}"));
                 case PoseGetCommand: return new JArray(
-                    Example("Capture a pose at an absolute Timeline-global frame. Analyze the Clip first, then add its local frame offset to start_timeline_frame_60.",
-                        @"{'source':{'character':'<character>','timeline_frame_60':90},'full_data':true}"),
+                    Example("Capture a pose at an absolute Timeline-global frame resolved from scene.context or existing analysis.",
+                        @"{'source':{'character':'<character>','timeline_frame_60':90}}"),
                     Example("Capture the original scene Animator's currently evaluated pose, independent of Timeline preview time.",
                         @"{'source':{'character':'<character>','mode':'scene_pose'},'full_data':true}"),
                     Example("Capture the Humanoid Avatar's stored skeleton rest pose.",

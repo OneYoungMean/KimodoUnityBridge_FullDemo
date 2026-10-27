@@ -62,6 +62,8 @@ namespace KimodoBridge
         private KimodoBridgeService bridgeService;
         private KimodoRuntimeMotionPlayer motionPlayer;
         private KimodoRuntimeInterruptionPlan interruptionPlan;
+        private float nextGenerationAllowedTime;
+        private int generationFailureCount;
 
         private sealed class KimodoRuntimeInterruptionPlan
         {
@@ -303,7 +305,7 @@ namespace KimodoBridge
                 return;
             }
 
-            float distance = Vector2.Distance(new Vector2(current.x, current.z), targetPosition);
+            float distance = (KimodoMotionMath.ToPlanar(current) - targetPosition).magnitude;
             float duration = KimodoRoot2DPlanner.EstimateDuration(
                 distance,
                 maxSpeed,
@@ -397,36 +399,42 @@ namespace KimodoBridge
             promptDraft = ResolveInitialPrompt();
             constraints.Clear();
             generationSession.BeginMotionReset();
+            generationFailureCount = 0;
+            nextGenerationAllowedTime = 0f;
+            try
+            {
+                if (!generationSession.IsActive)
+                {
+                    UpdateStatus("Prompt reset.");
+                    return;
+                }
 
-            if (!generationSession.IsActive)
+                if (generationSession.GenerationInFlight)
+                {
+                    UpdateStatus("Prompt reset. Waiting for current generation to finish.");
+                    generationSession.CancelGeneration();
+                    await WaitForGenerationSlotAsync(generationSession.LifetimeToken);
+                }
+
+                motionPlayer.Stop();
+                motionPlayer.ResetCompletionState();
+                motionPlayer.ClearNextSegment();
+                interruptionPlan = null;
+                if (bridgeService != null && !bridgeService.IsDisposed)
+                {
+                    await bridgeService.StopAsync(CancellationToken.None);
+                    bridgeService.Dispose();
+                }
+                bridgeService = KimodoBridgeService.CreateOwned();
+                ResetArdySessionState();
+                CaptureAppliedRuntimeSettings();
+                UpdateStatus("Prompt reset. Generating fresh segment.");
+                await GenerateNextSegmentAsync(generationSession.LifetimeToken);
+            }
+            finally
             {
                 generationSession.EndMotionReset();
-                UpdateStatus("Prompt reset.");
-                return;
             }
-
-            if (generationSession.GenerationInFlight)
-            {
-                UpdateStatus("Prompt reset. Waiting for current generation to finish.");
-                generationSession.CancelGeneration();
-                await WaitForGenerationSlotAsync(generationSession.LifetimeToken);
-            }
-
-            motionPlayer.Stop();
-            motionPlayer.ResetCompletionState();
-            motionPlayer.ClearNextSegment();
-            interruptionPlan = null;
-            if (bridgeService != null && !bridgeService.IsDisposed)
-            {
-                await bridgeService.StopAsync(CancellationToken.None);
-                bridgeService.Dispose();
-            }
-            bridgeService = KimodoBridgeService.CreateOwned();
-            ResetArdySessionState();
-            CaptureAppliedRuntimeSettings();
-            generationSession.EndMotionReset();
-            UpdateStatus("Prompt reset. Generating fresh segment.");
-            await GenerateNextSegmentAsync(generationSession.LifetimeToken);
         }
 
         private async Task StartRuntimeAsync()
@@ -438,6 +446,8 @@ namespace KimodoBridge
 
             try
             {
+                generationFailureCount = 0;
+                nextGenerationAllowedTime = 0f;
                 if (!ValidateConfiguration(out string error))
                 {
                     UpdateStatus(error);
@@ -493,7 +503,8 @@ namespace KimodoBridge
 
         private void MaybeStartNextGeneration(CancellationToken token)
         {
-            if (!generationSession.Running || generationSession.GenerationInFlight || generationSession.GenerationBlocked)
+            if (!generationSession.Running || generationSession.GenerationInFlight || generationSession.GenerationBlocked ||
+                Time.realtimeSinceStartup < nextGenerationAllowedTime)
             {
                 return;
             }
@@ -507,7 +518,13 @@ namespace KimodoBridge
                 return;
             }
 
-            if (generationSession.RefreshPending || (!isArdy && motionPlayer.HasNextSegment))
+            if (generationSession.RefreshPending)
+            {
+                _ = GenerateNextSegmentAsync(token);
+                return;
+            }
+
+            if (!isArdy && motionPlayer.HasNextSegment)
             {
                 return;
             }
@@ -517,6 +534,11 @@ namespace KimodoBridge
 
         private async Task GenerateNextSegmentAsync(CancellationToken token)
         {
+            if (Time.realtimeSinceStartup < nextGenerationAllowedTime)
+            {
+                return;
+            }
+
             if (!generationSession.TryBeginGeneration(
                     token,
                     out CancellationTokenSource generationCts,
@@ -691,11 +713,19 @@ namespace KimodoBridge
                     generationSession.RecordKimodoGenerationDuration(
                         Mathf.Max(0f, Time.realtimeSinceStartup - generationStartedAt));
                 }
-                SegmentReady?.Invoke(CreateSegmentReport(generatedSegment));
-
                 constraints.CompleteGeneration(isArdy, consumedPendingRevision);
                 generationSession.AdvanceSegment(requestSegmentIndex);
+                generationFailureCount = 0;
+                nextGenerationAllowedTime = 0f;
                 UpdateStatus($"Segment {requestSegmentIndex} ready.");
+                try
+                {
+                    SegmentReady?.Invoke(CreateSegmentReport(generatedSegment));
+                }
+                catch (Exception subscriberException)
+                {
+                    Debug.LogException(subscriberException, this);
+                }
             }
             catch (OperationCanceledException)
             {
@@ -704,6 +734,8 @@ namespace KimodoBridge
             {
                 Debug.LogException(ex, this);
                 UpdateStatus($"Generate failed: {ex.Message}");
+                generationFailureCount = Mathf.Min(generationFailureCount + 1, 6);
+                nextGenerationAllowedTime = Time.realtimeSinceStartup + Mathf.Min(30f, Mathf.Pow(2f, generationFailureCount));
             }
             finally
             {

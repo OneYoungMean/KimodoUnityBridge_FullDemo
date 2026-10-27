@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Playables;
 using UnityEngine.Timeline;
 using TimelineInject;
 
@@ -93,8 +94,14 @@ namespace KimodoBridge
         public bool overrideHeading;
         [Tooltip("Absolute Unity yaw in degrees. Positive turns right; negative turns left; zero faces Unity forward.")]
         public float headingDegrees;
+        [Tooltip("Normalize root X/Z into the initial facing frame before Humanoid conversion, transfer initial yaw to the Timeline Clip rotation, preserve generated root height in the muscle curves, and apply the requested World-space target position as the Timeline Clip offset.")]
+        public bool useRelativeOffset;
+        [Tooltip("World-space target position for the generated Clip's first root pose. The final output root Y curve is preserved and used for height compensation.")]
+        public Vector3 relativeOffset;
         [Tooltip("Backend analysis options serialized as JSON and applied to this generation clip.")]
         public string analysisOptionsJson = string.Empty;
+        [Tooltip("Run the full animation analysis automatically after generation.")]
+        public bool analyzeAfterGeneration = true;
         [Tooltip("Optional generated AnimationClip asset name without extension.")]
         public string generatedAssetName = string.Empty;
         [Tooltip("Optional generated AnimationClip folder under Assets.")]
@@ -120,6 +127,22 @@ namespace KimodoBridge
         public int outConstraintWindowFrames = 1;
         [Min(1), Tooltip("Number of evenly spaced FullBody samples in the Out window, including its endpoints.")]
         public int outConstraintSampleCount = 1;
+        [SerializeField, HideInInspector]
+        public TrackAsset inConstraintSourceTrack;
+        [SerializeField, HideInInspector]
+        public PlayableAsset inConstraintSourceAsset;
+        [SerializeField, HideInInspector]
+        public double inConstraintSourceClipStart = -1.0;
+        [SerializeField, HideInInspector]
+        public int inConstraintSourceFrame = -1;
+        [SerializeField, HideInInspector]
+        public TrackAsset outConstraintSourceTrack;
+        [SerializeField, HideInInspector]
+        public PlayableAsset outConstraintSourceAsset;
+        [SerializeField, HideInInspector]
+        public double outConstraintSourceClipStart = -1.0;
+        [SerializeField, HideInInspector]
+        public int outConstraintSourceFrame = -1;
         [Tooltip("Adapt ARDY history from previous root speed: 0-1 m/s = 0.225; 1-10 m/s grows exponentially to 1; above 10 m/s = 1.")]
         public bool ardyAutoHistory = true;
         [Range(0f, 1f)]
@@ -130,7 +153,15 @@ namespace KimodoBridge
         [Tooltip("When the first second has no effective constraint anchor, use the character's original scene Hips position and heading as a Root2D frame-0 anchor.")]
         public bool autoBeginAnchor = true;
         public bool isGenerated;
+        [HideInInspector]
+        public bool isDebugRawClip;
+        [HideInInspector]
+        public string debugPassName = string.Empty;
         public string lastGeneratedPrompt;
+        [SerializeField, HideInInspector]
+        internal string commandGenerationStatus = string.Empty;
+        [SerializeField, HideInInspector]
+        internal string commandGenerationError = string.Empty;
         [Header("Bake Options")]
         [Tooltip("Auto retarget baked animation according to timeline binding animator.")]
         public bool autoRetargetOnBinding = true;

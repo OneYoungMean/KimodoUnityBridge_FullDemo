@@ -75,6 +75,17 @@ namespace KimodoBridge.Editor
                 throw new InvalidOperationException(string.IsNullOrWhiteSpace(bakeError) ? "Bake failed." : bakeError);
             }
 
+            // Normalize only the horizontal root path before Humanoid conversion.
+            // Keep generated root height in the muscle curves and compensate for
+            // its first-frame value in the Timeline Clip offset.
+            if (request.UseRelativeOffset)
+            {
+                KimodoPlayableClipGenerationHostService.NormalizeRootPathToFrameZero(
+                    request.TargetClip,
+                    out request.RelativeRootOriginY,
+                    out request.RelativeRootOriginRotation);
+            }
+
             ThrowIfCanceled(request);
             EditorUtility.SetDirty(request.TargetClip);
 
@@ -199,6 +210,9 @@ namespace KimodoBridge.Editor
                 throw new InvalidOperationException(
                     $"Kimodo returned {result?.MotionData?.FrameCount ?? 0} frames; expected {request.EffectiveRuntimeFrameCount}.");
             }
+            request.DebugRuntimeMotion = request.DebugCaptureUntrimmedMotion
+                ? result.MotionData
+                : null;
             return TrimRuntimeResultForOutput(request, result, modelName);
         }
 
@@ -226,6 +240,9 @@ namespace KimodoBridge.Editor
                 request.Token);
             ValidateArdyResult(directResult, profile, request.EffectiveSeed);
             KimodoRawMotionData sourceMotion = directResult.MotionData;
+            request.DebugRuntimeMotion = request.DebugCaptureUntrimmedMotion
+                ? sourceMotion
+                : null;
             byte[] sourcePayload = KimodoRawMotionUtility.ToFlatBuffer(sourceMotion, profile.ModelName);
             return new KimodoBridgeCommandResult
             {
@@ -296,6 +313,15 @@ namespace KimodoBridge.Editor
                 runtimeResult,
                 outputPlan,
                 rawBoneClip);
+            if (request.UseRelativeOffset &&
+                KimodoPlayableClipGenerationHostService.TryReadRootOriginY(
+                    request.TargetClip,
+                    out float finalRootOriginY))
+            {
+                // Humanoid conversion can express root height in avatar space;
+                // use the final output curve when compensating the Timeline offset.
+                request.RelativeRootOriginY = finalRootOriginY;
+            }
             KimodoEditorClipWritebackService.FlushWritebackAssets();
             if (rawBoneClip != null && string.IsNullOrWhiteSpace(AssetDatabase.GetAssetPath(rawBoneClip)))
             {
@@ -708,7 +734,7 @@ namespace KimodoBridge.Editor
             request.Progress?.Invoke(KimodoBridgeCommandStage.Finalize, "Finalizing generated assets...");
             request.Progress?.Invoke(KimodoBridgeCommandStage.Completed, "Generation complete.");
 
-            return new KimodoEditorGenerationResult
+            var result = new KimodoEditorGenerationResult
             {
                 ConstraintsPath = string.Empty,
                 Prompt = prompt,
@@ -721,6 +747,9 @@ namespace KimodoBridge.Editor
                 GeneratedClip = generatedClip,
                 RawBoneClip = rawBoneClip,
             };
+            if (request.DebugConstraintPasses != null)
+                result.DebugConstraintPasses.AddRange(request.DebugConstraintPasses);
+            return result;
         }
 
         private static void ThrowIfCanceled(KimodoEditorGenerateRequest request)

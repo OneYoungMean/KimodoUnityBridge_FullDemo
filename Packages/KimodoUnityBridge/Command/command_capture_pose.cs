@@ -93,7 +93,8 @@ namespace KimodoUnityBridge.Command
 
         private static void CreateHeadingArrow(List<GameObject> objects, Vector3 origin, Vector3 forward, float length, Color color)
         {
-            Vector3 flat = new Vector3(forward.x, 0f, forward.z);
+            Vector3 flat = KimodoMotionMath.FromPlanar(
+                KimodoMotionMath.ToPlanarHeadingVector(forward), 0f);
             if (flat.sqrMagnitude < .0001f) flat = Vector3.forward;
             flat.Normalize();
             Vector3 tip = origin + flat * length;

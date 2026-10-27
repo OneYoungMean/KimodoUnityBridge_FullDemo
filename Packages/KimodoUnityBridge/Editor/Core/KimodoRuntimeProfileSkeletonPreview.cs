@@ -147,7 +147,7 @@ namespace KimodoBridge.Editor
             };
         }
 
-        private static string ResolveModelGuid(string modelName)
+        internal static string ResolveModelGuid(string modelName)
         {
             return KimodoRigProfileDatabase.ResolveRigTypeFromModelName(modelName) switch
             {

@@ -44,6 +44,7 @@
 
 ## 暂缓 TODO：Analysis Picture 行为修复
 
+- [ ] **Inspector 独立 Analysis 入口。** 在 `Advanced` 增加独立的完整 `animation.analysis` 选项；不要把已保留的 `animation.generate.analysis_option` 当作 UI 方案，也不要通过 Command Dispatcher 反射调用。生成完成后由共享 Editor 分析服务处理 Timeline 采样、缓存、Root Path 标记和 SceneView 图片。
 - [ ] 让 `animation_analyze.picture.environment.mode` 真正控制画面环境，并验证 `tiles`、`output` 与返回的图片文件一致；当前这几个选项会被解析和回显，但实际渲染分支没有完整应用它们。
 - [ ] 评估并移除 `BuildEffectiveAnalysisOptions` 对 `keyframe_count`、`keyframes.max_count`、`keyframes.enabled` 的兼容清理；破坏性升级后应由 schema 直接拒绝旧字段。
 - [ ] 区分并保留仍有实际用途的 Timeline segment `role`、Marker `sourceRole` 与 analysis 输入字段，禁止全局关键字替换。
@@ -115,6 +116,7 @@
 
 ## 代码清理待办（暂缓，由后续处理）
 
+- [ ] **obstacle：归档不可达的非 ARDY ClipConstraint bake 分支。** `GenerateClipConstraintBakedAsync` 仅在 `TryGetClipConstraintAvatarMask()` 返回 `true` 时进入；当前实现固定返回 `false`。确认不再恢复该功能后，将这条非 ARDY 的 ClipConstraint mask/二次生成分支移入 archive。保留 ARDY In 边界使用的 `BuildBegin` 和通用 ClipConstraint 协议；也不要把共享的 `AnalyzeMergedMotionAsync` 一并归档：长窗口生成在启用了 generation 轻量分析时仍会调用它。
 - [ ] 检查 `KimodoHandEffectorGoalTests` 中 AnimationHumanStream goal 与 Avatar post rotation 的 180° 偏差；确认是测试公式、Unity 版本差异还是运行时手部约束方向错误。
 - [ ] 将 FullDemo `5.RuntimeArdyDemo.unity` 中仍序列化到 `targetHumanoidAnimator` 的 8 个目标迁入 `targetHumanoidAnimators`，然后验证 ARDY 场景能启动；当前代码只读取新列表。
 - [ ] 为运行时生成失败定义退避或阻塞策略，避免 QuickServer 不可用或请求持续失败时每帧重试并重复写日志。

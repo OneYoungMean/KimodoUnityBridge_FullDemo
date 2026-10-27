@@ -136,9 +136,7 @@ namespace KimodoBridge.Editor
                 if (previous.Frame == current.Frame)
                     continue;
                 float dt = Mathf.Max(1f / Mathf.Max(1f, frameRate), (current.Frame - previous.Frame) / Mathf.Max(1f, frameRate));
-                Vector2 previousXZ = new Vector2(previous.Position.x, previous.Position.z);
-                Vector2 currentXZ = new Vector2(current.Position.x, current.Position.z);
-                float planarDistance = Vector2.Distance(previousXZ, currentXZ);
+                float planarDistance = KimodoMotionMath.PlanarDistance(previous.Position, current.Position);
                 float distance = previous.HasY && current.HasY
                     ? Vector3.Distance(previous.Position, current.Position)
                     : planarDistance;
@@ -208,9 +206,7 @@ namespace KimodoBridge.Editor
                     {
                         RootObservation left = entries[i];
                         RootObservation right = entries[j];
-                        Vector2 leftXZ = new Vector2(left.Position.x, left.Position.z);
-                        Vector2 rightXZ = new Vector2(right.Position.x, right.Position.z);
-                        float positionDelta = Vector2.Distance(leftXZ, rightXZ);
+                        float positionDelta = KimodoMotionMath.PlanarDistance(left.Position, right.Position);
                         float yDelta = left.HasY && right.HasY ? Mathf.Abs(left.Position.y - right.Position.y) : 0f;
                         float headingDelta = left.HasHeading && right.HasHeading ? Vector2.Angle(left.Heading, right.Heading) : 0f;
                         if (positionDelta > PositionToleranceMeters ||
@@ -331,7 +327,7 @@ namespace KimodoBridge.Editor
                     {
                         Frame = frame, Source = rootInput != null ? "root" : "pose",
                         Position = sample.rootOverride.t, HasY = true,
-                        Heading = new Vector2(forward.x, forward.z), HasHeading = true
+                        Heading = KimodoMotionMath.ToPlanar(forward), HasHeading = true
                     });
                 }
                 else if (rootInput != null && HasPosition(rootInput))
@@ -345,7 +341,7 @@ namespace KimodoBridge.Editor
                     {
                         Frame = frame, Source = "root", HasY = true,
                         Position = new Vector3(p[0].Value<float>(), p[1].Value<float>(), p[2].Value<float>()),
-                        Heading = new Vector2(forward.x, forward.z), HasHeading = r?.Count == 3
+                        Heading = KimodoMotionMath.ToPlanar(forward), HasHeading = r?.Count == 3
                     });
                 }
             }

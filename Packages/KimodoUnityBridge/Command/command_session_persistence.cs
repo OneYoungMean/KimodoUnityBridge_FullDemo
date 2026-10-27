@@ -92,6 +92,51 @@ namespace KimodoUnityBridge.Command
 
         // Rebuilt lazily after every editor domain reload.
         private static bool timelineSessionsRestored;
+        private const string PlayModeRecoverySessionIdKey = "Kimodo.Session.PlayModeRecovery.Id";
+        private const string PlayModeRecoveryTimelinePathKey = "Kimodo.Session.PlayModeRecovery.TimelinePath";
+        private const string PlayModeRecoveryScenePathKey = "Kimodo.Session.PlayModeRecovery.ScenePath";
+        private const string PlayModeRecoverySceneNameKey = "Kimodo.Session.PlayModeRecovery.SceneName";
+
+        internal static void CapturePlayModeSessionRestoreMarker()
+        {
+            TimelineSessionRecord session = currentTimelineSession;
+            Scene scene = SceneManager.GetActiveScene();
+            if (!IsTimelineSessionValid(session) || !session.IsAutomatic || session.SessionRoot.scene != scene ||
+                session.TimelineAsset == null || string.IsNullOrWhiteSpace(session.TimelineAssetPath))
+            {
+                ClearPlayModeSessionRestoreMarker();
+                return;
+            }
+
+            SessionState.SetString(PlayModeRecoverySessionIdKey, session.Id.ToString("D"));
+            SessionState.SetString(PlayModeRecoveryTimelinePathKey, session.TimelineAssetPath);
+            SessionState.SetString(PlayModeRecoveryScenePathKey, scene.path ?? string.Empty);
+            SessionState.SetString(PlayModeRecoverySceneNameKey, scene.name ?? string.Empty);
+        }
+
+        private static bool IsPlayModeSessionRecoveryCandidate(
+            KimodoCommandSessionMetadata metadata,
+            string timelinePath,
+            Scene activeScene)
+        {
+            string sessionId = SessionState.GetString(PlayModeRecoverySessionIdKey, string.Empty);
+            if (string.IsNullOrWhiteSpace(sessionId)) return false;
+            bool matches = metadata != null && metadata.isAutomatic &&
+                string.Equals(metadata.sessionId, sessionId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(SessionState.GetString(PlayModeRecoveryTimelinePathKey, string.Empty), timelinePath, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(SessionState.GetString(PlayModeRecoveryScenePathKey, string.Empty), activeScene.path ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(SessionState.GetString(PlayModeRecoverySceneNameKey, string.Empty), activeScene.name ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(metadata.scenePath ?? string.Empty, activeScene.path ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+            return matches;
+        }
+
+        private static void ClearPlayModeSessionRestoreMarker()
+        {
+            SessionState.EraseString(PlayModeRecoverySessionIdKey);
+            SessionState.EraseString(PlayModeRecoveryTimelinePathKey);
+            SessionState.EraseString(PlayModeRecoveryScenePathKey);
+            SessionState.EraseString(PlayModeRecoverySceneNameKey);
+        }
 
         private static bool ShouldRestoreAutomaticSession(
             KimodoCommandSessionMetadata metadata,
@@ -508,7 +553,8 @@ namespace KimodoUnityBridge.Command
                         item.gameObject.scene == activeScene &&
                         (item.name.StartsWith(KimodoRuntimeUtility.SessionDirectorPrefix, StringComparison.Ordinal) ||
                          item.transform.parent != null && item.transform.parent.name.StartsWith(KimodoRuntimeUtility.SessionRootPrefix, StringComparison.Ordinal)));
-                if (!ShouldRestoreAutomaticSession(metadata, hasExistingSceneContext))
+                bool playModeRecovery = IsPlayModeSessionRecoveryCandidate(metadata, path, activeScene);
+                if (!ShouldRestoreAutomaticSession(metadata, hasExistingSceneContext) && !playModeRecovery)
                 {
                     continue;
                 }
@@ -670,7 +716,36 @@ namespace KimodoUnityBridge.Command
                     if (ReferenceEquals(firstTimelineSession, session)) firstTimelineSession = null;
                 }
             }
+            // A Play Mode round trip is the only case allowed to recreate a
+            // destroyed transient workspace from its persisted Timeline data.
+            // Consume the marker immediately so reopening the scene later does
+            // not revive an old automatic Session.
+            if (!string.IsNullOrWhiteSpace(SessionState.GetString(PlayModeRecoverySessionIdKey, string.Empty)))
+            {
+                ClearPlayModeSessionRestoreMarker();
+            }
             timelineSessionsRestored = true;
+        }
+
+        internal static void RestorePlayModeSessionAfterPlayMode()
+        {
+            if (string.IsNullOrWhiteSpace(SessionState.GetString(PlayModeRecoverySessionIdKey, string.Empty)))
+            {
+                return;
+            }
+
+            Scene activeScene = SceneManager.GetActiveScene();
+            if (!activeScene.IsValid() || !activeScene.isLoaded)
+            {
+                ClearPlayModeSessionRestoreMarker();
+                return;
+            }
+
+            timelineSessionsRestored = false;
+            currentTimelineSession = null;
+            firstTimelineSession = null;
+            lock (TimelineSessionsLock) TimelineSessions.Clear();
+            EnsureTimelineSessionsRestored();
         }
     }
 }

@@ -8,6 +8,7 @@ These rules apply to repository maintenance. Animation task execution is defined
 
 - Preserve unrelated worktree changes.
 - Modify only files required by the requested task.
+- Code edits and code-level removals may be made directly; they do not need to be archived. When removing one or more files, move each file and its associated Unity `.meta` file, if present, to the nearest `archive/` directory first.
 - Do not commit or push unless the user explicitly asks.
 - Keep runtime compatibility code and attribution intact unless removal is explicitly requested.
 

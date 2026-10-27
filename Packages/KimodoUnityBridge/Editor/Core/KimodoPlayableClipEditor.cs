@@ -33,6 +33,10 @@ namespace KimodoBridge.Editor
         private SerializedProperty pathDistanceProp;
         private SerializedProperty overrideHeadingProp;
         private SerializedProperty headingDegreesProp;
+        private SerializedProperty useRelativeOffsetProp;
+        private SerializedProperty relativeOffsetProp;
+        private SerializedProperty commandGenerationStatusProp;
+        private SerializedProperty commandGenerationErrorProp;
         private SerializedProperty inOutConstraintModeProp;
         private SerializedProperty enableInConstraint;
         private SerializedProperty enableOutConstraint;
@@ -45,6 +49,7 @@ namespace KimodoBridge.Editor
         private SerializedProperty ardyAutoHistory;
         private SerializedProperty ardyHistoryWeight;
         private SerializedProperty showConstraint;
+        private SerializedProperty analyzeAfterGeneration;
         private SerializedProperty splinePathEnabled;
         private SerializedProperty splineWaypointCount;
         private SerializedProperty splineDensePath;
@@ -72,6 +77,9 @@ namespace KimodoBridge.Editor
         private bool showTrajectoryContinuityFoldout;
         private bool showAdvancedFoldout = true;
         private GUIStyle trajectoryContinuityFoldoutStyle;
+        private string lastFullAnalysisJson = string.Empty;
+        private string lastFullAnalysisError = string.Empty;
+        private Vector2 fullAnalysisScroll;
 
         private void OnEnable()
         {
@@ -138,6 +146,10 @@ namespace KimodoBridge.Editor
             pathDistanceProp = serializedObject.FindProperty("pathDistance");
             overrideHeadingProp = serializedObject.FindProperty("overrideHeading");
             headingDegreesProp = serializedObject.FindProperty("headingDegrees");
+            useRelativeOffsetProp = serializedObject.FindProperty("useRelativeOffset");
+            relativeOffsetProp = serializedObject.FindProperty("relativeOffset");
+            commandGenerationStatusProp = serializedObject.FindProperty("commandGenerationStatus");
+            commandGenerationErrorProp = serializedObject.FindProperty("commandGenerationError");
             inOutConstraintModeProp = serializedObject.FindProperty("inOutConstraintMode");
             enableInConstraint = serializedObject.FindProperty("enableInConstraint");
             enableOutConstraint = serializedObject.FindProperty("enableOutConstraint");
@@ -150,6 +162,7 @@ namespace KimodoBridge.Editor
             ardyAutoHistory = serializedObject.FindProperty("ardyAutoHistory");
             ardyHistoryWeight = serializedObject.FindProperty("ardyHistoryWeight");
             showConstraint = serializedObject.FindProperty("showConstraint");
+            analyzeAfterGeneration = serializedObject.FindProperty("analyzeAfterGeneration");
             splinePathEnabled = serializedObject.FindProperty("splinePathEnabled");
             splineWaypointCount = serializedObject.FindProperty("splineWaypointCount");
             splineDensePath = serializedObject.FindProperty("splineDensePath");
@@ -202,6 +215,7 @@ namespace KimodoBridge.Editor
             PullBridgeStatusSnapshot();
             SyncRequestHandleState();
             serializedObject.UpdateIfRequiredOrScript();
+            DrawCommandGenerationStatus();
             DrawGenerationSection();
             DrawBakeSection();
             DrawErrorSection();
@@ -211,6 +225,23 @@ namespace KimodoBridge.Editor
             {
                 serializedObject.ApplyModifiedProperties();
             }
+        }
+
+        private void DrawCommandGenerationStatus()
+        {
+            string status = commandGenerationStatusProp?.stringValue ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(status) || string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            string error = commandGenerationErrorProp?.stringValue ?? string.Empty;
+            MessageType messageType = string.Equals(status, "failed", StringComparison.OrdinalIgnoreCase)
+                ? MessageType.Error
+                : string.Equals(status, "canceled", StringComparison.OrdinalIgnoreCase)
+                    ? MessageType.Warning
+                    : MessageType.Info;
+            string message = $"Command generation {status}.";
+            if (!string.IsNullOrWhiteSpace(error)) message += $"\n{error}";
+            EditorGUILayout.HelpBox(message, messageType);
         }
 
         private void DrawGenerationSection()
@@ -425,23 +456,29 @@ namespace KimodoBridge.Editor
                         float previousLabelWidth = EditorGUIUtility.labelWidth;
                         EditorGUIUtility.labelWidth = 28f;
                         EditorGUILayout.PropertyField(enableInConstraint, new GUIContent("In"), GUILayout.Width(60f));
-                        if (enableInConstraint.boolValue && postApplyInConstraint != null)
-                        {
-                            EditorGUILayout.PropertyField(
-                                postApplyInConstraint,
-                                new GUIContent("Post In", "Defer In until after the first trajectory pass, align it in SOMA Root2D space, then apply it in the second pass."),
-                                GUILayout.Width(82f));
-                        }
                         EditorGUIUtility.labelWidth = 36f;
                         EditorGUILayout.PropertyField(enableOutConstraint, new GUIContent("Out"), GUILayout.Width(60f));
                         EditorGUIUtility.labelWidth = previousLabelWidth;
-                        if (enableOutConstraint.boolValue)
-                        {
-                            EditorGUILayout.PropertyField(
-                                postApplyOutConstraint,
-                                new GUIContent("Post", "Defer Out until after the first trajectory pass, align it in SOMA Root2D space, then apply it in the second pass."),
-                                GUILayout.Width(70f));
-                        }
+                    }
+                }
+
+                if ((KimodoInOutConstraintMode)inOutConstraintModeProp.enumValueIndex != KimodoInOutConstraintMode.None)
+                {
+                    if (enableInConstraint.boolValue && postApplyInConstraint != null)
+                    {
+                        EditorGUILayout.PropertyField(
+                            postApplyInConstraint,
+                            new GUIContent(
+                                "Post-Apply In",
+                                "Defer In until after the first trajectory pass, align it in SOMA Root2D space, then apply it in the second pass."));
+                    }
+                    if (enableOutConstraint.boolValue && postApplyOutConstraint != null)
+                    {
+                        EditorGUILayout.PropertyField(
+                            postApplyOutConstraint,
+                            new GUIContent(
+                                "Post-Apply Out",
+                                "Defer Out until after the first trajectory pass, align it in SOMA Root2D space, then apply it in the second pass."));
                     }
                 }
             }
@@ -504,6 +541,18 @@ namespace KimodoBridge.Editor
                     if (overridePathDistanceProp != null && overridePathDistanceProp.boolValue && pathDistanceProp != null)
                         EditorGUILayout.PropertyField(pathDistanceProp, new GUIContent("Distance", "Path length in Unity units."));
                     EditorGUI.indentLevel--;
+                }
+            }
+            if (useRelativeOffsetProp != null)
+            {
+                EditorGUILayout.PropertyField(
+                    useRelativeOffsetProp,
+                    new GUIContent("Relative Offset", "Normalize root X/Z into the initial facing frame before Humanoid conversion, transfer initial yaw to the Timeline Clip rotation, preserve root height in the muscle curves, and apply the World-space target position as the Clip offset."));
+                if (useRelativeOffsetProp.boolValue && relativeOffsetProp != null)
+                {
+                    EditorGUILayout.PropertyField(
+                        relativeOffsetProp,
+                        new GUIContent("World Position", "World-space target position for the generated Clip's first root pose. The final output root Y curve is preserved and used for height compensation."));
                 }
             }
             if (overrideHeadingProp != null)
@@ -835,6 +884,24 @@ namespace KimodoBridge.Editor
             }
 
             EditorGUILayout.Space(4f);
+            EditorGUILayout.LabelField("Analysis", EditorStyles.boldLabel);
+            if (analyzeAfterGeneration != null)
+            {
+                EditorGUILayout.PropertyField(
+                    analyzeAfterGeneration,
+                    new GUIContent("Analyze After Generation", "Run the full animation analysis after generation; enabled by default."));
+            }
+            using (new EditorGUI.DisabledScope(!clip.isGenerated || clip.clip == null))
+            {
+                if (GUILayout.Button(new GUIContent(
+                        "Run Full Animation Analysis",
+                        "Analyze the baked Timeline Clip and show phases, contacts, root trajectory, endpoint comparison, motion profile, and SceneView evidence.")))
+                {
+                    RunFullAnimationAnalysis();
+                }
+            }
+
+            EditorGUILayout.Space(4f);
             EditorGUILayout.LabelField("Curve Filter Options", EditorStyles.boldLabel);
 
             SerializedProperty enabledProp = curveFilterOptionsProp.FindPropertyRelative("enabled");
@@ -918,6 +985,45 @@ namespace KimodoBridge.Editor
                 EditorGUILayout.LabelField($"Constraints: {lastConstraintsPath}", EditorStyles.miniLabel);
             }
 
+            if (KimodoEditorGenerationJobService.TryGet(
+                    clip,
+                    out KimodoEditorGenerationJobSession generationSession) &&
+                generationSession?.Payload is KimodoEditorGenerationResult generationResult)
+            {
+                if (!string.IsNullOrWhiteSpace(generationResult.PostAnalysisJson))
+                {
+                    lastFullAnalysisJson = generationResult.PostAnalysisJson;
+                    lastFullAnalysisError = string.Empty;
+                }
+                else if (!string.IsNullOrWhiteSpace(generationResult.PostAnalysisError))
+                {
+                    lastFullAnalysisError = generationResult.PostAnalysisError;
+                }
+                else if (generationResult.PostAnalysisSkipped)
+                {
+                    EditorGUILayout.HelpBox("Full animation analysis was skipped for this generation.", MessageType.Info);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(lastFullAnalysisError))
+            {
+                EditorGUILayout.HelpBox($"Full animation analysis failed: {lastFullAnalysisError}", MessageType.Warning);
+            }
+            if (!string.IsNullOrWhiteSpace(lastFullAnalysisJson))
+            {
+                EditorGUILayout.LabelField("Full Animation Analysis", EditorStyles.boldLabel);
+                if (GUILayout.Button("Copy Full Analysis JSON", GUILayout.Width(180f)))
+                {
+                    EditorGUIUtility.systemCopyBuffer = lastFullAnalysisJson;
+                }
+                fullAnalysisScroll = EditorGUILayout.BeginScrollView(fullAnalysisScroll, GUILayout.MaxHeight(240f));
+                using (new EditorGUI.DisabledScope(true))
+                {
+                    EditorGUILayout.TextArea(lastFullAnalysisJson, GUILayout.MinHeight(140f));
+                }
+                EditorGUILayout.EndScrollView();
+            }
+
             if (GUILayout.Button(new GUIContent("Reset", "Clear generated metadata/state on this clip. Does not delete external assets."), GUILayout.Width(100)))
             {
                 Undo.RecordObject(clip, "Reset Kimodo Clip");
@@ -929,6 +1035,18 @@ namespace KimodoBridge.Editor
             }
 
             EditorGUILayout.EndVertical();
+        }
+
+        private void RunFullAnimationAnalysis()
+        {
+            lastFullAnalysisError = string.Empty;
+            if (KimodoEditorFullAnalysisBridge.TryAnalyze(clip, out string analysisJson, out string error))
+            {
+                lastFullAnalysisJson = analysisJson;
+                return;
+            }
+
+            lastFullAnalysisError = error;
         }
 
     }

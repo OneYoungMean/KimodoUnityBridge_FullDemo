@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using KimodoBridge;
+using KimodoBridge.Editor;
 using UnityEditor;
 using UnityEngine;
 
@@ -276,6 +277,7 @@ namespace KimodoUnityBridge.Command
                 ["animation_id"] = animation?.Id.ToString("D") ?? string.Empty,
                 ["start_timeline_frame_60"] = animation?.StartFrame ?? 0,
                 ["end_frame_exclusive"] = animation?.EndFrameExclusive ?? 0,
+                ["authored_foot_contact_track"] = KimodoTimelineFootContactSampler.HasAuthoredTrack(animation?.Clip),
                 ["options"] = CanonicalizeJson(effectiveOptions ?? new JObject())
             };
             return signature.ToString(Formatting.None);

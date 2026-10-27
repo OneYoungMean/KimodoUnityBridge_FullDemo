@@ -1,10 +1,12 @@
 using System;
+using System.Collections;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using KimodoBridge;
 using KimodoBridge.Editor;
 using KimodoUnityBridge.Command;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using UnityEditor.SceneManagement;
 using UnityEditor;
@@ -331,6 +333,143 @@ namespace KimodoUnityBridge.Command.Tests
         }
 
         [Test]
+        public void PlayModeSessionRecovery_RequiresExactSessionTimelineAndSceneMatch()
+        {
+            Type context = typeof(command_dispatcher).Assembly.GetType("KimodoUnityBridge.Command.command_context");
+            Type metadataType = typeof(command_dispatcher).Assembly.GetType(
+                "KimodoUnityBridge.Command.KimodoCommandSessionMetadata");
+            MethodInfo candidate = context.GetMethod("IsPlayModeSessionRecoveryCandidate", BindingFlags.Static | BindingFlags.NonPublic);
+            MethodInfo clear = context.GetMethod("ClearPlayModeSessionRestoreMarker", BindingFlags.Static | BindingFlags.NonPublic);
+            Scene activeScene = SceneManager.GetActiveScene();
+            string sessionId = Guid.NewGuid().ToString("D");
+            const string timelinePath = "Assets/Generated/Timelines/PlayModeRecovery.playable";
+            ScriptableObject metadata = ScriptableObject.CreateInstance(metadataType);
+            try
+            {
+                metadataType.GetField("sessionId").SetValue(metadata, sessionId);
+                metadataType.GetField("isAutomatic").SetValue(metadata, true);
+                metadataType.GetField("scenePath").SetValue(metadata, activeScene.path);
+
+                SessionState.SetString("Kimodo.Session.PlayModeRecovery.Id", sessionId);
+                SessionState.SetString("Kimodo.Session.PlayModeRecovery.TimelinePath", timelinePath);
+                SessionState.SetString("Kimodo.Session.PlayModeRecovery.ScenePath", activeScene.path);
+                SessionState.SetString("Kimodo.Session.PlayModeRecovery.SceneName", activeScene.name);
+
+                Assert.That((bool)candidate.Invoke(null, new object[] { metadata, timelinePath, activeScene }), Is.True);
+                Assert.That((bool)candidate.Invoke(null, new object[] { metadata, "Assets/Other.playable", activeScene }), Is.False);
+                metadataType.GetField("sessionId").SetValue(metadata, Guid.NewGuid().ToString("D"));
+                Assert.That((bool)candidate.Invoke(null, new object[] { metadata, timelinePath, activeScene }), Is.False);
+            }
+            finally
+            {
+                clear.Invoke(null, null);
+                UnityEngine.Object.DestroyImmediate(metadata);
+            }
+        }
+
+        [Test]
+        public void PlayModeSessionRecovery_RehydratesTheSameAutomaticSessionAfterWorkspaceLoss()
+        {
+            Type context = typeof(command_dispatcher).Assembly.GetType("KimodoUnityBridge.Command.command_context");
+            Type sessionType = context.GetNestedType("TimelineSessionRecord", BindingFlags.NonPublic);
+            Type metadataType = typeof(command_dispatcher).Assembly.GetType(
+                "KimodoUnityBridge.Command.KimodoCommandSessionMetadata");
+            FieldInfo currentSessionField = context.GetField("currentTimelineSession", BindingFlags.Static | BindingFlags.NonPublic);
+            Type guardType = typeof(command_dispatcher).Assembly.GetType(
+                "KimodoUnityBridge.Command.KimodoSessionRuntimeGuard");
+            MethodInfo onPlayModeStateChanged = guardType.GetMethod(
+                "OnPlayModeStateChanged", BindingFlags.Static | BindingFlags.NonPublic);
+            MethodInfo clearMarker = context.GetMethod("ClearPlayModeSessionRestoreMarker", BindingFlags.Static | BindingFlags.NonPublic);
+            FieldInfo firstSessionField = context.GetField("firstTimelineSession", BindingFlags.Static | BindingFlags.NonPublic);
+            FieldInfo timelineSessionsRestoredField = context.GetField("timelineSessionsRestored", BindingFlags.Static | BindingFlags.NonPublic);
+            FieldInfo sessionsField = context.GetField("TimelineSessions", BindingFlags.Static | BindingFlags.NonPublic);
+            IDictionary sessions = (IDictionary)sessionsField.GetValue(null);
+            DictionaryEntry[] previousSessions = sessions.Cast<DictionaryEntry>().ToArray();
+            object previousFirstSession = firstSessionField.GetValue(null);
+            bool previousSessionsRestored = (bool)timelineSessionsRestoredField.GetValue(null);
+            string fixtureId = Guid.NewGuid().ToString("N");
+            string timelineFolder = "Assets/KimodoGeneratedClips/Timelines";
+            string assetPath = $"{timelineFolder}/PlayModeRecovery_{fixtureId}.playable";
+            string archiveFolder = "Assets/Archive/KimodoCommandTests/PlayModeRecovery";
+            string archivePath = $"{archiveFolder}/PlayModeRecovery_{fixtureId}.playable";
+            Scene activeScene = SceneManager.GetActiveScene();
+            Guid sessionId = Guid.NewGuid();
+            TimelineAsset timeline = ScriptableObject.CreateInstance<TimelineAsset>();
+            ScriptableObject metadata = ScriptableObject.CreateInstance(metadataType);
+            GameObject root = new GameObject(KimodoRuntimeUtility.SessionRootPrefix + "PlayModeRecovery_" + fixtureId);
+            GameObject directorObject = new GameObject(KimodoRuntimeUtility.SessionDirectorPrefix + "PlayModeRecovery_" + fixtureId);
+            directorObject.transform.SetParent(root.transform, false);
+            PlayableDirector director = directorObject.AddComponent<PlayableDirector>();
+            director.playableAsset = timeline;
+            object previousSession = currentSessionField.GetValue(null);
+            bool assetCreated = false;
+            try
+            {
+                EnsureAssetFolder(timelineFolder);
+                EnsureAssetFolder(archiveFolder);
+                AssetDatabase.CreateAsset(timeline, assetPath);
+                assetCreated = true;
+                AssetDatabase.AddObjectToAsset(metadata, timeline);
+                metadataType.GetField("schemaVersion").SetValue(metadata, "vNext.transition_clip.1");
+                metadataType.GetField("sessionId").SetValue(metadata, sessionId.ToString("D"));
+                metadataType.GetField("sessionName").SetValue(metadata, "PlayModeRecovery");
+                metadataType.GetField("scenePath").SetValue(metadata, activeScene.path);
+                metadataType.GetField("isAutomatic").SetValue(metadata, true);
+                metadataType.GetField("isCurrent").SetValue(metadata, true);
+                metadataType.GetField("updatedAtUtc").SetValue(metadata, DateTime.UtcNow.ToString("O"));
+                ConstructorInfo constructor = sessionType.GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    .Single(item => item.GetParameters().Length == 8);
+                object session = constructor.Invoke(new object[]
+                {
+                    sessionId, "PlayModeRecovery", director, timeline, assetPath, true, metadata, root
+                });
+                currentSessionField.SetValue(null, session);
+                AssetDatabase.SaveAssets();
+
+                onPlayModeStateChanged.Invoke(null, new object[] { PlayModeStateChange.ExitingEditMode });
+                UnityEngine.Object.DestroyImmediate(root);
+                root = null;
+                onPlayModeStateChanged.Invoke(null, new object[] { PlayModeStateChange.EnteredEditMode });
+
+                object restored = currentSessionField.GetValue(null);
+                Assert.That(restored, Is.Not.Null);
+                Assert.That((Guid)sessionType.GetProperty("Id").GetValue(restored), Is.EqualTo(sessionId));
+                JObject response = JObject.Parse(command_dispatcher.Invoke("scene.context", "{}"));
+                Assert.That(response["session"]?.Value<string>("session_id"), Is.EqualTo(sessionId.ToString("D")));
+                Assert.That(response["warnings"], Is.Null,
+                    "scene.context must not report that it created a replacement empty Session.");
+            }
+            finally
+            {
+                clearMarker.Invoke(null, null);
+                currentSessionField.SetValue(null, previousSession);
+                firstSessionField.SetValue(null, previousFirstSession);
+                timelineSessionsRestoredField.SetValue(null, previousSessionsRestored);
+                sessions.Clear();
+                foreach (DictionaryEntry entry in previousSessions) sessions.Add(entry.Key, entry.Value);
+                foreach (GameObject contextRoot in Resources.FindObjectsOfTypeAll<GameObject>()
+                             .Where(item => item != null && item.scene == activeScene &&
+                                 item.name.StartsWith(KimodoRuntimeUtility.SessionRootPrefix + "PlayModeRecovery_" + fixtureId, StringComparison.Ordinal)))
+                {
+                    UnityEngine.Object.DestroyImmediate(contextRoot);
+                }
+                if (assetCreated && AssetDatabase.LoadAssetAtPath<TimelineAsset>(assetPath) != null)
+                {
+                    string moveError = AssetDatabase.MoveAsset(assetPath, archivePath);
+                    Assert.That(moveError, Is.Empty, moveError);
+                }
+                else
+                {
+                    if (root != null) UnityEngine.Object.DestroyImmediate(root);
+                    if (timeline != null && !AssetDatabase.Contains(timeline)) UnityEngine.Object.DestroyImmediate(timeline);
+                    if (metadata != null && !AssetDatabase.Contains(metadata)) UnityEngine.Object.DestroyImmediate(metadata);
+                }
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+            }
+        }
+
+        [Test]
         public void BindTimelineCharacter_UsesOriginalAnimatorAndArchivesLegacyGhost()
         {
             Type context = typeof(command_dispatcher).Assembly.GetType("KimodoUnityBridge.Command.command_context");
@@ -396,20 +535,32 @@ namespace KimodoUnityBridge.Command.Tests
         [Test]
         public void DestroySceneSessionRoots_DestroysTemporaryContexts()
         {
-            Scene testScene = SceneManager.GetActiveScene();
+            SceneSetup[] previousSceneSetup = EditorSceneManager.GetSceneManagerSetup();
+            Scene testScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             GameObject contextRoot = new GameObject("KimodoSession_DestroyTest");
+            GameObject legacyArchive = new GameObject("KimodoSessionArchive");
+            GameObject legacyArchivedSession = new GameObject("Archive_KimodoSession_DestroyTest");
+            legacyArchivedSession.transform.SetParent(legacyArchive.transform, false);
 
             try
             {
                 Type context = typeof(command_dispatcher).Assembly.GetType("KimodoUnityBridge.Command.command_context");
                 MethodInfo destroy = context.GetMethod("DestroySceneSessionRoots", BindingFlags.Static | BindingFlags.NonPublic);
 
-                Assert.That((int)destroy.Invoke(null, new object[] { testScene }), Is.EqualTo(1));
+                Assert.That((int)destroy.Invoke(null, new object[] { testScene }), Is.EqualTo(2));
                 Assert.That(contextRoot == null, Is.True);
+                Assert.That(legacyArchive == null, Is.True,
+                    "session.clear should clean up the legacy archive container and its archived transient contexts.");
+                Assert.That(legacyArchivedSession == null, Is.True);
             }
             finally
             {
                 if (contextRoot != null) UnityEngine.Object.DestroyImmediate(contextRoot);
+                if (legacyArchive != null) UnityEngine.Object.DestroyImmediate(legacyArchive);
+                if (previousSceneSetup.Any(setup => setup.isLoaded))
+                    EditorSceneManager.RestoreSceneManagerSetup(previousSceneSetup);
+                else
+                    EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             }
         }
 
@@ -488,6 +639,17 @@ namespace KimodoUnityBridge.Command.Tests
             {
                 Guid.NewGuid(), "Test", director, timeline, string.Empty, true, metadata, sessionRoot
             });
+        }
+
+        private static void EnsureAssetFolder(string folderPath)
+        {
+            string current = "Assets";
+            foreach (string segment in folderPath.Split('/').Skip(1))
+            {
+                string next = current + "/" + segment;
+                if (!AssetDatabase.IsValidFolder(next)) AssetDatabase.CreateFolder(current, segment);
+                current = next;
+            }
         }
 
         private static GameObject CreateHumanoidCharacter(string name, Avatar avatar)

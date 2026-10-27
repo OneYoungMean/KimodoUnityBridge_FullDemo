@@ -309,11 +309,7 @@ namespace KimodoBridge
 
         private static Vector3 ToSignedEuler(Quaternion rotation)
         {
-            Vector3 euler = rotation.eulerAngles;
-            return new Vector3(
-                Mathf.DeltaAngle(0f, euler.x),
-                Mathf.DeltaAngle(0f, euler.y),
-                Mathf.DeltaAngle(0f, euler.z));
+            return KimodoMotionMath.SignedEulerDegrees(rotation);
         }
 
         internal static string BuildPathAngleConstraintJson(
@@ -354,9 +350,7 @@ namespace KimodoBridge
                 {
                     throw new InvalidOperationException($"Path angle pass 1 has no valid root position at frame {frame}.");
                 }
-                pathLength += Vector2.Distance(
-                    new Vector2(previousRoot.x, previousRoot.z),
-                    new Vector2(root.x, root.z));
+                pathLength += KimodoMotionMath.PlanarDistance(previousRoot, root);
                 previousRoot = root;
             }
             if (distanceOverride >= 0f) pathLength = distanceOverride;

@@ -1,6 +1,7 @@
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using TimelineInject;
 using UnityEditor;
@@ -107,7 +108,9 @@ namespace KimodoBridge.Editor
                     runtimeSampleOffsetSeconds,
                     timelineClip,
                     deferOutConstraint,
-                    deferInConstraint);
+                    deferInConstraint,
+                    runtimeTrimStartFrame,
+                    targetFrameCount);
             string constraintsJson = constraintResult.ConstraintsJson;
             string deferredInConstraintJson = constraintResult.DeferredInConstraintJson;
             string deferredOutConstraintJson = constraintResult.DeferredOutConstraintJson;
@@ -119,7 +122,9 @@ namespace KimodoBridge.Editor
                         runtimeFrameCount,
                         disableTimelineInOut,
                         runtimeSampleOffsetSeconds,
-                        timelineClip);
+                        timelineClip,
+                        runtimeTrimStartFrame,
+                        targetFrameCount);
                 if (!string.IsNullOrWhiteSpace(deferredIn.ConstraintsJson))
                 {
                     deferredInConstraintJson = CombineConstraintJson(
@@ -135,7 +140,9 @@ namespace KimodoBridge.Editor
                         runtimeFrameCount,
                         disableTimelineInOut,
                         runtimeSampleOffsetSeconds,
-                        timelineClip);
+                        timelineClip,
+                        runtimeTrimStartFrame,
+                        targetFrameCount);
                 if (!string.IsNullOrWhiteSpace(deferredOut.ConstraintsJson))
                 {
                     deferredOutConstraintJson = CombineConstraintJson(
@@ -229,9 +236,10 @@ namespace KimodoBridge.Editor
                 Constraints = new KimodoConstraintPayload { json = constraintsJson, clips = clipConstraints },
                 DeferredInConstraintJson = deferredInConstraintJson,
                 DeferredOutConstraintJson = deferredOutConstraintJson,
-                AnalysisOptionsJson = string.IsNullOrWhiteSpace(externalConstraint?.AnalysisOptionsJson)
-                    ? clip.analysisOptionsJson ?? string.Empty
-                    : externalConstraint.AnalysisOptionsJson,
+                // Legacy per-clip lightweight analysis settings remain serialized
+                // for existing assets, but normal Inspector generation now uses
+                // the full animation.analysis path after baking.
+                AnalysisOptionsJson = externalConstraint?.AnalysisOptionsJson ?? string.Empty,
                 ModelsRoot = settings.LocalModelsPath?.Trim() ?? string.Empty,
                 Token = token,
                 HasSyntheticAutoBeginConstraint = hasSyntheticAutoBeginConstraint,
@@ -245,6 +253,8 @@ namespace KimodoBridge.Editor
                     clip.inOutConstraintMode == KimodoInOutConstraintMode.Inside &&
                     (clip.enableInConstraint || clip.enableOutConstraint) &&
                     !Mathf.Approximately((float)timelineClip.timeScale, 1f),
+                UseRelativeOffset = clip.useRelativeOffset,
+                RelativeOffset = clip.relativeOffset,
                 TimelineDirectorSnapshot = outputDirector,
                 TimelineContextSnapshot = timelineContextSnapshot,
                 InitialArdyHistorySource = initialHistorySource,
@@ -302,7 +312,8 @@ namespace KimodoBridge.Editor
         public static void FinalizeGeneration(
             KimodoPlayableClip clip,
             KimodoEditorGenerateRequest request,
-            KimodoEditorGenerationResult result)
+            KimodoEditorGenerationResult result,
+            bool writeDebugTimeline = true)
         {
             if (clip == null || request == null || result == null || result.GeneratedClip == null)
             {
@@ -319,7 +330,7 @@ namespace KimodoBridge.Editor
                 EditorUtility.SetDirty(clip);
                 EditorUtility.SetDirty(result.GeneratedClip);
                 result.ConstraintsPath = request.Constraints.IsEmpty ? "(none)" : "(inline-json)";
-                HandleGeneratedClipWritebackCompleted(clip);
+                HandleGeneratedClipWritebackCompleted(clip, request);
 
                 if (!KimodoEditorClipWritebackService.TryMaterializeGeneratedClipCache(
                         result.GeneratedClip,
@@ -349,10 +360,30 @@ namespace KimodoBridge.Editor
                     request.RuntimeTrimStartFrame,
                     request.TargetFrameRate,
                     request.TimelineContextSnapshot);
+                if (KimodoPlayableClipGenerationSettings.instance.WriteResampledTimelineCacheClips &&
+                    result.DebugConstraintPasses.Count == 0 &&
+                    request.Constraints != null &&
+                    !request.Constraints.IsEmpty)
+                {
+                    result.DebugConstraintPasses.Add(new KimodoDebugConstraintPass
+                    {
+                        Name = "Final Constraints",
+                        AddedConstraintsJson = request.Constraints.json ?? string.Empty,
+                        CombinedConstraintsJson = request.Constraints.json ?? string.Empty,
+                        ModelName = request.ModelName,
+                        FrameRate = Mathf.RoundToInt(request.TargetFrameRate),
+                        FrameCount = request.EffectiveRuntimeFrameCount,
+                        DebugClipTarget = request.DebugTimelineReservation?.TimelineClip?.asset as KimodoPlayableClip
+                    });
+                }
             }
             finally
             {
                 Undo.CollapseUndoOperations(undoGroup);
+            }
+            if (writeDebugTimeline)
+            {
+                KimodoDebugTimelineWriter.TryWrite(clip, request, result);
             }
         }
 
@@ -399,15 +430,341 @@ namespace KimodoBridge.Editor
             clip.fps = Mathf.RoundToInt(obj.Value<float?>("fps") ?? KimodoMotionModelProfiles.DefaultFrameRate);
         }
 
-        private static void HandleGeneratedClipWritebackCompleted(KimodoPlayableClip playableClip)
+        private static void HandleGeneratedClipWritebackCompleted(
+            KimodoPlayableClip playableClip,
+            KimodoEditorGenerateRequest request)
         {
             if (playableClip != null)
             {
-                playableClip.position = Vector3.zero;
-                playableClip.rotation = Quaternion.identity;
+                if (playableClip.useRelativeOffset && playableClip.clip != null)
+                {
+                    playableClip.position = ResolveRelativeOffsetInTrackSpace(playableClip, request);
+                }
+                else
+                {
+                    playableClip.position = Vector3.zero;
+                }
+                playableClip.rotation = playableClip.useRelativeOffset
+                    ? request?.RelativeRootOriginRotation ?? Quaternion.identity
+                    : Quaternion.identity;
                 EditorUtility.SetDirty(playableClip);
             }
             KimodoTimelinePreviewRefreshUtility.RefreshIfPreviewing();
+        }
+
+        internal static Vector3 ResolveRelativeOffsetInTrackSpace(
+            KimodoPlayableClip playableClip,
+            KimodoEditorGenerateRequest request)
+        {
+            Vector3 worldOffset = playableClip != null ? playableClip.relativeOffset : Vector3.zero;
+            Vector3 rootOrigin = Vector3.up * (request?.RelativeRootOriginY ?? 0f);
+            TimelineClip timelineClip = KimodoTimelineClipResolver.FindTimelineClipForAsset(playableClip);
+            if (!(timelineClip?.GetParentTrack() is AnimationTrack track)) return worldOffset;
+
+            Vector3 trackPosition;
+            Quaternion trackRotation;
+            KimodoTimelineInOutConstraintContext context = request?.TimelineContextSnapshot;
+            if (context != null && ReferenceEquals(context.Track, track) && context.HasTrackOffsetSnapshot)
+            {
+                trackPosition = context.TrackOffsetPosition;
+                trackRotation = context.TrackOffsetRotation;
+            }
+            else
+            {
+                if (!KimodoInOutConstraintAdapter.TryResolveTimelineContext(timelineClip, out context, out _) || context == null)
+                    return worldOffset;
+                KimodoTimelineTrackOffsetUtility.CaptureWorldOffset(
+                    context.Track,
+                    context.Animator,
+                    out trackPosition,
+                    out trackRotation,
+                    out _);
+            }
+
+            KimodoTimelineTrackOffsetUtility.WorldToTrackPose(
+                worldOffset,
+                Quaternion.identity,
+                trackPosition,
+                trackRotation,
+                out Vector3 trackLocalOffset,
+                out _);
+            return trackLocalOffset - rootOrigin;
+        }
+
+        internal static void NormalizeRootPathToFrameZero(
+            AnimationClip clip,
+            out float rootOriginY,
+            out Quaternion rootOriginRotation)
+        {
+            rootOriginY = 0f;
+            rootOriginRotation = Quaternion.identity;
+            if (clip == null) return;
+            EditorCurveBinding[] bindings = AnimationUtility.GetCurveBindings(clip);
+            string transformRootPath = null;
+            AnimationCurve transformX = null;
+            AnimationCurve transformY = null;
+            AnimationCurve transformZ = null;
+            var transformCurves = new Dictionary<string, AnimationCurve[]>();
+            var transformRotationCurves = new Dictionary<string, AnimationCurve[]>();
+            AnimationCurve animatorX = null;
+            AnimationCurve animatorY = null;
+            AnimationCurve animatorZ = null;
+            AnimationCurve animatorQx = null;
+            AnimationCurve animatorQy = null;
+            AnimationCurve animatorQz = null;
+            AnimationCurve animatorQw = null;
+            foreach (EditorCurveBinding binding in bindings)
+            {
+                AnimationCurve curve = AnimationUtility.GetEditorCurve(clip, binding);
+                if (binding.type == typeof(Transform) &&
+                    (binding.propertyName == "m_LocalPosition.x" ||
+                     binding.propertyName == "m_LocalPosition.y" ||
+                     binding.propertyName == "m_LocalPosition.z"))
+                {
+                    if (!transformCurves.TryGetValue(binding.path, out AnimationCurve[] curves))
+                    {
+                        curves = new AnimationCurve[3];
+                        transformCurves.Add(binding.path, curves);
+                    }
+                    if (binding.propertyName == "m_LocalPosition.x") curves[0] = curve;
+                    else if (binding.propertyName == "m_LocalPosition.y") curves[1] = curve;
+                    else curves[2] = curve;
+                }
+                else if (binding.type == typeof(Transform) &&
+                    (binding.propertyName == "m_LocalRotation.x" ||
+                     binding.propertyName == "m_LocalRotation.y" ||
+                     binding.propertyName == "m_LocalRotation.z" ||
+                     binding.propertyName == "m_LocalRotation.w"))
+                {
+                    if (!transformRotationCurves.TryGetValue(binding.path, out AnimationCurve[] curves))
+                    {
+                        curves = new AnimationCurve[4];
+                        transformRotationCurves.Add(binding.path, curves);
+                    }
+                    if (binding.propertyName == "m_LocalRotation.x") curves[0] = curve;
+                    else if (binding.propertyName == "m_LocalRotation.y") curves[1] = curve;
+                    else if (binding.propertyName == "m_LocalRotation.z") curves[2] = curve;
+                    else curves[3] = curve;
+                }
+                else if (binding.type == typeof(Animator) && binding.path == string.Empty)
+                {
+                    if (binding.propertyName == "RootT.x") animatorX = curve;
+                    else if (binding.propertyName == "RootT.y") animatorY = curve;
+                    else if (binding.propertyName == "RootT.z") animatorZ = curve;
+                    else if (binding.propertyName == "RootQ.x") animatorQx = curve;
+                    else if (binding.propertyName == "RootQ.y") animatorQy = curve;
+                    else if (binding.propertyName == "RootQ.z") animatorQz = curve;
+                    else if (binding.propertyName == "RootQ.w") animatorQw = curve;
+                }
+            }
+
+            foreach (KeyValuePair<string, AnimationCurve[]> pair in transformCurves)
+            {
+                AnimationCurve[] curves = pair.Value;
+                if (curves[0] == null || curves[1] == null || curves[2] == null) continue;
+                if (transformRootPath == null || CountPathDepth(pair.Key) < CountPathDepth(transformRootPath))
+                {
+                    transformRootPath = pair.Key;
+                    transformX = curves[0];
+                    transformY = curves[1];
+                    transformZ = curves[2];
+                }
+            }
+
+            bool useTransformRoot = transformX != null && transformY != null && transformZ != null;
+            AnimationCurve x = useTransformRoot ? transformX : animatorX;
+            AnimationCurve y = useTransformRoot ? transformY : animatorY;
+            AnimationCurve z = useTransformRoot ? transformZ : animatorZ;
+            string path = useTransformRoot ? transformRootPath : string.Empty;
+            Type bindingType = useTransformRoot ? typeof(Transform) : typeof(Animator);
+            string xProperty = bindingType == typeof(Transform) ? "m_LocalPosition.x" : "RootT.x";
+            string yProperty = bindingType == typeof(Transform) ? "m_LocalPosition.y" : "RootT.y";
+            string zProperty = bindingType == typeof(Transform) ? "m_LocalPosition.z" : "RootT.z";
+            if (x == null || y == null || z == null || x.length == 0 || y.length == 0 || z.length == 0) return;
+            Vector3 origin = new Vector3(x.Evaluate(0f), y.Evaluate(0f), z.Evaluate(0f));
+            rootOriginY = origin.y;
+            Quaternion originYaw = Quaternion.identity;
+            AnimationCurve[] rootRotation = null;
+            if (useTransformRoot)
+            {
+                transformRotationCurves.TryGetValue(path, out rootRotation);
+            }
+            else if (animatorQx != null && animatorQy != null && animatorQz != null && animatorQw != null)
+            {
+                rootRotation = new[] { animatorQx, animatorQy, animatorQz, animatorQw };
+            }
+            if (rootRotation != null && rootRotation.All(curve => curve != null && curve.length > 0))
+            {
+                originYaw = GetRootOriginYaw(rootRotation);
+                NormalizeRootHorizontalPath(x, y, z, origin, originYaw);
+            }
+            else
+            {
+                OffsetCurve(x, origin.x);
+                OffsetCurve(z, origin.z);
+            }
+            clip.SetCurve(path, bindingType, xProperty, x);
+            clip.SetCurve(path, bindingType, yProperty, y);
+            clip.SetCurve(path, bindingType, zProperty, z);
+            if (rootRotation != null && rootRotation.All(curve => curve != null && curve.length > 0))
+            {
+                rootOriginRotation = NormalizeRootYawToFrameZero(rootRotation, originYaw);
+                if (useTransformRoot)
+                {
+                    clip.SetCurve(path, typeof(Transform), "m_LocalRotation.x", rootRotation[0]);
+                    clip.SetCurve(path, typeof(Transform), "m_LocalRotation.y", rootRotation[1]);
+                    clip.SetCurve(path, typeof(Transform), "m_LocalRotation.z", rootRotation[2]);
+                    clip.SetCurve(path, typeof(Transform), "m_LocalRotation.w", rootRotation[3]);
+                }
+                else
+                {
+                    clip.SetCurve(string.Empty, typeof(Animator), "RootQ.x", rootRotation[0]);
+                    clip.SetCurve(string.Empty, typeof(Animator), "RootQ.y", rootRotation[1]);
+                    clip.SetCurve(string.Empty, typeof(Animator), "RootQ.z", rootRotation[2]);
+                    clip.SetCurve(string.Empty, typeof(Animator), "RootQ.w", rootRotation[3]);
+                }
+            }
+            EditorUtility.SetDirty(clip);
+        }
+
+        internal static bool TryReadRootOriginY(AnimationClip clip, out float rootOriginY)
+        {
+            rootOriginY = 0f;
+            if (clip == null) return false;
+            AnimationCurve rootT = null;
+            var transformCurves = new Dictionary<string, AnimationCurve[]>();
+            foreach (EditorCurveBinding binding in AnimationUtility.GetCurveBindings(clip))
+            {
+                AnimationCurve curve = AnimationUtility.GetEditorCurve(clip, binding);
+                if (binding.type == typeof(Animator) && binding.path == string.Empty && binding.propertyName == "RootT.y")
+                {
+                    rootT = curve;
+                    continue;
+                }
+                if (binding.type != typeof(Transform)) continue;
+                int axis = binding.propertyName == "m_LocalPosition.x" ? 0
+                    : binding.propertyName == "m_LocalPosition.y" ? 1
+                    : binding.propertyName == "m_LocalPosition.z" ? 2 : -1;
+                if (axis < 0) continue;
+                if (!transformCurves.TryGetValue(binding.path, out AnimationCurve[] curves))
+                {
+                    curves = new AnimationCurve[3];
+                    transformCurves.Add(binding.path, curves);
+                }
+                curves[axis] = curve;
+            }
+            if (rootT != null && rootT.length > 0)
+            {
+                rootOriginY = rootT.Evaluate(0f);
+                return true;
+            }
+            string rootPath = null;
+            AnimationCurve transformY = null;
+            foreach (KeyValuePair<string, AnimationCurve[]> pair in transformCurves)
+            {
+                AnimationCurve[] curves = pair.Value;
+                if (curves[0] == null || curves[1] == null || curves[2] == null || curves[1].length == 0)
+                    continue;
+                if (rootPath == null || CountPathDepth(pair.Key) < CountPathDepth(rootPath))
+                {
+                    rootPath = pair.Key;
+                    transformY = curves[1];
+                }
+            }
+            if (transformY == null) return false;
+            rootOriginY = transformY.Evaluate(0f);
+            return true;
+        }
+
+        private static Quaternion GetRootOriginYaw(AnimationCurve[] curves)
+        {
+            Quaternion origin = new Quaternion(
+                curves[0].Evaluate(0f), curves[1].Evaluate(0f),
+                curves[2].Evaluate(0f), curves[3].Evaluate(0f)).normalized;
+            return KimodoBridge.KimodoMotionMath.ResolvePlanarHeading(origin);
+        }
+
+        private static Quaternion NormalizeRootYawToFrameZero(AnimationCurve[] curves, Quaternion originYaw)
+        {
+            var normalizedAtTime = new Dictionary<float, Quaternion>();
+            foreach (float time in curves.SelectMany(curve => curve.keys).Select(key => key.time).Distinct())
+            {
+                Quaternion value = new Quaternion(
+                    curves[0].Evaluate(time), curves[1].Evaluate(time),
+                    curves[2].Evaluate(time), curves[3].Evaluate(time)).normalized;
+                normalizedAtTime[time] = KimodoBridge.KimodoMotionMath.NormalizePlanarHeading(value, originYaw);
+            }
+            for (int component = 0; component < curves.Length; component++)
+            {
+                Keyframe[] componentKeys = curves[component].keys;
+                for (int i = 0; i < componentKeys.Length; i++)
+                {
+                    Quaternion normalized = normalizedAtTime[componentKeys[i].time];
+                    componentKeys[i].value = component == 0 ? normalized.x
+                        : component == 1 ? normalized.y
+                        : component == 2 ? normalized.z : normalized.w;
+                }
+                curves[component].keys = componentKeys;
+            }
+            return originYaw;
+        }
+
+        private static void NormalizeRootHorizontalPath(
+            AnimationCurve x,
+            AnimationCurve y,
+            AnimationCurve z,
+            Vector3 origin,
+            Quaternion originYaw)
+        {
+            AnimationCurve sourceX = new AnimationCurve(x.keys);
+            AnimationCurve sourceY = new AnimationCurve(y.keys);
+            AnimationCurve sourceZ = new AnimationCurve(z.keys);
+            ApplyHorizontalPathCurve(x, sourceX, sourceY, sourceZ, origin, originYaw, writeX: true);
+            ApplyHorizontalPathCurve(z, sourceX, sourceY, sourceZ, origin, originYaw, writeX: false);
+        }
+
+        private static void ApplyHorizontalPathCurve(
+            AnimationCurve target,
+            AnimationCurve sourceX,
+            AnimationCurve sourceY,
+            AnimationCurve sourceZ,
+            Vector3 origin,
+            Quaternion originYaw,
+            bool writeX)
+        {
+            Keyframe[] keys = target.keys;
+            for (int i = 0; i < keys.Length; i++)
+            {
+                Vector3 position = new Vector3(
+                    sourceX.Evaluate(keys[i].time),
+                    sourceY.Evaluate(keys[i].time),
+                    sourceZ.Evaluate(keys[i].time));
+                Vector3 normalized = KimodoBridge.KimodoMotionMath.NormalizePlanarPosition(
+                    position,
+                    origin,
+                    originYaw);
+                keys[i].value = writeX ? normalized.x : normalized.z;
+            }
+            target.keys = keys;
+        }
+
+        private static int CountPathDepth(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return 0;
+            int depth = 1;
+            for (int i = 0; i < path.Length; i++)
+            {
+                if (path[i] == '/') depth++;
+            }
+            return depth;
+        }
+
+        private static void OffsetCurve(AnimationCurve curve, float offset)
+        {
+            if (curve == null || Mathf.Approximately(offset, 0f)) return;
+            Keyframe[] keys = curve.keys;
+            for (int i = 0; i < keys.Length; i++) keys[i].value -= offset;
+            curve.keys = keys;
         }
 
         private static int BeginReplaceTimelineAnimationUndo(

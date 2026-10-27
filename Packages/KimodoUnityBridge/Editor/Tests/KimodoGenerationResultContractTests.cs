@@ -83,6 +83,7 @@ namespace KimodoUnityBridge.Generation.Tests
                 "AnalysisJson",
                 "PostAnalysisJson",
                 "PostAnalysisError",
+                "PostAnalysisSkipped",
                 "ConstraintLoss",
                 "MotionBytes",
                 "StartFrame",

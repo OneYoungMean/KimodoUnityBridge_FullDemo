@@ -23,7 +23,9 @@ namespace KimodoBridge.Editor
             double sampleTimeOffsetSeconds,
             TimelineClip timelineClip,
             bool deferOutConstraint = false,
-            bool deferInConstraint = false)
+            bool deferInConstraint = false,
+            int outputStartFrame = 0,
+            int outputFrameCount = 0)
         {
             bool includeTimeline = externalConstraint?.Enabled != true ||
                 externalConstraint.IncludeTimelineConstraints;
@@ -48,7 +50,9 @@ namespace KimodoBridge.Editor
                     sampleTimeOffsetSeconds,
                     timelineClip,
                     deferEndConstraint: deferOutConstraint,
-                    deferBeginConstraint: deferInConstraint);
+                    deferBeginConstraint: deferInConstraint,
+                    outputStartFrame: outputStartFrame,
+                    outputFrameCount: outputFrameCount);
                 if (KimodoMotionModelProfiles.TryGetArdy(clip.bridgeModelName, out _) &&
                     result.BeginBoundarySample != null)
                 {
@@ -203,7 +207,9 @@ namespace KimodoBridge.Editor
             int runtimeFrameCount,
             bool disableTimelineInOut,
             double sampleTimeOffsetSeconds,
-            TimelineClip timelineClip)
+            TimelineClip timelineClip,
+            int outputStartFrame = 0,
+            int outputFrameCount = 0)
         {
             KimodoInOutConstraintResult result = BuildConstraintDataOrThrow(
                 clip,
@@ -215,7 +221,9 @@ namespace KimodoBridge.Editor
                 timelineClipOverride: timelineClip,
                 enableInOverride: false,
                 enableOutOverride: true,
-                deferEndConstraint: true);
+                deferEndConstraint: true,
+                outputStartFrame: outputStartFrame,
+                outputFrameCount: outputFrameCount);
             if (result.EndBoundarySamples.Count == 0)
             {
                 result.ConstraintsJson = string.Empty;
@@ -242,7 +250,9 @@ namespace KimodoBridge.Editor
             int runtimeFrameCount,
             bool disableTimelineInOut,
             double sampleTimeOffsetSeconds,
-            TimelineClip timelineClip)
+            TimelineClip timelineClip,
+            int outputStartFrame = 0,
+            int outputFrameCount = 0)
         {
             KimodoInOutConstraintResult result = BuildConstraintDataOrThrow(
                 clip,
@@ -255,7 +265,9 @@ namespace KimodoBridge.Editor
                 enableInOverride: true,
                 enableOutOverride: false,
                 deferEndConstraint: false,
-                deferBeginConstraint: true);
+                deferBeginConstraint: true,
+                outputStartFrame: outputStartFrame,
+                outputFrameCount: outputFrameCount);
             if (result.BeginBoundarySamples.Count == 0)
             {
                 result.ConstraintsJson = string.Empty;
@@ -287,7 +299,9 @@ namespace KimodoBridge.Editor
             bool? enableInOverride = null,
             bool? enableOutOverride = null,
             bool deferEndConstraint = false,
-            bool deferBeginConstraint = false)
+            bool deferBeginConstraint = false,
+            int outputStartFrame = 0,
+            int outputFrameCount = 0)
         {
             TimelineClip sourceClip = timelineClipOverride ?? KimodoTimelineClipResolver.FindTimelineClipForAsset(clip);
             if (sourceClip == null)
@@ -331,7 +345,9 @@ namespace KimodoBridge.Editor
                 out string error,
                 splinePathSamples,
                 deferEndConstraint,
-                deferBeginConstraint);
+                deferBeginConstraint,
+                outputStartFrame,
+                outputFrameCount);
 
             if (!ok)
             {

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using KimodoBridge;
 using KimodoBridge.Editor;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
@@ -11,7 +12,7 @@ namespace KimodoBridge.Editor.Tests
     public sealed class KimodoGenerationWindowPlannerTests
     {
         [Test]
-        public void FifteenSecondPlan_PreservesTypedConstraintsAndBuildsSparseSeamRoot()
+        public void FifteenSecondPlan_PreservesConstraintsAndInterpolatesBothOverlapRoots()
         {
             const int fps = 30;
             var constraints = new List<KimodoGlobalRawConstraint>
@@ -66,23 +67,98 @@ namespace KimodoBridge.Editor.Tests
                     .Select(item => item.Frame - windows[1].RequestStartFrame),
                 right.Select(item => item.LocalFrame));
 
-            // At 7.5 seconds the request windows overlap. Its Root2D is inferred
-            // between the known FullBody root at 6s and Root2D root at 9s.
-            KimodoGlobalRawConstraint seamRoot = KimodoGenerationWindowPlanner.InterpolateRoot2D(
-                constraints[1], constraints[2], frame: 225);
-            Assert.That(seamRoot.Kind, Is.EqualTo(KimodoRawConstraintKind.Root2D));
-            Assert.That(seamRoot.RootPosition.x, Is.EqualTo(7.5f).Within(0.001f));
-            Assert.That(seamRoot.RootPosition.y, Is.EqualTo(1.5f).Within(0.001f));
-            Assert.That(seamRoot.Heading.x, Is.EqualTo(Mathf.Sqrt(0.5f)).Within(0.001f));
-            Assert.That(seamRoot.Heading.y, Is.EqualTo(Mathf.Sqrt(0.5f)).Within(0.001f));
+            Assert.That(KimodoGenerationWindowPlanner.TryGetOverlapBoundaryFrames(
+                windows[0], windows[1], out int overlapStart, out int overlapEnd), Is.True);
+            Assert.That(overlapEnd - overlapStart, Is.EqualTo(fps - 1));
+            Assert.That(overlapStart, Is.GreaterThan(constraints[1].Frame));
+            Assert.That(overlapEnd, Is.LessThan(constraints[2].Frame));
+            Assert.That(KimodoGenerationWindowPlanner.TryInterpolateRoot2DForOverlap(
+                constraints,
+                overlapStart,
+                overlapEnd,
+                out KimodoGlobalRawConstraint startRoot,
+                out KimodoGlobalRawConstraint endRoot), Is.True);
+            Assert.That(startRoot.Kind, Is.EqualTo(KimodoRawConstraintKind.Root2D));
+            Assert.That(endRoot.Kind, Is.EqualTo(KimodoRawConstraintKind.Root2D));
+            Assert.That(startRoot.RootPosition.x, Is.EqualTo(overlapStart / (float)fps).Within(0.001f));
+            Assert.That(startRoot.RootPosition.y, Is.EqualTo((overlapStart - 180) / 30f).Within(0.001f));
+            Assert.That(endRoot.RootPosition.x, Is.EqualTo(overlapEnd / (float)fps).Within(0.001f));
+            Assert.That(endRoot.RootPosition.y, Is.EqualTo((overlapEnd - 180) / 30f).Within(0.001f));
 
-            List<KimodoWindowConstraint> leftWithSeam = KimodoGenerationWindowPlanner.MapConstraints(
-                windows[0], constraints.Append(seamRoot));
-            Assert.That(leftWithSeam.Any(item =>
-                item.LocalFrame == 225 && item.Kind == KimodoRawConstraintKind.Root2D), Is.True);
-            Assert.That(seamRoot.Frame - windows[0].RequestStartFrame, Is.EqualTo(225));
-            Assert.That(seamRoot.Frame, Is.GreaterThanOrEqualTo(windows[0].RequestStartFrame));
-            Assert.That(seamRoot.Frame, Is.LessThan(windows[0].RequestEndFrame));
+            List<KimodoWindowConstraint> leftWithOverlapRoots = KimodoGenerationWindowPlanner.MapConstraints(
+                windows[0], constraints.Append(startRoot).Append(endRoot));
+            Assert.That(leftWithOverlapRoots.Any(item =>
+                item.LocalFrame == overlapStart - windows[0].RequestStartFrame &&
+                item.Kind == KimodoRawConstraintKind.Root2D), Is.True);
+            Assert.That(leftWithOverlapRoots.Any(item =>
+                item.LocalFrame == overlapEnd - windows[0].RequestStartFrame &&
+                item.Kind == KimodoRawConstraintKind.Root2D), Is.True);
+        }
+
+        [Test]
+        public void PreviousWindowOverlapFullBody_ConstrainsBothOverlapEndpoints()
+        {
+            const string model = "SOMA30";
+            const int frameRate = 30;
+            const int frameCount = 60;
+            string[] jointNames = KimodoRigProfileDatabase.GetJointNamesForModel(model);
+            int[] jointParents = KimodoRigProfileDatabase.GetParentIndicesForModel(model);
+            var roots = new Vector3[frameCount];
+            var rotations = new List<float>(frameCount * jointNames.Length * 4);
+            for (int frame = 0; frame < frameCount; frame++)
+            {
+                roots[frame] = new Vector3(frame, 0f, frame * 2f);
+                for (int joint = 0; joint < jointNames.Length; joint++)
+                {
+                    rotations.Add(1f);
+                    rotations.Add(0f);
+                    rotations.Add(0f);
+                    rotations.Add(0f);
+                }
+            }
+            var previousMotion = new KimodoRawMotionData(
+                frameCount,
+                jointNames.Length,
+                frameRate,
+                jointNames,
+                jointParents,
+                roots,
+                rotations,
+                rootJointIndex: 0);
+            var previousWindow = new KimodoGenerationWindow
+            {
+                CoreStartFrame = 100,
+                CoreEndFrame = 145,
+                RequestStartFrame = 100,
+                RequestEndFrame = 160
+            };
+            var currentWindow = new KimodoGenerationWindow
+            {
+                CoreStartFrame = 145,
+                CoreEndFrame = 205,
+                RequestStartFrame = 130,
+                RequestEndFrame = 220
+            };
+
+            Assert.That(KimodoGenerationWindowPlanner.TryGetOverlapBoundaryFrames(
+                previousWindow, currentWindow, out int overlapStart, out int overlapEnd), Is.True);
+            string json = KimodoPlayableClipGenerationExecutionService.BuildPreviousWindowOverlapFullBodyConstraintsJson(
+                previousMotion,
+                model,
+                previousWindow,
+                currentWindow,
+                overlapStart,
+                overlapEnd,
+                frameRate);
+            JArray constraints = JArray.Parse(json);
+
+            Assert.That(constraints, Has.Count.EqualTo(1));
+            Assert.That(constraints[0].Value<string>("type"), Is.EqualTo("fullbody"));
+            CollectionAssert.AreEqual(new[] { 0, 29 }, constraints[0]["frame_indices"].Values<int>());
+            Assert.That(constraints[0]["root_positions"], Has.Count.EqualTo(2));
+            Assert.That(constraints[0]["root_positions"][0][0].Value<float>(), Is.EqualTo(-30f));
+            Assert.That(constraints[0]["root_positions"][1][0].Value<float>(), Is.EqualTo(-59f));
+            Assert.That(constraints[0]["local_joints_rot"], Has.Count.EqualTo(2));
         }
 
         [Test]

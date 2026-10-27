@@ -53,6 +53,57 @@ namespace KimodoUnityBridge.Command.Tests
         }
 
         [Test]
+        public void RawConstraintValidation_UsesNonUniformLagrangeAcceleration()
+        {
+            string json = new JArray
+            {
+                CreateRootConstraint(new[] { 0, 60, 66 }, new[] { 0f, 0f, 0.2f })
+            }.ToString();
+
+            Assert.That(
+                KimodoPostApplyOutConstraintUtility.TryValidateRawConstraintRootMotion(
+                    json,
+                    60f,
+                    out string error),
+                Is.True,
+                error);
+        }
+
+        [Test]
+        public void RawConstraintValidation_RejectsNonUniformLagrangeAcceleration()
+        {
+            string json = new JArray
+            {
+                CreateRootConstraint(new[] { 0, 6, 66 }, new[] { 0f, 0f, 6f })
+            }.ToString();
+
+            Assert.That(
+                KimodoPostApplyOutConstraintUtility.TryValidateRawConstraintRootMotion(
+                    json,
+                    60f,
+                    out string error),
+                Is.False);
+            Assert.That(error, Does.Contain("10.909 m/s²"));
+        }
+
+        [Test]
+        public void RawConstraintValidation_DoesNotAssumeZeroVelocityBeforeFirstSample()
+        {
+            string json = new JArray
+            {
+                CreateRootConstraint(new[] { 0, 6 }, new[] { 0f, 0.2f })
+            }.ToString();
+
+            Assert.That(
+                KimodoPostApplyOutConstraintUtility.TryValidateRawConstraintRootMotion(
+                    json,
+                    60f,
+                    out string error),
+                Is.True,
+                error);
+        }
+
+        [Test]
         public void PostApplyInOutSameFrame_GivesStartConstraintPriority()
         {
             string inJson = CreateRootConstraint(0, 1f);

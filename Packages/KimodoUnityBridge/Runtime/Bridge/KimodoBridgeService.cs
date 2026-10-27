@@ -450,6 +450,23 @@ namespace KimodoBridge
 
         private async Task EnsureConnectedAsync(Action<string> progress, CancellationToken token)
         {
+            // This method is also reached by synchronous command wrappers. Resolve
+            // all Editor-owned values before the first await so no Unity API call
+            // is made after ConfigureAwait(false) resumes on a worker thread.
+            ResolvedRuntimeContext context = ResolveRuntimeContext();
+#if UNITY_EDITOR
+            if (IsEditorRuntimeSyncRequired(context.RuntimeRoot))
+            {
+                ReportProgress(progress, "Synchronizing QuickServer runtime...");
+                if (!TrySyncEditorRuntimeRoot(context.RuntimeRoot, out string syncMessage))
+                {
+                    throw new InvalidOperationException(syncMessage);
+                }
+
+                context = ResolveRuntimeContext();
+                ReportProgress(progress, syncMessage);
+            }
+#endif
             await lifecycleGate.WaitAsync(token).ConfigureAwait(false);
             try
             {
@@ -466,7 +483,6 @@ namespace KimodoBridge
                         return;
                     }
 
-                    ResolvedRuntimeContext context = ResolveRuntimeContext();
                     currentRuntimeRoot = context.RuntimeRoot;
 
                     if (isDefaultSession)
@@ -500,21 +516,6 @@ namespace KimodoBridge
 
                     if (!startupInProgress)
                     {
-
-#if UNITY_EDITOR
-                        if (IsEditorRuntimeSyncRequired(context.RuntimeRoot))
-                        {
-                            ReportProgress(progress, "Synchronizing QuickServer runtime...");
-                            if (!TrySyncEditorRuntimeRoot(context.RuntimeRoot, out string syncMessage))
-                            {
-                                throw new InvalidOperationException(syncMessage);
-                            }
-
-                            context = ResolveRuntimeContext();
-                            currentRuntimeRoot = context.RuntimeRoot;
-                            ReportProgress(progress, syncMessage);
-                        }
-#endif
 
                         StartLogPumpsIfNeeded(currentRuntimeRoot, creationContext);
                         processManager.Start(

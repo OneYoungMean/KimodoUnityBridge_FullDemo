@@ -6,10 +6,12 @@
       "documentation": {
         "when_to_use": "Discover the public command contract, inspect one command, list viable models, or review constraint rules.",
         "behavior": [
-          "Pass command to return its complete definition; otherwise section selects the command overview, model list, or constraint reference."
+          "Pass command to return its complete definition; otherwise section selects the command overview, model list, or constraint reference.",
+          "Set compact=true with section=models to return each configuration's model, text_encoder_model, and default fields; the full configuration is returned by default."
         ],
         "result_notes": [
-          "The command-specific form returns the full input and output schemas with usage examples."
+          "The command-specific form returns the full input and output schemas with usage examples.",
+          "The compact model response retains default, count, and configs."
         ],
         "scene_effects": [
           "Read-only, except section=models queries the configured local generation service."
@@ -28,6 +30,11 @@
           "command": {
             "type": "string",
             "description": "Command name whose full manual entry should be returned."
+          },
+          "compact": {
+            "type": "boolean",
+            "default": false,
+            "description": "For section=models, return only model, text_encoder_model, and default for each configuration."
           },
           "section": {
             "type": "string",
@@ -210,11 +217,11 @@
         ],
         "result_notes": [
           "Without timeline_path, returns the current live scene context; if it is missing, emits a warning and creates one in the active scene.",
-          "With timeline_path, reloads the asset, opens it in the Timeline window, and returns opened_timeline details. Missing same-name characters produce warnings while the Timeline remains open.",
+              "With timeline_path, runs the session.clear lifecycle for the transient context, reloads the asset, opens it in the Timeline window, and returns opened_timeline details. Missing same-name characters produce warnings while the Timeline remains open.",
           "When requested, history includes compact animation, generation, and analysis records."
         ],
         "scene_effects": [
-          "The automatic context is scoped to the active scene. The timeline_path form creates only a transient editor context and does not modify the Timeline asset.",
+              "The automatic context is scoped to the active scene. The timeline_path form clears transient context objects, creates a new transient editor context, and does not modify the Timeline asset.",
           "History is read from the existing Session metadata and analysis index."
         ],
         "limits": [
@@ -685,7 +692,7 @@
       "documentation": {
         "when_to_use": "Analyze one loaded animation Clip and produce structured motion data with the fixed 20-tile SceneView image evidence.",
         "behavior": [
-          "Use the scene character and a loaded Clip name or an Assets/Packages asset path.",
+          "Use the scene character and a loaded Clip name or an Assets/Packages asset path. For multiple Clips, call animation.analysis once per Clip and map each result to its source.",
           "Open returned pictures before making visual claims; use structured fields for measurements and temporal positions."
         ],
         "result_notes": [
@@ -710,7 +717,7 @@
         "properties": {
           "clips": {
             "type": "array",
-            "description": "Exactly one animation clip reference. Use a loaded Clip name or an Assets/Packages path; an external asset is appended to the character's Kimodo Timeline before analysis and is never modified.",
+            "description": "One animation clip reference per call. Use a loaded Clip name or an Assets/Packages path; call once per Clip when analyzing multiple sources. An external asset is appended to the character's Kimodo Timeline before analysis and is never modified.",
             "minItems": 1,
             "maxItems": 1,
             "items": {
@@ -971,12 +978,30 @@
       },
       "examples": [
         {
-          "description": "Analyze one returned Clip; open the returned image to inspect it.",
+          "description": "Analyze one Clip and open its returned image to inspect it.",
           "arguments": {
             "clips": [
               {
                 "character": "<character>",
                 "clip": "<clip>"
+              }
+            ],
+            "resolution": 1920,
+            "camera": {
+              "resolution": [
+                1280,
+                720
+              ]
+            }
+          }
+        },
+        {
+          "description": "Analyze another Clip separately, then map each result to its source for comparison.",
+          "arguments": {
+            "clips": [
+              {
+                "character": "<character>",
+                "clip": "<another clip>"
               }
             ],
             "resolution": 1920,
@@ -994,10 +1019,10 @@
       "name": "pose.analysis",
       "description": "Preview one or more animation point constraints as Humanoid poses through the real SceneView camera and return measured joint positions.",
       "documentation": {
-        "when_to_use": "Preview the generation point constraints for one scene character, capture the sampled Humanoid poses, and measure world-space joints and effector target distances.",
+        "when_to_use": "Preview point constraints for one scene character when pose inspection is useful; capture sampled Humanoid poses and measure world-space joints and effector target distances.",
         "behavior": [
-          "Pass the same point constraints array that will be sent to animation.generate. Every entry is previewed in isolation by default; combine=true renders all opaque pose previews together.",
-          "Use transforms only when additional scene objects need to be framed with each pose."
+          "Pass the same point constraints array that will be sent to animation.generate when previewing those constraints. Every entry is previewed in isolation by default; combine=true renders all opaque pose previews together.",
+          "Use transforms when additional scene objects should be framed with each pose."
         ],
         "result_notes": [
           "Returns one image per constraint by default, or one shared image with per-constraint measured joint positions when combine=true.",
@@ -1008,7 +1033,7 @@
           "SceneView camera position, projection and settings remain available for inspection. Renderer visibility is restored after capture."
         ],
         "limits": [
-          "Requires an active Scene View and a valid Humanoid character. Only point constraints are supported; inout and root_path do not describe a single sampled pose."
+          "Requires a valid Humanoid character. If no Scene View is active, the command opens one before capture. This command previews point constraints; use animation.generate for inout and root_path constraints."
         ],
         "related_commands": [
           "pose.get",
@@ -1552,7 +1577,7 @@
       },
       "examples": [
         {
-          "description": "Preview the same point constraints before sending them to animation.generate.",
+          "description": "Preview a point constraint when pose inspection will help assess the requested result.",
           "arguments": {
             "character": "<character>",
             "constraints": [
@@ -1587,6 +1612,29 @@
                 720
               ]
             }
+          }
+        },
+        {
+          "description": "Preview a Root2D point constraint and inspect the returned measurements.",
+          "arguments": {
+            "character": "<character>",
+            "constraints": [
+              {
+                "frame": 60,
+                "root": {
+                  "position": [
+                    2.4,
+                    0.95,
+                    5.0
+                  ],
+                  "rotation": [
+                    0,
+                    0,
+                    0
+                  ]
+                }
+              }
+            ]
           }
         }
       ]
@@ -1951,7 +1999,7 @@
     },
     {
       "name": "animation.generate",
-      "description": "Start asynchronous generation for a character in the current scene context. Root speed above 7 m/s produces a warning; above 10 m/s blocks generation. Root acceleration above 10 m/s² produces a warning; above 15 m/s² blocks generation. After generation, the same Timeline Clip is analyzed once with the full animation.analysis pipeline and returned under post_analysis; analysis failure does not invalidate the generated Clip. Command-created Timeline Clips enable AutoBegin anchoring automatically; explicit first-frame or In/Out samples take precedence. The accepted response contains request_id, status, and request/constraint diagnostics. Pose/effector safety preflight runs only when the same point constraint explicitly contains both pose and effector; effector requires pose or root as explicit root context. These diagnostics are not measured joint positions in the generated motion; use pose.analysis to capture the sampled pose and measure joint positions after generation. Supply trajectory settings only when the requested path is known from explicit requirements or confirmed scene/analysis evidence; prompt wording never selects path options.",
+      "description": "Start asynchronous generation for a character in the current scene context. Root speed above 7 m/s produces a warning; above 10 m/s blocks generation. Root acceleration above 10 m/s² produces a warning; above 15 m/s² blocks generation. Full animation.analysis runs after generation by default; set analyze=false to skip it. When enabled, the result is written to a project-relative JSON file and exposed as post_analysis.analysis_path; analysis failure does not invalidate the generated Clip. Command-created Timeline Clips enable AutoBegin anchoring automatically; explicit first-frame or In/Out samples take precedence. The accepted response contains request_id, status, and request/constraint diagnostics. Pose/effector safety preflight runs for point constraints containing both pose and effector; use pose.analysis to capture sampled poses and measure joint positions. Map explicit path requirements to supported trajectory fields, use confirmed scene or analysis evidence to fill unspecified details, and leave other optional fields at their schema defaults.",
       "documentation": {
         "when_to_use": "Submit one animation generation request for a character in the current scene context.",
         "behavior": [
@@ -1961,17 +2009,17 @@
           "Save request_id and use generation.get to poll; do not resubmit a running request."
         ],
         "result_notes": [
-          "The accepted response contains request_id, status, preflight check results, and warnings. Root speed above 7 m/s warns; above 10 m/s blocks generation. Root acceleration above 10 m/s² warns; above 15 m/s² blocks generation. Pose/effector safety preflight runs only when the same point constraint explicitly contains both pose and effector; effector requires pose or root as explicit root context.",
-          "On completion, generation.get returns the generated Clip metadata, asset path, animation_id, generation diagnostics, and one full animation.analysis result under post_analysis. Analysis failure is reported separately and does not invalidate the generated Clip."
+          "The accepted response contains request_id, status, preflight check results, and warnings. Root speed above 7 m/s warns; above 10 m/s blocks generation. Root acceleration above 10 m/s² warns; above 15 m/s² blocks generation. Use the returned preflight diagnostics to assess pose/effector constraints; use pose.analysis when measured sampled joint positions are needed.",
+          "On completion, generation.get returns the generated Clip metadata, asset path, animation_id, and generation diagnostics. When analyze=true, post_analysis.analysis_path points to the full animation.analysis JSON; with analyze=false, post_analysis.status is skipped. Analysis failure is reported separately and does not invalidate generation."
         ],
         "scene_effects": [
           "A completed result is appended as a Timeline Clip; existing completed Clips are retained.",
           "When no explicit first-frame or In/Out anchor takes precedence, AutoBegin adds a Root2D constraint at the character's original scene Hips position and heading."
         ],
         "limits": [
-          "Trajectory overrides require an explicit requirement or confirmed scene/analysis evidence; prompt words do not select path options.",
-          "analysis_option is lightweight generation-time analysis, not the full animation.analysis command.",
-          "Command checks validate supported request boundaries; they do not judge semantic or artistic quality."
+          "Map explicit path and direction requirements to supported trajectory fields; use confirmed scene/analysis evidence to resolve details the prompt leaves unspecified. Leave other optional fields at their schema defaults.",
+          "analyze controls the full post-generation animation.analysis pass and defaults to true; analysis_option is lightweight generation-time analysis and remains independent.",
+          "Command checks validate supported request boundaries. Evaluate semantic and artistic quality with the task's acceptance criteria and analysis evidence."
         ],
         "related_commands": [
           "scene.context",
@@ -2062,9 +2110,18 @@
               },
               "heading": {
                 "type": "number"
+              },
+              "relative_offset": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                  "type": "number"
+                },
+                "description": "World-space target position for the generated Clip. Root X/Z are normalized into the initial facing frame before Humanoid conversion; the initial yaw is transferred to the Timeline Clip rotation, and the generated root Y curve is preserved with its final frame-zero value accounted for in the Clip offset."
               }
             },
-            "description": "Optional Root2D path override. Use only when the trajectory is known from an explicit requirement or confirmed scene/analysis evidence; never infer these fields from prompt keywords. Any angle enables path override; distance replaces the measured path length; heading is applied after path composition."
+            "description": "Optional Root2D path and output placement settings. Map explicit path and direction requirements to these fields; relative_offset places the Clip in World space while preserving generated vertical root motion for Humanoid conversion and transferring initial yaw to the Clip rotation."
           },
           "generation": {
             "type": "object",
@@ -2109,6 +2166,11 @@
               }
             },
             "description": "Optional animation output settings."
+          },
+          "analyze": {
+            "type": "boolean",
+            "default": true,
+            "description": "Run the full animation.analysis command after generation; defaults to true."
           },
           "analysis_option": {
             "type": "object",
@@ -2404,7 +2466,7 @@
                       "type": "integer",
                       "minimum": 0,
                       "default": 0,
-                      "description": "First path frame; defaults to the clip start. animation.analysis returns this path in World coordinates because the analyzed Clip begins at frame zero; generation resolves it once against the target character's rest-pose World anchor. Use a confirmed path for the intended character and motion; root_path generates only start and end Root2D constraints, not intermediate route enforcement."
+                      "description": "First path frame; defaults to the clip start. animation.analysis returns this path in World coordinates because the analyzed Clip begins at frame zero; generation resolves it once against the target character's rest-pose World anchor. root_path constrains the start and end; add point constraints for intermediate route locations that must be followed."
                     },
                     "root_path": {
                       "type": "object",
@@ -3008,13 +3070,12 @@
       },
       "examples": [
         {
-          "description": "Capture a pose at an absolute Timeline-global frame. Analyze the Clip first, then add its local frame offset to start_timeline_frame_60.",
+          "description": "Capture a pose at an absolute Timeline-global frame resolved from scene.context or existing analysis.",
           "arguments": {
             "source": {
               "character": "<character>",
               "timeline_frame_60": 90
-            },
-            "full_data": true
+            }
           }
         },
         {
@@ -3363,7 +3424,7 @@
     },
     {
       "name": "generation.get",
-      "description": "Get status and results for install, generation, or Mocap analysis requests. A completed generation includes post_analysis with the full animation.analysis result for the generated Timeline Clip; analysis failure is reported separately and does not invalidate generation. A completed Mocap analysis returns poses and SMPL-X coordinate metadata at the top level. include_request_json explicitly opts into the submitted generation payload.",
+      "description": "Get status and results for install, generation, or Mocap analysis requests. A completed generation includes post_analysis.analysis_path pointing to the full animation.analysis JSON for the generated Timeline Clip; analysis failure is reported separately and does not invalidate generation. A completed Mocap analysis returns poses and SMPL-X coordinate metadata at the top level. include_request_json explicitly opts into the submitted generation payload.",
       "documentation": {
         "when_to_use": "Read progress, terminal status, and results for an installation or generation request.",
         "behavior": [
@@ -3540,141 +3601,9 @@
                   "skipped"
                 ]
               },
-              "result": {
-                "type": "object",
-                "properties": {
-                  "ok": {
-                    "type": "boolean"
-                  },
-                  "analysis_schema_version": {
-                    "type": "string"
-                  },
-                  "clip": {
-                    "type": "object",
-                    "properties": {
-                      "analysis_id": {
-                        "type": "string"
-                      },
-                      "session_id": {
-                        "type": "string"
-                      },
-                      "character": {
-                        "type": "string"
-                      },
-                      "name": {
-                        "type": "string"
-                      },
-                      "start_timeline_frame_60": {
-                        "type": "integer"
-                      },
-                      "end_timeline_frame_60_exclusive": {
-                        "type": "integer"
-                      },
-                      "analysis_mode": {
-                        "type": "string"
-                      },
-                      "phase_track_version": {
-                        "type": "string"
-                      },
-                      "phase_track": {
-                        "type": "array"
-                      },
-                      "keyframes": {
-                        "type": "array"
-                      },
-                      "foot_contacts": {
-                        "type": "array"
-                      },
-                      "root_trajectory": {
-                        "type": "object"
-                      },
-                      "endpoint_pose_comparison": {
-                        "type": "object"
-                      },
-                      "motion_profile": {
-                        "type": "object"
-                      }
-                    },
-                    "additionalProperties": true
-                  },
-                  "pictures": {
-                    "type": "object",
-                    "properties": {
-                      "aspect": {
-                        "type": "string"
-                      },
-                      "tile_count": {
-                        "type": "integer"
-                      },
-                      "render_version": {
-                        "type": "string"
-                      },
-                      "image_path": {
-                        "type": "string"
-                      },
-                      "width": {
-                        "type": "integer"
-                      },
-                      "height": {
-                        "type": "integer"
-                      },
-                      "images": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "id": {
-                              "type": "object"
-                            },
-                            "tile": {
-                              "type": "string"
-                            },
-                            "rect": {
-                              "type": "object"
-                            },
-                            "description": {
-                              "type": "string"
-                            },
-                            "header": {
-                              "type": "object",
-                              "properties": {
-                                "text": {
-                                  "type": "object"
-                                },
-                                "color": {
-                                  "type": "object"
-                                },
-                                "height": {
-                                  "type": "integer"
-                                },
-                                "character_count": {
-                                  "type": "object"
-                                }
-                              },
-                              "additionalProperties": true
-                            }
-                          },
-                          "additionalProperties": true
-                        }
-                      },
-                      "title": {
-                        "type": "string"
-                      },
-                      "screenshot_generated_at": {
-                        "type": "string",
-                        "format": "date-time"
-                      },
-                      "header_height": {
-                        "type": "integer"
-                      }
-                    },
-                    "additionalProperties": true
-                  }
-                },
-                "required": [
-                  "ok"
-                ],
-                "additionalProperties": true
+              "analysis_path": {
+                "type": "string",
+                "description": "Project-relative JSON path containing the complete post-generation animation.analysis result."
               },
               "error": {
                 "type": "object",
@@ -4042,7 +3971,7 @@
             "type": "integer"
           },
           "recreated_on_next_command": {
-            "type": "object"
+            "type": "boolean"
           }
         },
         "required": [

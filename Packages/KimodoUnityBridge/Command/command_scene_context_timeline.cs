@@ -24,7 +24,7 @@ namespace KimodoUnityBridge.Command
                 throw new InvalidOperationException($"Timeline asset '{requestedPath}' could not be loaded.");
             }
 
-            ArchiveCurrentTimelineContext();
+            ClearCurrentTimelineContext();
 
             Scene scene = SceneManager.GetActiveScene();
             string safeName = KimodoRuntimeUtility.SanitizeName(timeline.name, "Timeline");
@@ -150,44 +150,13 @@ namespace KimodoUnityBridge.Command
             return path;
         }
 
-        private static void ArchiveCurrentTimelineContext()
+        private static void ClearCurrentTimelineContext()
         {
-            Scene scene = SceneManager.GetActiveScene();
-            if (currentTimelineSession != null)
-            {
-                CancelTimelineSessionGenerations(currentTimelineSession, "Session context switched to a historical Timeline.");
-            }
-            GameObject[] roots = GetSceneSessionRoots(scene);
-            if (roots.Length == 0 && currentTimelineSession?.SessionRoot != null)
-            {
-                roots = new[] { currentTimelineSession.SessionRoot };
-            }
-
-            if (roots.Length == 0)
-            {
-                currentTimelineSession = null;
-                firstTimelineSession = null;
-                lock (TimelineSessionsLock) TimelineSessions.Clear();
-                return;
-            }
-
-            GameObject archive = scene.GetRootGameObjects()
-                .FirstOrDefault(root => root != null && root.name == "KimodoSessionArchive");
-            if (archive == null)
-            {
-                archive = new GameObject("KimodoSessionArchive") { hideFlags = HideFlags.DontSaveInEditor };
-            }
-            foreach (GameObject root in roots)
-            {
-                if (root == null || root == archive) continue;
-                root.SetActive(false);
-                root.name = $"Archive_{root.name}";
-                root.transform.SetParent(archive.transform, true);
-            }
-
-            currentTimelineSession = null;
-            firstTimelineSession = null;
-            lock (TimelineSessionsLock) TimelineSessions.Clear();
+            // Historical Timeline loading follows the same lifecycle as an explicit
+            // session.clear: destroy the transient context, retain persisted assets,
+            // then create the new history context below. Do not archive or rename
+            // scene roots, because doing so leaves stale hidden sessions behind.
+            ClearSession(new JObject());
         }
 
         private static void OpenTimelineWindow(PlayableDirector director)

@@ -105,6 +105,12 @@ namespace KimodoUnityBridge.Command
                         "Return the command manual, detailed parameter documentation for one command, or currently viable model configurations.",
                         Properties(
                             Optional("command", "string", "Command name whose full manual entry should be returned."),
+                            new PropertyDefinition("compact", new JObject
+                            {
+                                ["type"] = "boolean",
+                                ["default"] = false,
+                                ["description"] = "For section=models, return only model, text_encoder_model, and default for each configuration."
+                            }, false),
                             new PropertyDefinition("section", new JObject
                             {
                                 ["type"] = "string",
@@ -185,7 +191,7 @@ namespace KimodoUnityBridge.Command
                             Required("target_character", "string", "Target scene character name or object_ref. Session preview objects are rejected."),
                             OptionalOutput())),
                     CommandDefinition(GenerateAnimationCommand,
-                        "Start asynchronous generation for a character in the current scene context. Root speed above 7 m/s produces a warning; above 10 m/s blocks generation. Root acceleration above 10 m/s² produces a warning; above 15 m/s² blocks generation. After generation, the same Timeline Clip is analyzed once with the full animation.analysis pipeline and returned under post_analysis; analysis failure does not invalidate the generated Clip. Command-created Timeline Clips enable AutoBegin anchoring automatically; explicit first-frame or In/Out samples take precedence. The accepted response contains request_id, status, and request/constraint diagnostics. Pose/effector safety preflight runs only when the same point constraint explicitly contains both pose and effector; effector requires pose or root as explicit root context. These diagnostics are not measured joint positions in the generated motion; use pose.analysis to capture the sampled pose and measure joint positions after generation. Supply trajectory settings only when the requested path is known from explicit requirements or confirmed scene/analysis evidence; prompt wording never selects path options.",
+                        "Start asynchronous generation for a character in the current scene context. Root speed above 7 m/s produces a warning; above 10 m/s blocks generation. Root acceleration above 10 m/s² produces a warning; above 15 m/s² blocks generation. Full animation.analysis runs after generation by default; set analyze=false to skip it. Analysis failure does not invalidate the generated Clip. Command-created Timeline Clips enable AutoBegin anchoring automatically; explicit first-frame or In/Out samples take precedence. The accepted response contains request_id, status, and request/constraint diagnostics. Pose/effector safety preflight runs for point constraints containing both pose and effector; use pose.analysis to capture sampled poses and measure joint positions. Map explicit path requirements to supported trajectory fields, use confirmed scene or analysis evidence to fill unspecified details, and leave other optional fields at their schema defaults.",
                         Properties(
                             Required("character", "string", "Scene character name or object_ref. Session preview objects are rejected; use the source scene character."),
                             Required("prompt", "string", "Short semantic description of the current Clip's action; aim for 25 words or fewer. Express exact FullBody, position, and effector anchors through structured constraints."),
@@ -200,6 +206,12 @@ namespace KimodoUnityBridge.Command
                             OptionalPath(),
                             OptionalGeneration(),
                             OptionalOutput(),
+                            new PropertyDefinition("analyze", new JObject
+                            {
+                                ["type"] = "boolean",
+                                ["default"] = true,
+                                ["description"] = "Run the full animation.analysis command after generation; defaults to true."
+                            }, false),
                             Optional("analysis_option", "object", "Optional generation-time lightweight analysis. When enabled, generation returns sparse salient keyframe markers and foot-contact changes; it does not run the full animation.analysis command."),
                             OptionalConstraints("constraints", "Point constraints resolve to Root2D (root alone), FullBody (pose, optionally root/effector, after IK), or Effector (root + effector without pose). effector alone is invalid. Transforms accept World position and/or Euler rotation in degrees; omitted channels retain sampled values. Pose/effector safety preflight runs when the point explicitly contains both pose and effector. root_path and inout remain separate constraint forms; duplicate frames are rejected; command frames use 60 FPS."))),
                     CommandDefinition(PoseGetCommand,
@@ -211,7 +223,7 @@ namespace KimodoUnityBridge.Command
                         "Modify an External Pose slot. Supply root, muscles, effector, or any combination.",
                         PoseSetSchema()),
                     CommandDefinition(GetGenerationCommand,
-                        "Get status and results for install, generation, or Mocap analysis requests. A completed generation includes post_analysis with the full animation.analysis result for the generated Timeline Clip; analysis failure is reported separately and does not invalidate generation. A completed Mocap analysis returns poses and SMPL-X coordinate metadata at the top level. include_request_json explicitly opts into the submitted generation payload.",
+                        "Get status and results for install, generation, or Mocap analysis requests. A completed generation includes post_analysis.analysis_path pointing to the full animation.analysis JSON for the generated Timeline Clip; analysis failure is reported separately and does not invalidate generation. A completed Mocap analysis returns poses and SMPL-X coordinate metadata at the top level. include_request_json explicitly opts into the submitted generation payload.",
                         Properties(
                             Required("request_id", "string", "Request id returned by server.install, animation.generate, pose.fromvideo, or pose.frompicture."),
                             Optional("include_request_json", "boolean", "Include the exact JSON payload sent to QuickServer; defaults to false."))),
@@ -256,8 +268,28 @@ namespace KimodoUnityBridge.Command
                 var result = new JObject(response);
                 result.Remove("status");
                 result["count"] = (result["configs"] as JArray)?.Count ?? 0;
+                if (arguments.Value<bool?>("compact") == true)
+                {
+                    result = CompactModelConfigurations(result);
+                }
                 return Ok(result);
 
+        }
+
+        private static JObject CompactModelConfigurations(JObject response)
+        {
+            JArray configurations = response["configs"] as JArray ?? new JArray();
+            return new JObject
+            {
+                ["default"] = response["default"]?.DeepClone(),
+                ["count"] = configurations.Count,
+                ["configs"] = new JArray(configurations.OfType<JObject>().Select(configuration => new JObject
+                {
+                    ["model"] = configuration["model"]?.DeepClone(),
+                    ["text_encoder_model"] = configuration["text_encoder_model"]?.DeepClone(),
+                    ["default"] = configuration["default"]?.DeepClone()
+                }))
+            };
         }
 
         public static string GetCommandHelp(string argumentsJson = "{}") => Execute(argumentsJson, GetCommandHelp);
@@ -280,7 +312,7 @@ namespace KimodoUnityBridge.Command
                 }
                 if (section == "models")
                 {
-                    return ListModels(new JObject());
+                    return ListModels(arguments);
                 }
                 if (section == "constraints")
                 {
@@ -389,8 +421,8 @@ namespace KimodoUnityBridge.Command
                     "Pose/effector safety preflight runs only when the same point constraint explicitly contains both pose and effector. root + effector constraints skip this preflight; pose.analysis measures and captures an actual sampled pose after generation.",
                     "A point constraint selects one mode: pose with optional root/effector is FullBody after IK; root + effector without pose is Effector; root alone is Root2D. effector alone is invalid. Put combined data in one point object; the command rejects duplicate frames.",
                     "Use animation.analysis, confirm that the returned World-space Root Path belongs to the intended character and motion, then reference clip.root_trajectory.path from root_path; generation resolves it once against the target character's rest-pose World anchor.",
-                    "Use path angles, distance, or heading only for a known trajectory backed by an explicit requirement or confirmed evidence. Do not infer any trajectory setting from prompt keywords; omit path when the route is unknown.",
-                    "Use root_path only with a confirmed World-space animation.analysis Root Path reference for the intended character and motion. Generation resolves its path once against the target character's rest-pose World anchor and creates only start and end Root2D constraints, so it does not prove an intermediate route.",
+                    "Map explicit path, angle, distance, and heading requirements to the supported trajectory fields; use confirmed scene or analysis evidence to supply unspecified details and leave other optional fields at their schema defaults.",
+                    "Use the intended character's World-space animation.analysis Root Path as the root_path source. Generation resolves it once against the target character's rest-pose World anchor and creates start and end Root2D constraints; add point constraints for intermediate route locations that must be followed.",
                     "An explicit point frame cannot overlap a root_path sample frame; the command rejects the collision.",
                     "At most one standalone inout entry; in/out each require an explicit completed source Clip. Source character defaults to the generation character and must be the same character.",
                     "In/Out window_frames and source.frame use 60 FPS. Windows round up to model frames; sample_count must fit distinct model frames. One sample uses the seam; multiple samples include both endpoints.",
@@ -665,8 +697,13 @@ namespace KimodoUnityBridge.Command
                 float headingDegrees = overrideHeading
                     ? ReadFiniteFloat(pathOptions["heading"], "path.heading")
                     : 0f;
+                bool useRelativeOffset = pathOptions?["relative_offset"] != null;
+                Vector3 relativeOffset = useRelativeOffset
+                    ? ReadVector3(pathOptions["relative_offset"] as JArray, "path.relative_offset")
+                    : Vector3.zero;
                 float duration = (float)(durationFrames / SessionFrameRate);
                 string analysisOptionsJson = ParseAnalysisOptionsJson(arguments);
+                bool analyzeAfterGeneration = arguments.Value<bool?>("analyze") ?? true;
                 int frameCount = Math.Max(1, KimodoFrameTimeUtility.SecondsToFrameCount(duration, frameRate));
                 int seed = generationOptions?.Value<int?>("seed") ?? (Guid.NewGuid().GetHashCode() & int.MaxValue);
                 int steps = generationOptions?.Value<int?>("diffusion_steps") ?? ResolveDiffusionSteps(arguments, modelName, modelConfiguration);
@@ -708,13 +745,38 @@ namespace KimodoUnityBridge.Command
                         : blockingMessage);
                 }
                 TimelineGenerationTrace trace = PrepareGenerationTrace(arguments, character, duration);
-                KimodoExternalConstraintRequest inOutConstraints = BuildCommandInOutConstraints(
-                    arguments, trace, modelName, frameCount, frameRate, loopRequested, poseConstraints);
-                KimodoPlayableClip playableClip = CreateGenerationPlayableClip(trace, requestedAnimationName, inOutConstraints != null);
-                if (inOutConstraints != null)
+                bool hasInOut = (arguments["constraints"] as JArray)?.OfType<JObject>()
+                    .Any(item => item.Property("inout") != null) == true;
+                if (hasInOut)
                 {
-                    playableClip.postApplyInConstraint = inOutConstraints.DeferInConstraint;
-                    playableClip.postApplyOutConstraint = inOutConstraints.DeferOutConstraint;
+                    // Resolve the same source windows used to place the temporary
+                    // neighboring clips before reserving the output range.  The
+                    // actual constraint samples are built later by BuildRequest.
+                    ConfigureCommandInOutClip(
+                        arguments,
+                        trace,
+                        null,
+                        modelName,
+                        frameCount,
+                        frameRate,
+                        loopRequested,
+                        poseConstraints);
+                    PrepareCommandOutsideEvidencePosition(trace);
+                    ValidateCommandTimelineRange(trace);
+                }
+                KimodoPlayableClip playableClip = CreateGenerationPlayableClip(trace, requestedAnimationName, false);
+                if (hasInOut)
+                {
+                    ConfigureCommandInOutClip(
+                        arguments,
+                        trace,
+                        playableClip,
+                        modelName,
+                        frameCount,
+                        frameRate,
+                        loopRequested,
+                        poseConstraints);
+                    CreateCommandOutsideEvidenceClips(trace);
                 }
                 playableClip.bridgeModelName = modelName;
                 playableClip.textEncoderMode = textEncoderMode;
@@ -737,10 +799,13 @@ namespace KimodoUnityBridge.Command
                 playableClip.pathDistance = pathDistance;
                 playableClip.overrideHeading = overrideHeading;
                 playableClip.headingDegrees = headingDegrees;
+                playableClip.useRelativeOffset = useRelativeOffset;
+                playableClip.relativeOffset = relativeOffset;
                 playableClip.loop = loopRequested
                     ? UnityEngine.Timeline.AnimationPlayableAsset.LoopMode.On
                     : UnityEngine.Timeline.AnimationPlayableAsset.LoopMode.Off;
                 playableClip.analysisOptionsJson = analysisOptionsJson;
+                playableClip.analyzeAfterGeneration = analyzeAfterGeneration;
                 playableClip.generatedAssetName = trace.Animation.Name;
                 playableClip.generatedOutputFolder = outputFolder;
                 playableClip.generationOutputMode = ParseGenerationOutputMode(outputMode);
@@ -748,31 +813,59 @@ namespace KimodoUnityBridge.Command
                 ReserveGenerationTimelineRange(trace);
                 SaveTimelineSession(session);
 
-                bool started = KimodoEditorGenerationJobService.Start(
+                string previousTaskId = null;
+                Action<string> previousRequestPayload = null;
+                bool started = KimodoPlayableClipGenerationExecutionService.TryStartConfiguredGenerate(
+                    playableClip,
                     character.Root,
-                    async (generationSession, token) =>
+                    trace.TimelineClip,
+                    generationSession =>
                     {
-                        string previousTaskId = KimodoBridgeService.GenerationTaskIdContext.Value;
-                        Action<string> previousRequestPayload = KimodoBridgeService.GenerationRequestPayloadContext.Value;
+                        previousTaskId = KimodoBridgeService.GenerationTaskIdContext.Value;
+                        previousRequestPayload = KimodoBridgeService.GenerationRequestPayloadContext.Value;
                         KimodoBridgeService.GenerationTaskIdContext.Value = generationSession.RequestId.ToString("N");
                         KimodoBridgeService.GenerationRequestPayloadContext.Value = payload =>
-                            generationSession.BackendRequestJson = payload;
+                        {
+                            if (string.IsNullOrWhiteSpace(generationSession.BackendRequestJson))
+                                generationSession.BackendRequestJson = payload;
+                        };
+                    },
+                    (generationSession, result, token) =>
+                    {
+                        FinalizePlayableClipTrace(trace, result);
+                        if (!playableClip.analyzeAfterGeneration)
+                        {
+                            result.PostAnalysisSkipped = true;
+                            return Task.FromResult(result);
+                        }
+                        KimodoEditorGenerationJobService.UpdateProgress(
+                            character.Root,
+                            generationSession.RequestId,
+                            KimodoBridgeCommandStage.Finalize,
+                            "Running post-generation animation analysis.");
                         try
                         {
-                            return await ExecutePlayableClipGenerationAsync(
-                                playableClip,
-                                trace,
-                                inOutConstraints,
-                                character.Root,
-                                generationSession,
-                                token);
+                            JObject analysisResponse = AnimationAnalysisCore(new JObject
+                            {
+                                ["clips"] = new JArray(new JObject
+                                {
+                                    ["character"] = trace.Character.Name,
+                                    ["clip"] = trace.Animation.Name
+                                })
+                            }, allowActiveGenerationRange: true);
+                            result.PostAnalysisJson = analysisResponse.ToString(Formatting.None);
                         }
-                        finally
+                        catch (Exception ex)
                         {
-                            KimodoBridgeService.GenerationTaskIdContext.Value = previousTaskId;
-                            KimodoBridgeService.GenerationRequestPayloadContext.Value = previousRequestPayload;
-                            // Temporary sampling context is owned by the command runtime.
+                            result.PostAnalysisError = ex.Message;
+                            Debug.LogWarning($"[Kimodo][PostGenerationAnalysis] {ex}");
                         }
+                        return Task.FromResult(result);
+                    },
+                    generationSession =>
+                    {
+                        KimodoBridgeService.GenerationTaskIdContext.Value = previousTaskId;
+                        KimodoBridgeService.GenerationRequestPayloadContext.Value = previousRequestPayload;
                     },
                     PersistGenerationJobStatus,
                     out KimodoEditorGenerationJobSession generation,
@@ -815,6 +908,11 @@ namespace KimodoUnityBridge.Command
                 token,
                 trace.TimelineClip);
             FinalizePlayableClipTrace(trace, result);
+            if (!playableClip.analyzeAfterGeneration)
+            {
+                result.PostAnalysisSkipped = true;
+                return result;
+            }
             KimodoEditorGenerationJobService.UpdateProgress(
                 target,
                 session.RequestId,

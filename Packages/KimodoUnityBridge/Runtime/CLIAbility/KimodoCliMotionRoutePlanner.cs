@@ -104,9 +104,7 @@ namespace KimodoBridge
             while (pendingWorldTargets.Count > 0)
             {
                 Vector3 first = pendingWorldTargets.Peek();
-                if (Vector2.Distance(
-                        new Vector2(first.x, first.z),
-                        new Vector2(root.position.x, root.position.z)) > waypointArrivalThreshold)
+                if (KimodoMotionMath.PlanarDistance(first, root.position) > waypointArrivalThreshold)
                 {
                     break;
                 }

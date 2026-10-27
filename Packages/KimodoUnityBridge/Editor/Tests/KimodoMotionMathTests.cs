@@ -44,5 +44,43 @@ namespace KimodoBridge.Editor.Tests
                 Is.LessThan(0.001f));
             Assert.That(Quaternion.Angle(resultTilt, originalTilt), Is.LessThan(0.001f));
         }
+
+        [Test]
+        public void PlanarProjection_UsesUnityXZAndPreservesHeightSeparately()
+        {
+            Vector3 position = new Vector3(2.5f, 7f, -4f);
+
+            Assert.That(KimodoMotionMath.ToPlanar(position), Is.EqualTo(new Vector2(2.5f, -4f)));
+            Assert.That(KimodoMotionMath.FromPlanar(new Vector2(-3f, 8f), position.y),
+                Is.EqualTo(new Vector3(-3f, 7f, 8f)));
+            Assert.That(KimodoMotionMath.PlanarDistance(position, new Vector3(5.5f, 100f, 0f)),
+                Is.EqualTo(5f).Within(0.0001f));
+        }
+
+        [Test]
+        public void LocalPlanarDelta_IgnoresHeightPitchAndRoll()
+        {
+            Vector3 worldDelta = new Vector3(2f, 9f, 1f);
+            Quaternion frame = Quaternion.Euler(28f, 90f, -17f);
+
+            Vector2 actual = KimodoMotionMath.ToPlanarLocalDelta(worldDelta, frame);
+            Vector2 expected = KimodoMotionMath.ToPlanarLocalDelta(
+                new Vector3(worldDelta.x, 0f, worldDelta.z),
+                Quaternion.Euler(0f, 90f, 0f));
+
+            Assert.That(Vector2.Distance(actual, expected), Is.LessThan(0.0001f));
+        }
+
+        [Test]
+        public void InterpolatePlanarHeading_UsesShortestYawArc()
+        {
+            Vector2 result = KimodoMotionMath.InterpolatePlanarHeading(
+                new Vector2(0f, 1f),
+                new Vector2(1f, 0f),
+                0.5f);
+
+            Assert.That(result.x, Is.EqualTo(Mathf.Sqrt(0.5f)).Within(0.0001f));
+            Assert.That(result.y, Is.EqualTo(Mathf.Sqrt(0.5f)).Within(0.0001f));
+        }
     }
 }
