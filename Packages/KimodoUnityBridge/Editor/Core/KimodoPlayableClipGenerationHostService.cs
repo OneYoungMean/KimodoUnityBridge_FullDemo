@@ -28,7 +28,8 @@ namespace KimodoBridge.Editor
             TimelineClip timelineClipOverride = null,
             bool? generateLoopOverride = null,
             bool deferOutConstraint = false,
-            bool deferInConstraint = false)
+            bool deferInConstraint = false,
+            double? targetDurationSecondsOverride = null)
         {
             if (clip == null)
             {
@@ -45,14 +46,16 @@ namespace KimodoBridge.Editor
                 throw new InvalidOperationException("Generation length requires a Timeline clip with positive duration.");
             }
             float targetFrameRate = KimodoMotionModelProfiles.ResolveGenerationFrameRate(resolvedModelName);
+            double targetDurationSeconds = targetDurationSecondsOverride.HasValue
+                ? Math.Max(0.0, targetDurationSecondsOverride.Value)
+                : timelineClip.duration;
             int targetFrameCount = Mathf.Max(
                 KimodoMotionModelProfiles.MinGenerationFrames,
-                KimodoFrameTimeUtility.SecondsToFrameCount(timelineClip.duration, targetFrameRate));
-            int generationFrameCount = Mathf.Max(
-                targetFrameCount,
-                KimodoFrameTimeUtility.SecondsToFrameCount(
-                    KimodoGenerationWarningCheckService.MinimumGenerationDurationSeconds,
-                    targetFrameRate));
+                KimodoFrameTimeUtility.SecondsToFrameCount(targetDurationSeconds, targetFrameRate));
+            // Keep the backend request at the requested length. Short clips may
+            // still receive context frames below, but are no longer expanded to
+            // a separate minimum generation duration.
+            int generationFrameCount = targetFrameCount;
             int sourceSessionFrameCount = Mathf.Max(1, Mathf.RoundToInt((float)(timelineClip.duration * 60.0)));
             bool isLoopGeneration = (generateLoopOverride ?? clip.generateLoop) && sourceSessionFrameCount <= 300;
             int loopPaddingFrames = isLoopGeneration ? generationFrameCount / 2 : 0;
@@ -150,6 +153,12 @@ namespace KimodoBridge.Editor
                         deferredOut.ConstraintsJson);
                 }
             }
+            string inConstraintWindowJson = !string.IsNullOrWhiteSpace(deferredInConstraintJson)
+                ? deferredInConstraintJson
+                : constraintResult.InConstraintWindowJson;
+            string outConstraintWindowJson = !string.IsNullOrWhiteSpace(deferredOutConstraintJson)
+                ? deferredOutConstraintJson
+                : constraintResult.OutConstraintWindowJson;
             List<KimodoMarkerSampleResult> constraintSamples = constraintResult.CombinedSamples;
             if ((deferInConstraint || deferOutConstraint) && externalConstraint?.Enabled == true &&
                 ((deferInConstraint && externalConstraint.DeferredInConstraintSamples?.Count > 0) ||
@@ -229,6 +238,8 @@ namespace KimodoBridge.Editor
                 TargetFrameRate = targetFrameRate,
                 RuntimeFrameCount = runtimeFrameCount,
                 RuntimeTrimStartFrame = runtimeTrimStartFrame,
+                LongClipWindowFrames = Mathf.Max(1, clip.longClipWindowFrames),
+                LongClipWindowSampleCount = Mathf.Max(1, clip.longClipWindowSampleCount),
                 DiffusionSteps = KimodoMotionModelProfiles.ClampDiffusionSteps(
                     resolvedModelName,
                     clip.diffusionSteps),
@@ -236,6 +247,8 @@ namespace KimodoBridge.Editor
                 Constraints = new KimodoConstraintPayload { json = constraintsJson, clips = clipConstraints },
                 DeferredInConstraintJson = deferredInConstraintJson,
                 DeferredOutConstraintJson = deferredOutConstraintJson,
+                InConstraintWindowJson = inConstraintWindowJson ?? string.Empty,
+                OutConstraintWindowJson = outConstraintWindowJson ?? string.Empty,
                 // Legacy per-clip lightweight analysis settings remain serialized
                 // for existing assets, but normal Inspector generation now uses
                 // the full animation.analysis path after baking.

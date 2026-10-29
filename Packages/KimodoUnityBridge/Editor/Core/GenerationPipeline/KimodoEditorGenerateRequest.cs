@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using TimelineInject;
 using UnityEditor;
 using UnityEngine;
@@ -35,6 +37,11 @@ namespace KimodoBridge.Editor
         public float TargetFrameRate = KimodoMotionModelProfiles.DefaultFrameRate;
         public int RuntimeFrameCount;
         public int RuntimeTrimStartFrame;
+        // Per-clip overlap settings used when a long runtime is split into generation windows.
+        // Keep these on the request so the windowed route remains deterministic after the
+        // Timeline asset has been read and asynchronous generation begins.
+        public int LongClipWindowFrames = 30;
+        public int LongClipWindowSampleCount = 2;
         public int DiffusionSteps;
         public int EffectiveSeed;
         public KimodoConstraintPayload Constraints = new KimodoConstraintPayload();
@@ -54,6 +61,8 @@ namespace KimodoBridge.Editor
         internal KimodoRawMotionData DebugRuntimeMotion;
         public string DeferredInConstraintJson = string.Empty;
         public string DeferredOutConstraintJson = string.Empty;
+        public string InConstraintWindowJson = string.Empty;
+        public string OutConstraintWindowJson = string.Empty;
         public TimelineClip TimelineClipSnapshot;
         public bool ResetTimelineTimeScaleAfterGeneration;
         public bool UseRelativeOffset;
@@ -121,6 +130,96 @@ namespace KimodoBridge.Editor
                 return;
             }
             KimodoEditorClipWritebackService.TryDeleteGeneratedAnimationClipAsset(clip);
+        }
+    }
+
+    internal sealed class KimodoEditorGenerationPass
+    {
+        private readonly Func<string, string> applyConstraints;
+
+        internal KimodoEditorGenerationPass(string name, Func<string, string> applyConstraints)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentException("Generation pass name is required.", nameof(name));
+            this.applyConstraints = applyConstraints ??
+                throw new ArgumentNullException(nameof(applyConstraints));
+            Name = name;
+        }
+
+        internal string Name { get; }
+
+        internal string Apply(string constraintsJson)
+        {
+            return applyConstraints(constraintsJson ?? string.Empty) ?? string.Empty;
+        }
+    }
+
+    internal sealed class KimodoEditorGenerationStage
+    {
+        private readonly List<KimodoEditorGenerationPass> passes = new List<KimodoEditorGenerationPass>();
+
+        internal KimodoEditorGenerationStage(
+            int index,
+            string name,
+            KimodoEditorGenerateRequest request,
+            KimodoRawMotionData sourceMotion = null)
+        {
+            if (index < 1)
+                throw new ArgumentOutOfRangeException(nameof(index), "Generation stage index must be positive.");
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentException("Generation stage name is required.", nameof(name));
+            Request = request ?? throw new ArgumentNullException(nameof(request));
+            Index = index;
+            Name = name;
+            SourceMotion = sourceMotion;
+        }
+
+        internal int Index { get; }
+        internal string Name { get; }
+        internal KimodoEditorGenerateRequest Request { get; }
+        internal KimodoRawMotionData SourceMotion { get; }
+        internal KimodoRawMotionData ResultMotion { get; set; }
+        internal float FrameRate => ResultMotion?.FrameRate > 0f
+            ? ResultMotion.FrameRate
+            : Request.TargetFrameRate;
+        internal int FrameCount => ResultMotion?.FrameCount > 0
+            ? ResultMotion.FrameCount
+            : Request.TargetFrameCount;
+        internal double DurationSeconds => FrameRate > 0f ? FrameCount / (double)FrameRate : 0d;
+        internal string ConstraintsJson => Request.Constraints?.json ?? string.Empty;
+        internal IReadOnlyList<KimodoEditorGenerationPass> Passes => passes;
+
+        internal void AddPass(KimodoEditorGenerationPass pass)
+        {
+            passes.Add(pass ?? throw new ArgumentNullException(nameof(pass)));
+        }
+
+        internal string ApplyPasses()
+        {
+            string constraintsJson = Request.Constraints?.json ?? string.Empty;
+            for (int i = 0; i < passes.Count; i++)
+            {
+                constraintsJson = passes[i].Apply(constraintsJson);
+            }
+
+            // A Stage exposes one composed constraint set to the next stage and
+            // to the debug timeline. Fold same-frame Root2D rows into the
+            // matching root-context row here so the stage view follows the
+            // protocol rule before serialization reaches the backend.
+            if (!string.IsNullOrWhiteSpace(constraintsJson))
+            {
+                JToken parsed = JToken.Parse(constraintsJson);
+                if (parsed is JArray array)
+                {
+                    constraintsJson = KimodoConstraintProtocolNormalizer
+                        .NormalizeRoot2DIntoFullBody(array)
+                        .ToString(Formatting.None);
+                }
+            }
+            if (Request.Constraints == null)
+                Request.Constraints = new KimodoConstraintPayload();
+            Request.Constraints.json = constraintsJson;
+            return constraintsJson;
         }
     }
 

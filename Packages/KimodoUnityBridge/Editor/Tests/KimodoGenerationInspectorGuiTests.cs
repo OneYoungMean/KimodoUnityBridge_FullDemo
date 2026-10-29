@@ -635,6 +635,62 @@ namespace KimodoBridge.Editor.Tests
                     generateLoopOverride: false);
                 Assert.That(firstPass.RuntimeFrameCount, Is.EqualTo(firstPass.TargetFrameCount));
                 Assert.That(firstPass.RuntimeTrimStartFrame, Is.Zero);
+
+                KimodoEditorGenerateRequest loopTrajectoryPass =
+                    KimodoPlayableClipGenerationHostService.BuildRequest(
+                        clip,
+                        "walk",
+                        externalConstraint: null,
+                        default,
+                        targetDurationSecondsOverride: 3.0,
+                        generateLoopOverride: false);
+                Assert.That(
+                    loopTrajectoryPass.TargetFrameCount,
+                    Is.EqualTo(KimodoFrameTimeUtility.SecondsToFrameCount(
+                        3.0,
+                        loopTrajectoryPass.TargetFrameRate)));
+                Assert.That(
+                    loopTrajectoryPass.RuntimeFrameCount,
+                    Is.EqualTo(loopTrajectoryPass.TargetFrameCount));
+            }
+            finally
+            {
+                skeleton?.Dispose();
+                Object.DestroyImmediate(directorRoot);
+                Object.DestroyImmediate(timeline);
+            }
+        }
+
+        [Test]
+        public void ShortClip_DoesNotExtendRuntimeToMinimumGenerationDuration()
+        {
+            TimelineAsset timeline = ScriptableObject.CreateInstance<TimelineAsset>();
+            GameObject directorRoot = new GameObject("KimodoShortGenerationRequestTest");
+            RetargetSkeleton skeleton = null;
+            try
+            {
+                AnimationTrack track = timeline.CreateTrack<AnimationTrack>(null, "Motion");
+                TimelineClip timelineClip = track.CreateClip<KimodoPlayableClip>();
+                timelineClip.duration = 1.0;
+                PlayableDirector director = directorRoot.AddComponent<PlayableDirector>();
+                director.playableAsset = timeline;
+                skeleton = BindTestSkeleton(director, track, "KimodoShortGenerationRequestSkeleton");
+                var clip = (KimodoPlayableClip)timelineClip.asset;
+                clip.inOutConstraintMode = KimodoInOutConstraintMode.None;
+                clip.autoBeginAnchor = false;
+
+                KimodoEditorGenerateRequest request = KimodoPlayableClipGenerationHostService.BuildRequest(
+                    clip,
+                    "walk",
+                    externalConstraint: null,
+                    default,
+                    generateLoopOverride: false);
+
+                int expectedFrames = KimodoFrameTimeUtility.SecondsToFrameCount(
+                    timelineClip.duration,
+                    request.TargetFrameRate);
+                Assert.That(request.TargetFrameCount, Is.EqualTo(expectedFrames));
+                Assert.That(request.RuntimeFrameCount, Is.EqualTo(expectedFrames));
             }
             finally
             {

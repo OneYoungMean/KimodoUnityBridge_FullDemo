@@ -95,6 +95,20 @@ namespace KimodoBridge.Editor.Tests
         }
 
         [Test]
+        public void DeferredAutoBegin_GenericEffectorWithinOneSecondBeatsSyntheticConstraint()
+        {
+            var synthetic = new KimodoMarkerSampleResult { constraintMode = "root2d", sampleTime = 0.0 };
+            var effector = new KimodoMarkerSampleResult { constraintMode = "effector", sampleTime = 0.999 };
+
+            Assert.That(
+                KimodoConstraintNormalizationUtility.HasNormalizationAnchor(
+                    new List<KimodoMarkerSampleResult> { synthetic, effector },
+                    1.0,
+                    synthetic),
+                Is.True);
+        }
+
+        [Test]
         public void ConstraintAtExactlyOneSecond_GetsFrameZeroAutoBeginRoot2DConstraint()
         {
             using (AutoBeginSceneFixture fixture = CreateAutoBeginSceneFixture())
@@ -323,24 +337,27 @@ namespace KimodoBridge.Editor.Tests
         [TestCase(KimodoConstraintMode.FullBody)]
         [TestCase(KimodoConstraintMode.Root2D)]
         [TestCase(KimodoConstraintMode.Effector)]
-        public void ConstraintInitialization_UsesRestPoseForPreviewAndExport(KimodoConstraintMode mode)
+        public void ConstraintInitialization_UsesTimelinePoseForPreviewAndExport(KimodoConstraintMode mode)
         {
             using (AutoBeginSceneFixture fixture = CreateAutoBeginSceneFixture())
             {
                 var context = CreateAutoBeginRequest(fixture).TimelineContext;
-                Assert.That(KimodoConstraintPoseUtility.TryCreateRestPoseSample(context,
-                    out var expected, out var error), Is.True, error);
                 var marker = fixture.Track.CreateMarker<KimodoConstraintMarker>(100.0);
                 marker.ConstraintMode = mode;
                 if (mode == KimodoConstraintMode.Effector) marker.SampleData.enableMask.rightHand = true;
                 fixture.Skeleton.animator.GetBoneTransform(HumanBodyBones.RightUpperArm).localRotation *= Quaternion.Euler(0, 0, 45);
                 fixture.Director.time = 50.0;
 
+                Assert.That(KimodoTimelineConstraintSampler.TrySampleMarker(
+                    context, marker.time, marker.time, "fullbody",
+                    KimodoMotionModelProfiles.DefaultModelName,
+                    out var expected, out var error), Is.True, error);
+
                 Assert.That(KimodoConstraintMarkerSampling.TryUpdateAutoSampleMarkerData(marker, out error), Is.True, error);
                 Assert.That(Newtonsoft.Json.Linq.JToken.DeepEquals(
                     KimodoConstraintPoseUtility.BuildPoseJson(marker.SampleData),
                     KimodoConstraintPoseUtility.BuildPoseJson(expected)), Is.True,
-                    "Root, hands, feet and muscles must all start from rest pose on an empty Timeline.");
+                    "Auto Sample should capture the Timeline pose at the marker time.");
 
                 Assert.That(KimodoTimelineConstraintMarkerSampler.TryBuildMarkerSamplesForExport(
                     context, out var exported, out error), Is.True, error);
@@ -350,7 +367,7 @@ namespace KimodoBridge.Editor.Tests
                 Assert.That(Newtonsoft.Json.Linq.JToken.DeepEquals(
                     KimodoConstraintPoseUtility.BuildPoseJson(exported[0]),
                     KimodoConstraintPoseUtility.BuildPoseJson(expected)), Is.True);
-                Assert.That(fixture.Director.time, Is.EqualTo(50.0), "Initialization must not evaluate Timeline time.");
+                Assert.That(fixture.Director.time, Is.EqualTo(50.0), "Sampling must not leave Timeline time changed.");
 
                 marker.autoSample = false;
                 marker.SampleData.rootOverride.t += Vector3.up;
