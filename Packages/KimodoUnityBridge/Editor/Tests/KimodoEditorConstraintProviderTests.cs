@@ -266,6 +266,32 @@ namespace KimodoUnityBridge.Command.Tests
         }
 
         [Test]
+        public void StageRouting_RunsStage1OnlyWhenAPathPassNeedsBaselineMotion()
+        {
+            var clip = ScriptableObject.CreateInstance<KimodoPlayableClip>();
+            try
+            {
+                Assert.That(KimodoPlayableClipGenerationExecutionService.RequiresStage1Baseline(clip), Is.False);
+
+                clip.overridePathDistance = true;
+                Assert.That(KimodoPlayableClipGenerationExecutionService.RequiresStage1Baseline(clip), Is.True,
+                    "Distance-only uses the baseline Root2D trajectory as its scaling source.");
+
+                clip.overridePathDistance = false;
+                clip.overridePathAngle = true;
+                Assert.That(KimodoPlayableClipGenerationExecutionService.RequiresStage1Baseline(clip), Is.True);
+
+                clip.overridePathAngle = false;
+                clip.overrideHeading = true;
+                Assert.That(KimodoPlayableClipGenerationExecutionService.RequiresStage1Baseline(clip), Is.True);
+            }
+            finally
+            {
+                Object.DestroyImmediate(clip);
+            }
+        }
+
+        [Test]
         public void Stage2PathOrigin_PrefersRelativeOffsetThenAutoBeginSnapshot()
         {
             Vector3 relativeOffset = new Vector3(8f, 2f, -3f);
@@ -325,6 +351,41 @@ namespace KimodoUnityBridge.Command.Tests
         }
 
         [Test]
+        public void StageRouting_PreservesConfiguredWindowWhenOnlyOneSampleIsExported()
+        {
+            const string json = "[{\"type\":\"fullbody\",\"frame_indices\":[12]}]";
+            int span = KimodoPlayableClipGenerationExecutionService.ResolveStage3WindowFrameCount(
+                windowModelFrameCount: 15,
+                constraintsJson: json,
+                out int firstFrame,
+                out int lastFrame);
+
+            Assert.That(firstFrame, Is.EqualTo(12));
+            Assert.That(lastFrame, Is.EqualTo(12));
+            Assert.That(span, Is.EqualTo(15));
+
+            int inferredSpan = KimodoPlayableClipGenerationExecutionService.ResolveStage3WindowFrameCount(
+                windowModelFrameCount: 0,
+                constraintsJson: json,
+                out _,
+                out _);
+            Assert.That(inferredSpan, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void StageRouting_Stage3WindowWidthIsAddedOnceToCoreDuration()
+        {
+            const int coreFrames = 45; // 1.5 seconds at the default 30 FPS model rate.
+            const int inWindowFrames = 6; // 12 command frames at 60 FPS.
+            const int outWindowFrames = 6;
+
+            int stage3Frames = coreFrames + inWindowFrames + outWindowFrames;
+
+            Assert.That(stage3Frames, Is.EqualTo(57));
+            Assert.That(stage3Frames / 30.0, Is.EqualTo(1.9).Within(1e-6));
+        }
+
+        [Test]
         public void GenerationStage_AppliesPassesSequentiallyToInheritedConstraintSet()
         {
             var request = new KimodoEditorGenerateRequest();
@@ -350,6 +411,58 @@ namespace KimodoUnityBridge.Command.Tests
                 composed.Children<JObject>().Select(item => item.Value<string>("pass")));
             Assert.That(stage.Passes.Count, Is.EqualTo(2));
             Assert.That(JToken.DeepEquals(JToken.Parse(request.Constraints.json), composed), Is.True);
+        }
+
+        [Test]
+        public void AppendConstraintsReplacingFullBodyFrameJson_ReplacesOnlyTheSharedSeamRow()
+        {
+            string existing = new JArray
+            {
+                new JObject
+                {
+                    ["type"] = "fullbody",
+                    ["frame_indices"] = new JArray(1, 2, 3),
+                    ["root_positions"] = new JArray(
+                        new JArray(1f, 1f, 1f),
+                        new JArray(2f, 2f, 2f),
+                        new JArray(3f, 3f, 3f)),
+                    ["local_joints_rot"] = new JArray(
+                        new JArray(new JArray(1f, 0f, 0f)),
+                        new JArray(new JArray(2f, 0f, 0f)),
+                        new JArray(new JArray(3f, 0f, 0f)))
+                }
+            }.ToString();
+            string loop = new JArray
+            {
+                new JObject
+                {
+                    ["type"] = "fullbody",
+                    ["frame_indices"] = new JArray(2, 4),
+                    ["root_positions"] = new JArray(
+                        new JArray(20f, 20f, 20f),
+                        new JArray(40f, 40f, 40f)),
+                    ["local_joints_rot"] = new JArray(
+                        new JArray(new JArray(20f, 0f, 0f)),
+                        new JArray(new JArray(40f, 0f, 0f)))
+                }
+            }.ToString();
+
+            JArray result = JArray.Parse(KimodoClipConstraintBakeUtility.AppendConstraintsReplacingFullBodyFrameJson(
+                existing,
+                loop,
+                replacedFrame: 2));
+
+            CollectionAssert.AreEqual(new[] { 1, 3 }, result[0]["frame_indices"].Values<int>());
+            Assert.That(JToken.DeepEquals(
+                new JArray(new JArray(1f, 1f, 1f), new JArray(3f, 3f, 3f)),
+                result[0]["root_positions"]), Is.True);
+            Assert.That(JToken.DeepEquals(
+                new JArray(
+                    new JArray(new JArray(1f, 0f, 0f)),
+                    new JArray(new JArray(3f, 0f, 0f))),
+                result[0]["local_joints_rot"]), Is.True);
+            CollectionAssert.AreEqual(new[] { 2, 4 }, result[1]["frame_indices"].Values<int>());
+            Assert.That((float)result[1]["root_positions"][0][0], Is.EqualTo(20f));
         }
 
         [Test]

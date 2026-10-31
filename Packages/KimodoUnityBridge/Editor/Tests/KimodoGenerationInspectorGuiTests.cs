@@ -76,6 +76,50 @@ namespace KimodoBridge.Editor.Tests
         }
 
         [Test]
+        public void BakeIntoClip_UsesRealCoverageSampleInsteadOfHoldingPreviousFrame()
+        {
+            string motionJson = new JObject
+            {
+                ["num_frames"] = 3,
+                ["num_joints"] = 1,
+                ["fps"] = 30,
+                ["joint_names"] = new JArray("Hips"),
+                ["joint_parents"] = new JArray(-1),
+                ["joints"] = new JArray(0, 0, 0, 1, 0, 0, 2, 0, 0),
+                ["local_rot_quats"] = new JArray(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+            }.ToString(Newtonsoft.Json.Formatting.None);
+            var clip = new AnimationClip { name = "RealCoverageSample", frameRate = 30f };
+            try
+            {
+                Assert.That(
+                    KimodoRetargetToolsEditor.BakeIntoClip(
+                        clip,
+                        motionJson,
+                        KimodoBakeSkeletonType.SOMA,
+                        KimodoMotionModelProfiles.DefaultModelName,
+                        null,
+                        out string error,
+                        hasRealCoverageSample: true),
+                    Is.True,
+                    error);
+
+                EditorCurveBinding binding = EditorCurveBinding.FloatCurve(
+                    "Hips", typeof(Transform), "m_LocalPosition.x");
+                AnimationCurve curve = AnimationUtility.GetEditorCurve(clip, binding);
+                Assert.That(curve, Is.Not.Null);
+                Assert.That(curve.length, Is.EqualTo(3));
+                Assert.That(curve.keys[2].time, Is.EqualTo(2f / 30f).Within(1e-6f));
+                Assert.That(curve.keys[2].value, Is.EqualTo(-2f).Within(1e-6f));
+                Assert.That(curve.keys[2].value, Is.Not.EqualTo(curve.keys[1].value));
+                Assert.That(clip.length, Is.EqualTo(2f / 30f).Within(1e-6f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(clip);
+            }
+        }
+
+        [Test]
         public void RelativeOffset_NormalizesRootBeforeBakeAndCarriesWorldPlacementOnRequest()
         {
             var timeline = ScriptableObject.CreateInstance<TimelineAsset>();
@@ -255,8 +299,8 @@ namespace KimodoBridge.Editor.Tests
                 playable.clip = animation;
                 playable.inOutConstraintMode = KimodoInOutConstraintMode.Outside;
                 playable.enableInConstraint = enableIn; playable.enableOutConstraint = enableOut;
-                playable.inConstraintWindowFrames = 7; playable.inConstraintSampleCount = 3;
-                playable.outConstraintWindowFrames = 4; playable.outConstraintSampleCount = 3;
+                playable.inConstraintWindowFrames60 = 14; playable.inConstraintSampleCount = 3;
+                playable.outConstraintWindowFrames60 = 8; playable.outConstraintSampleCount = 3;
                 playable.autoBeginAnchor = false;
                 director.time = 1.25;
                 // Newly authored transient clips initialize root-curve flags on first evaluation.
@@ -274,6 +318,18 @@ namespace KimodoBridge.Editor.Tests
                 Assert.That(request.TargetFrameCount, Is.EqualTo(60));
                 Assert.That(request.RuntimeFrameCount, Is.EqualTo(60 + prefix + suffix));
                 Assert.That(request.RuntimeTrimStartFrame, Is.EqualTo(prefix));
+                var stage3Request = KimodoPlayableClipGenerationHostService.BuildRequest(
+                    playable,
+                    "walk",
+                    null,
+                    default,
+                    timelineClipOverride: current,
+                    generateLoopOverride: false,
+                    targetDurationSecondsOverride: 1.9,
+                    disableOutsideContextExpansion: true);
+                Assert.That(stage3Request.TargetFrameCount, Is.EqualTo(57));
+                Assert.That(stage3Request.RuntimeFrameCount, Is.EqualTo(stage3Request.TargetFrameCount),
+                    "Stage 3 already includes its In/Out windows in the target duration and must not expand them again as outside context.");
                 Assert.That(request.Constraints.clips, Is.Empty, "Kimodo boundaries must use native FullBody constraints.");
                 Assert.That(request.ConstraintSamples.Count, Is.EqualTo((enableIn ? 3 : 0) + (enableOut ? 3 : 0)));
                 var json = Newtonsoft.Json.Linq.JArray.Parse(request.Constraints.Serialize(playable.bridgeModelName,
@@ -318,7 +374,7 @@ namespace KimodoBridge.Editor.Tests
                 {
                     var nextPlayable = (KimodoPlayableClip)next.asset;
                     nextPlayable.inOutConstraintMode = KimodoInOutConstraintMode.Outside;
-                    nextPlayable.inConstraintWindowFrames = 7;
+                    nextPlayable.inConstraintWindowFrames60 = 14;
                     nextPlayable.inConstraintSampleCount = 3;
                     nextPlayable.autoBeginAnchor = false;
                     const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
