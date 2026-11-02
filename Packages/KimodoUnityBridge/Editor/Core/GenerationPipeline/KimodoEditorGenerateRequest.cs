@@ -50,7 +50,6 @@ namespace KimodoBridge.Editor
         public int DiffusionSteps;
         public int EffectiveSeed;
         public KimodoConstraintPayload Constraints = new KimodoConstraintPayload();
-        public string AnalysisOptionsJson;
         internal KimodoEditorGenerateOutputPlan OutputPlan { get; private set; }
         public string ModelsRoot = string.Empty;
         internal AnimationClip TargetClip { get; set; }
@@ -64,14 +63,8 @@ namespace KimodoBridge.Editor
         internal KimodoDebugTimelineReservation DebugTimelineReservation;
         internal bool DebugCaptureUntrimmedMotion;
         internal KimodoRawMotionData DebugRuntimeMotion;
-        public string DeferredInConstraintJson = string.Empty;
-        public string DeferredOutConstraintJson = string.Empty;
-        public string InConstraintWindowJson = string.Empty;
-        public string OutConstraintWindowJson = string.Empty;
-        // Full window widths in model frames; constraint JSON may contain fewer
-        // sample frames and cannot be used to recover this duration.
-        public int InConstraintWindowModelFrameCount;
-        public int OutConstraintWindowModelFrameCount;
+        public KimodoConstraintWindow InConstraintWindow = new KimodoConstraintWindow();
+        public KimodoConstraintWindow OutConstraintWindow = new KimodoConstraintWindow();
         public TimelineClip TimelineClipSnapshot;
         public bool ResetTimelineTimeScaleAfterGeneration;
         public bool UseRelativeOffset;

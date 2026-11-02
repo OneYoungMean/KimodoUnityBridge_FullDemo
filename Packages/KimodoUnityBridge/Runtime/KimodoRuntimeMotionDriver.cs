@@ -239,28 +239,24 @@ namespace KimodoBridge
             return ResolveGenerationDurationSeconds();
         }
 
-        /// <summary>Compatibility API; runtime end-effector constraints are currently unsupported.</summary>
+        /// <summary>Compatibility API; intentionally no-op while runtime end-effector constraints are unsupported.</summary>
         public void SetLeftHandConstraint(float worldX, float worldY, float worldZ, float duration = 1f)
         {
-            NotifyRuntimeEndEffectorConstraintUnavailable();
         }
 
-        /// <summary>Compatibility API; runtime end-effector constraints are currently unsupported.</summary>
+        /// <summary>Compatibility API; intentionally no-op while runtime end-effector constraints are unsupported.</summary>
         public void SetRightHandConstraint(float worldX, float worldY, float worldZ, float duration = 1f)
         {
-            NotifyRuntimeEndEffectorConstraintUnavailable();
         }
 
-        /// <summary>Compatibility API; runtime end-effector constraints are currently unsupported.</summary>
+        /// <summary>Compatibility API; intentionally no-op while runtime end-effector constraints are unsupported.</summary>
         public void SetLeftFootConstraint(float worldX, float worldY, float worldZ, float duration = 1f)
         {
-            NotifyRuntimeEndEffectorConstraintUnavailable();
         }
 
-        /// <summary>Compatibility API; runtime end-effector constraints are currently unsupported.</summary>
+        /// <summary>Compatibility API; intentionally no-op while runtime end-effector constraints are unsupported.</summary>
         public void SetRightFootConstraint(float worldX, float worldY, float worldZ, float duration = 1f)
         {
-            NotifyRuntimeEndEffectorConstraintUnavailable();
         }
 
         /// <summary>Stages an absolute Unity world-space Root2D target.</summary>
@@ -633,8 +629,11 @@ namespace KimodoBridge
                 }
 
                 OnProgress($"Generating segment {requestSegmentIndex}...");
-                KimodoBridgeGenerationResult bridgeResult =
-                    await bridgeService.GenerateAsync(request, OnProgress, generationToken);
+                KimodoGenerationResultDto bridgeResult =
+                    await new KimodoBridgeCommand(bridgeService).ExecuteAsync(
+                        request,
+                        (_, message) => OnProgress(message),
+                        generationToken);
                 bool staleRequest = requestVersion != generationSession.RequestVersion || generationToken.IsCancellationRequested;
                 if (KimodoRuntimeGenerationSession.ShouldDiscardResult(
                         isArdy,
@@ -660,12 +659,12 @@ namespace KimodoBridge
                         bridgeResult,
                         ardyProfile,
                         resolvedRequestSeed);
-                    if (bridgeResult.ArdyPlaybackReserveSeconds.HasValue)
+                    if (bridgeResult.ardyPlaybackReserveSeconds.HasValue)
                     {
                         generationSession.SetArdyPlaybackReserve(
-                            (float)bridgeResult.ArdyPlaybackReserveSeconds.Value);
+                            (float)bridgeResult.ardyPlaybackReserveSeconds.Value);
                     }
-                    if (bridgeResult.MotionData == null)
+                    if (bridgeResult.motionData == null)
                     {
                         generationSession.CompleteArdyRequest(
                             sendPrompt,
@@ -704,7 +703,7 @@ namespace KimodoBridge
                 {
                     if (!motionPlayer.ReplaceArdy(
                             generatedSegment,
-                            bridgeResult.StartFrame,
+                            bridgeResult.startFrame,
                             verboseLogging,
                             out string appendError))
                     {
@@ -1099,11 +1098,6 @@ namespace KimodoBridge
             string result = $"Root2D world target staged at ({worldX:0.###}, {worldZ:0.###}).";
             UpdateStatus(result);
             return result;
-        }
-
-        private void NotifyRuntimeEndEffectorConstraintUnavailable()
-        {
-            UpdateStatus("Runtime hand/feet effectors are disabled; use KMB FullBody sampling.");
         }
 
         private void ApplyStagedConstraintsInternal(

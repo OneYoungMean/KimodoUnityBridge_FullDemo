@@ -26,210 +26,18 @@ namespace KimodoBridge.Editor.Tests
         }
 
         [Test]
-        public void KimodoFrameWindow_ConvertsDurationAtSixtyFps()
+        public void ConstraintWindowSpec_ConvertsCommandFramesAtSixtyFps()
         {
-            var halfSecond = new KimodoFrameWindow(30, 2);
-            Assert.That(halfSecond.DurationSeconds, Is.EqualTo(0.5).Within(1e-9));
-            Assert.That(halfSecond.ResolveModelFrameCount(30f), Is.EqualTo(15));
-            Assert.That(halfSecond.ResolveModelFrameCount(25f), Is.EqualTo(13));
-            Assert.That(KimodoFrameWindow.ModelFrameCountToCommandFrameCount60(30, 30f), Is.EqualTo(60));
-            Assert.That(KimodoFrameWindow.ModelFrameCountToCommandFrameCount60(1, 30f), Is.EqualTo(2));
+            KimodoConstraintWindowSpec halfSecond = KimodoConstraintWindowSpec.FromCommandFrames60(30, 2, 30f);
+            Assert.That(halfSecond.ModelFrameCount, Is.EqualTo(15));
+            Assert.That(halfSecond.SampleCount, Is.EqualTo(2));
+            Assert.That(KimodoConstraintWindowSpec.FromCommandFrames60(30, 2, 25f).ModelFrameCount, Is.EqualTo(13));
+            KimodoConstraintWindowSpec resized = halfSecond.WithModelFrameCount(8);
+            Assert.That(resized.ModelFrameCount, Is.EqualTo(8));
+            Assert.That(resized.SampleCount, Is.EqualTo(2));
         }
 
-        [Test]
-        public void MigrateLegacyWindowFrameCounts_ConvertsLegacyModelFramesOnceButKeepsLoopUnits()
-        {
-            KimodoPlayableClip clip = ScriptableObject.CreateInstance<KimodoPlayableClip>();
-            try
-            {
-                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
-                typeof(KimodoPlayableClip).GetField("legacyInConstraintWindowModelFrames", flags).SetValue(clip, 7);
-                typeof(KimodoPlayableClip).GetField("legacyOutConstraintWindowModelFrames", flags).SetValue(clip, 4);
-                typeof(KimodoPlayableClip).GetField("legacyLongClipWindowModelFrames", flags).SetValue(clip, 30);
-                clip.loopWindowFrames60 = 30;
-
-                Assert.That(clip.MigrateLegacyWindowFrameCounts(), Is.True);
-                Assert.That(clip.inConstraintWindowFrames60, Is.EqualTo(14));
-                Assert.That(clip.outConstraintWindowFrames60, Is.EqualTo(8));
-                Assert.That(clip.longClipWindowFrames60, Is.EqualTo(60));
-                Assert.That(clip.loopWindowFrames60, Is.EqualTo(30));
-                Assert.That(clip.MigrateLegacyWindowFrameCounts(), Is.False);
-                Assert.That(clip.longClipWindowFrames60, Is.EqualTo(60));
-            }
-            finally
-            {
-                Object.DestroyImmediate(clip);
-            }
-        }
-
-        [Test]
-        public void MigrateLegacyWindowFrameCounts_LeavesNewAssetDefaultsUnchanged()
-        {
-            KimodoPlayableClip clip = ScriptableObject.CreateInstance<KimodoPlayableClip>();
-            try
-            {
-                Assert.That(clip.MigrateLegacyWindowFrameCounts(), Is.False);
-                Assert.That(clip.inConstraintWindowFrames60, Is.EqualTo(1));
-                Assert.That(clip.outConstraintWindowFrames60, Is.EqualTo(1));
-                Assert.That(clip.longClipWindowFrames60, Is.EqualTo(60));
-                Assert.That(clip.loopWindowFrames60, Is.EqualTo(30));
-            }
-            finally
-            {
-                Object.DestroyImmediate(clip);
-            }
-        }
-
-        [Test]
-        public void KimodoBezierUtility_EvaluatesCubicMidpoint()
-        {
-            Vector2 midpoint = KimodoBezierUtility.EvaluateCubic(
-                Vector2.zero,
-                new Vector2(4f, 0f),
-                new Vector2(4f, 2f),
-                new Vector2(0f, 2f),
-                0.5f);
-
-            Assert.That(midpoint.x, Is.EqualTo(3f).Within(1e-5f));
-            Assert.That(midpoint.y, Is.EqualTo(1f).Within(1e-5f));
-        }
-
-        [Test]
-        public void BuildLoopConstraintJson_UsesFirstFrameAnchorAndEstimatedVelocity()
-        {
-            const string model = KimodoMotionModelProfiles.ArdyCoreModelName;
-            const int frameCount = 4;
-            const float frameRate = 20f;
-            string[] names = KimodoRigProfileDatabase.GetJointNamesForModel(model);
-            var roots = new[]
-            {
-                new Vector3(2f, 0f, 3f),
-                new Vector3(4f, 0f, 5f),
-                new Vector3(6f, 0f, 7f),
-                new Vector3(8f, 0f, 9f)
-            };
-            Quaternion firstRootRotation = Quaternion.Euler(20f, 10f, 30f);
-            Quaternion tailRootRotation = Quaternion.Euler(-40f, 70f, 80f);
-            var rotations = new List<float>(frameCount * names.Length * 4);
-            for (int frame = 0; frame < frameCount; frame++)
-            {
-                for (int joint = 0; joint < names.Length; joint++)
-                {
-                    Quaternion rotation = joint == 0 && frame == 0 ? firstRootRotation :
-                        joint == 0 && frame == frameCount - 1 ? tailRootRotation : Quaternion.identity;
-                    rotations.Add(rotation.w);
-                    rotations.Add(rotation.x);
-                    rotations.Add(-rotation.y);
-                    rotations.Add(-rotation.z);
-                }
-            }
-            var footContacts = new byte[frameCount * 4];
-            footContacts[0] = 1; // Left foot fully planted before lift.
-            footContacts[1] = 1;
-            footContacts[12 + 2] = 1; // Right foot fully planted after left lifts.
-            footContacts[12 + 3] = 1;
-
-            var motion = new KimodoRawMotionData(
-                frameCount,
-                names.Length,
-                frameRate,
-                names,
-                KimodoRigProfileDatabase.GetParentIndicesForModel(model),
-                roots,
-                rotations,
-                rootJointIndex: 0,
-                footContacts: footContacts);
-
-            JArray constraints = JArray.Parse(KimodoRawMotionConstraintBuilder.BuildLoopConstraintJson(
-                motion, model, runtimeTrimStartFrame: 4, targetFrameCount: 8,
-                runtimeFrameCount: 16, frameRate: frameRate));
-
-            Assert.That(constraints, Has.Count.EqualTo(2));
-            Assert.That((string)constraints[0]["type"], Is.EqualTo("root2d"));
-            Assert.That((int)constraints[1]["frame_indices"][0], Is.EqualTo(4));
-            Assert.That((float)constraints[1]["root_positions"][0][0], Is.EqualTo(-2f));
-            Assert.That((int)constraints[1]["frame_indices"][1], Is.EqualTo(11));
-            Assert.That((float)constraints[1]["root_positions"][1][0], Is.EqualTo(-18f));
-            Assert.That((int)constraints[0]["frame_indices"][1], Is.EqualTo(15));
-            Assert.That((float)constraints[0]["smooth_root_2d"][0][0], Is.EqualTo(6f));
-            Assert.That((float)constraints[0]["smooth_root_2d"][0][1], Is.EqualTo(-5f));
-            Assert.That((float)constraints[0]["smooth_root_2d"][1][0], Is.EqualTo(-26f));
-            Assert.That((float)constraints[0]["smooth_root_2d"][1][1], Is.EqualTo(27f));
-            JArray anchorRoot = (JArray)constraints[1]["local_joints_rot"][0][0];
-            Quaternion anchorProtocolRotation = KimodoConstraintRotationUtility.AxisAngleVectorToQuaternion(
-                new Vector3((float)anchorRoot[0], (float)anchorRoot[1], (float)anchorRoot[2]));
-            Quaternion anchorRotation = new Quaternion(
-                anchorProtocolRotation.x,
-                -anchorProtocolRotation.y,
-                -anchorProtocolRotation.z,
-                anchorProtocolRotation.w);
-            Assert.That(motion.TryReadUnityLocalRotation(0, 0, names.Length, out Quaternion expectedAnchorRotation), Is.True);
-            Assert.That(Vector3.Distance(anchorRotation.eulerAngles, expectedAnchorRotation.eulerAngles), Is.LessThan(1e-3f));
-            Assert.That(
-                ((JArray)constraints[1]["smooth_root_2d"]).Count,
-                Is.EqualTo(((JArray)constraints[1]["frame_indices"]).Count));
-            JArray terminalRoot = (JArray)constraints[1]["local_joints_rot"][1][0];
-            Quaternion protocolRotation = KimodoConstraintRotationUtility.AxisAngleVectorToQuaternion(new Vector3(
-                (float)terminalRoot[0], (float)terminalRoot[1], (float)terminalRoot[2]));
-            Quaternion terminalRotation = new Quaternion(
-                protocolRotation.x, -protocolRotation.y, -protocolRotation.z, protocolRotation.w);
-            Quaternion firstYawRotation = Quaternion.Euler(
-                0f,
-                KimodoMotionMath.ResolvePlanarYawDegrees(firstRootRotation),
-                0f);
-            Quaternion firstTilt = Quaternion.Inverse(firstYawRotation) * firstRootRotation;
-            Vector3 firstTiltEuler = KimodoMotionMath.SignedEulerDegrees(firstTilt);
-            Quaternion expectedTerminalRotation = Quaternion.Euler(
-                0f,
-                KimodoMotionMath.ResolvePlanarYawDegrees(tailRootRotation),
-                0f) * Quaternion.Euler(firstTiltEuler.x, 0f, firstTiltEuler.z);
-            Assert.That(Quaternion.Angle(terminalRotation, expectedTerminalRotation), Is.LessThan(1e-3f));
-
-            JArray root2D = JArray.Parse(KimodoRawMotionConstraintBuilder.BuildRoot2DConstraintsJson(
-                motion, model, new[] { 0, 2 }));
-            Assert.That((float)root2D[0]["smooth_root_2d"][1][0], Is.EqualTo(-6f));
-        }
-
-        [Test]
-        public void BuildLoopConstraintJson_FallsBackToFrameZeroWithoutCompleteContactExchange()
-        {
-            const string model = KimodoMotionModelProfiles.ArdyCoreModelName;
-            string[] names = KimodoRigProfileDatabase.GetJointNamesForModel(model);
-            var roots = new[] { new Vector3(0f, 1f, 2f), new Vector3(0f, 1f, 3f) };
-            var rotations = new List<float>(2 * names.Length * 4);
-            for (int frame = 0; frame < 2; frame++)
-            {
-                for (int joint = 0; joint < names.Length; joint++)
-                {
-                    rotations.Add(1f);
-                    rotations.Add(0f);
-                    rotations.Add(0f);
-                    rotations.Add(0f);
-                }
-            }
-            var motion = new KimodoRawMotionData(
-                2,
-                names.Length,
-                20f,
-                names,
-                KimodoRigProfileDatabase.GetParentIndicesForModel(model),
-                roots,
-                rotations,
-                rootJointIndex: 0,
-                footContacts: new byte[8]);
-
-            JArray constraints = JArray.Parse(KimodoRawMotionConstraintBuilder.BuildLoopConstraintJson(
-                motion,
-                model,
-                runtimeTrimStartFrame: 0,
-                targetFrameCount: 2,
-                runtimeFrameCount: 4,
-                frameRate: 20f));
-
-            Assert.That((float)constraints[1]["root_positions"][0][2], Is.EqualTo(2f).Within(0.001f));
-        }
-
-        [Test]
+[Test]
         public void ResolveLoopAnchorFrame_IgnoresLiftAlreadyPresentAtFrameZero()
         {
             const string model = KimodoMotionModelProfiles.ArdyCoreModelName;
@@ -806,43 +614,7 @@ namespace KimodoBridge.Editor.Tests
             }
         }
 
-        [Test]
-        public void BuildLoopConstraintJson_RespectsEndpointLockOptions()
-        {
-            const string model = KimodoMotionModelProfiles.ArdyCoreModelName;
-            string[] names = KimodoRigProfileDatabase.GetJointNamesForModel(model);
-            var roots = new[] { new Vector3(0f, 1f, 0f), new Vector3(0f, 2f, 1f) };
-            var rotations = new List<float>(2 * names.Length * 4);
-            for (int frame = 0; frame < 2; frame++)
-            {
-                for (int joint = 0; joint < names.Length; joint++)
-                {
-                    Quaternion rotation = joint == 0 && frame == 0
-                        ? Quaternion.Euler(20f, 10f, 30f)
-                        : joint == 0 ? Quaternion.Euler(-40f, 70f, 80f) : Quaternion.identity;
-                    rotations.Add(rotation.w);
-                    rotations.Add(rotation.x);
-                    rotations.Add(-rotation.y);
-                    rotations.Add(-rotation.z);
-                }
-            }
-            var motion = new KimodoRawMotionData(
-                2, names.Length, 20f, names,
-                KimodoRigProfileDatabase.GetParentIndicesForModel(model), roots, rotations, rootJointIndex: 0);
-            JArray locked = JArray.Parse(KimodoRawMotionConstraintBuilder.BuildLoopConstraintJson(
-                motion, model, 1, 2, 4, 20f,
-                lockPositionX: false, lockPositionY: true, lockPositionZ: false,
-                lockRotationX: true, lockRotationY: false, lockRotationZ: true));
-            JArray unlocked = JArray.Parse(KimodoRawMotionConstraintBuilder.BuildLoopConstraintJson(
-                motion, model, 1, 2, 4, 20f,
-                lockPositionX: false, lockPositionY: false, lockPositionZ: false,
-                lockRotationX: false, lockRotationY: false, lockRotationZ: false));
-            Assert.That((float)locked[1]["root_positions"][1][1], Is.EqualTo(1f).Within(0.001f));
-            Assert.That((float)unlocked[1]["root_positions"][1][1], Is.EqualTo(2f).Within(0.001f));
-            Assert.That(JToken.DeepEquals(locked[1]["local_joints_rot"][1][0], unlocked[1]["local_joints_rot"][1][0]), Is.False);
-        }
-
-        [Test]
+[Test]
         public void BuildPathAngleConstraintJson_SamplesBoundariesAndExistingFullBodyFrames()
         {
             const string model = KimodoMotionModelProfiles.ArdyCoreModelName;

@@ -12,31 +12,6 @@ namespace KimodoBridge.Editor.Tests
     public sealed class KimodoGenerationInspectorGuiTests
     {
         [Test]
-        public void LightweightAnalysisToggle_EnablesKeyframesAndCanBeDisabled()
-        {
-            string enabledJson = KimodoGenerationInspectorGui.SetLightweightAnalysisEnabled(
-                "{\"keyframes\":{\"max_count\":12}}",
-                enabled: true);
-            JObject enabled = JObject.Parse(enabledJson);
-            Assert.That(enabled["keyframes"]?.Value<bool>("enabled"), Is.True);
-            Assert.That(enabled["keyframes"]?.Value<int>("max_count"), Is.EqualTo(12));
-
-            Assert.That(
-                KimodoGenerationInspectorGui.SetLightweightAnalysisEnabled(enabledJson, enabled: false),
-                Is.Empty);
-        }
-
-        [Test]
-        public void LightweightAnalysisSummary_ReportsReturnedDataCounts()
-        {
-            string summary = KimodoGenerationInspectorGui.GetLightweightAnalysisSummary(
-                "{\"keyframes\":[{},{}],\"foot_contact_changes\":[{},{},{}]}");
-
-            Assert.That(summary, Is.EqualTo("2 keyframes, 3 foot-contact changes"));
-            Assert.That(KimodoGenerationInspectorGui.GetLightweightAnalysisSummary("invalid"), Is.Empty);
-        }
-
-        [Test]
         public void FootContactTrackDetectionRequiresAllGeneratedChannels()
         {
             AnimationClip clip = new AnimationClip { name = "FootContactTrackDetection" };
@@ -542,7 +517,7 @@ namespace KimodoBridge.Editor.Tests
                 KimodoGenerationRequestDto generation = KimodoEditorGeneratePipeline.CreateRuntimePipelineRequest(
                     request,
                     "walk",
-                    clip.bridgeModelName).GenerationRequest;
+                    clip.bridgeModelName);
 
                 Assert.That(request.ConstraintSamples, Is.Empty);
                 Assert.That(generation.ardy_history_weight, Is.Null);
@@ -584,7 +559,7 @@ namespace KimodoBridge.Editor.Tests
                 KimodoGenerationRequestDto generation = KimodoEditorGeneratePipeline.CreateRuntimePipelineRequest(
                     request,
                     "walk",
-                    clip.bridgeModelName).GenerationRequest;
+                    clip.bridgeModelName);
 
                 Assert.That(generation.ardy_history_weight, Is.EqualTo(0.25));
             }
@@ -597,7 +572,7 @@ namespace KimodoBridge.Editor.Tests
         }
 
         [Test]
-        public void TimelineRequest_IgnoresLegacyLightweightAnalysisOptions()
+        public void GenerationRequest_DoesNotForwardDisconnectedAnalysisOptions()
         {
             TimelineAsset timeline = ScriptableObject.CreateInstance<TimelineAsset>();
             GameObject directorRoot = new GameObject("KimodoGenerationRequestOptionsTest");
@@ -613,8 +588,6 @@ namespace KimodoBridge.Editor.Tests
                 var clip = (KimodoPlayableClip)timelineClip.asset;
                 clip.inOutConstraintMode = KimodoInOutConstraintMode.None;
                 clip.autoBeginAnchor = false;
-                clip.analysisOptionsJson = "{\"keyframes\":{\"enabled\":true}}";
-
                 KimodoEditorGenerateRequest request = KimodoPlayableClipGenerationHostService.BuildRequest(
                     clip,
                     "walk",
@@ -623,10 +596,9 @@ namespace KimodoBridge.Editor.Tests
                 KimodoGenerationRequestDto generation = KimodoEditorGeneratePipeline.CreateRuntimePipelineRequest(
                     request,
                     "walk",
-                    clip.bridgeModelName).GenerationRequest;
+                    clip.bridgeModelName);
 
-                Assert.That(request.AnalysisOptionsJson, Is.Empty);
-                Assert.That(generation.analysis_option_json, Is.Empty);
+                Assert.That(string.IsNullOrEmpty(generation.analysis_option_json), Is.True);
 
                 clip.generationOutputMode = KimodoGenerationOutputMode.ModelBone;
                 Assert.That(

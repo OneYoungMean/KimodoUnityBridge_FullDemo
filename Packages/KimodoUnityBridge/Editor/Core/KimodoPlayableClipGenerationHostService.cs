@@ -38,10 +38,6 @@ namespace KimodoBridge.Editor
                 throw new InvalidOperationException("Playable clip is null.");
             }
 
-            // Ensure legacy model-rate window fields are converted before any
-            // request snapshot captures the new 60 FPS command-time values.
-            clip.MigrateLegacyWindowFrameCounts();
-
             string resolvedModelName = KimodoMotionModelProfiles.NormalizeName(clip.bridgeModelName);
             bool isArdy = KimodoMotionModelProfiles.TryGetArdy(
                 resolvedModelName,
@@ -121,8 +117,16 @@ namespace KimodoBridge.Editor
                     runtimeTrimStartFrame,
                     targetFrameCount);
             string constraintsJson = constraintResult.ConstraintsJson;
-            string deferredInConstraintJson = constraintResult.DeferredInConstraintJson;
-            string deferredOutConstraintJson = constraintResult.DeferredOutConstraintJson;
+            KimodoConstraintWindow inConstraintWindow = constraintResult.DeferredInWindow.HasConstraints
+                ? KimodoConstraintWindow.FromJson(
+                    constraintResult.DeferredInWindow.Json,
+                    constraintResult.BeginWindow.ModelFrameCount)
+                : constraintResult.BeginWindow;
+            KimodoConstraintWindow outConstraintWindow = constraintResult.DeferredOutWindow.HasConstraints
+                ? KimodoConstraintWindow.FromJson(
+                    constraintResult.DeferredOutWindow.Json,
+                    constraintResult.EndWindow.ModelFrameCount)
+                : constraintResult.EndWindow;
             if (deferInConstraint)
             {
                 KimodoInOutConstraintResult deferredIn =
@@ -136,9 +140,11 @@ namespace KimodoBridge.Editor
                         targetFrameCount);
                 if (!string.IsNullOrWhiteSpace(deferredIn.ConstraintsJson))
                 {
-                    deferredInConstraintJson = CombineConstraintJson(
-                        deferredInConstraintJson,
-                        deferredIn.ConstraintsJson);
+                    inConstraintWindow = KimodoConstraintWindow.Combine(
+                        inConstraintWindow,
+                        KimodoConstraintWindow.FromJson(
+                            deferredIn.ConstraintsJson,
+                            deferredIn.BeginWindow.ModelFrameCount));
                 }
             }
             if (deferOutConstraint)
@@ -154,17 +160,13 @@ namespace KimodoBridge.Editor
                         targetFrameCount);
                 if (!string.IsNullOrWhiteSpace(deferredOut.ConstraintsJson))
                 {
-                    deferredOutConstraintJson = CombineConstraintJson(
-                        deferredOutConstraintJson,
-                        deferredOut.ConstraintsJson);
+                    outConstraintWindow = KimodoConstraintWindow.Combine(
+                        outConstraintWindow,
+                        KimodoConstraintWindow.FromJson(
+                            deferredOut.ConstraintsJson,
+                            deferredOut.EndWindow.ModelFrameCount));
                 }
             }
-            string inConstraintWindowJson = !string.IsNullOrWhiteSpace(deferredInConstraintJson)
-                ? deferredInConstraintJson
-                : constraintResult.InConstraintWindowJson;
-            string outConstraintWindowJson = !string.IsNullOrWhiteSpace(deferredOutConstraintJson)
-                ? deferredOutConstraintJson
-                : constraintResult.OutConstraintWindowJson;
             List<KimodoMarkerSampleResult> constraintSamples = constraintResult.CombinedSamples;
             if ((deferInConstraint || deferOutConstraint) && externalConstraint?.Enabled == true &&
                 ((deferInConstraint && externalConstraint.DeferredInConstraintSamples?.Count > 0) ||
@@ -221,7 +223,6 @@ namespace KimodoBridge.Editor
                 clip,
                 timelineClip,
                 resolvedModelName,
-                runtimeFrameCount,
                 targetFrameRate,
                 runtimeTrimStartFrame,
                 !disableTimelineInOut &&
@@ -252,16 +253,8 @@ namespace KimodoBridge.Editor
                     clip.diffusionSteps),
                 EffectiveSeed = effectiveSeed,
                 Constraints = new KimodoConstraintPayload { json = constraintsJson, clips = clipConstraints },
-                DeferredInConstraintJson = deferredInConstraintJson,
-                DeferredOutConstraintJson = deferredOutConstraintJson,
-                InConstraintWindowJson = inConstraintWindowJson ?? string.Empty,
-                OutConstraintWindowJson = outConstraintWindowJson ?? string.Empty,
-                InConstraintWindowModelFrameCount = constraintResult.BeginBoundaryWindowModelFrameCount,
-                OutConstraintWindowModelFrameCount = constraintResult.EndBoundaryWindowModelFrameCount,
-                // Legacy per-clip lightweight analysis settings remain serialized
-                // for existing assets, but normal Inspector generation now uses
-                // the full animation.analysis path after baking.
-                AnalysisOptionsJson = externalConstraint?.AnalysisOptionsJson ?? string.Empty,
+                InConstraintWindow = inConstraintWindow,
+                OutConstraintWindow = outConstraintWindow,
                 ModelsRoot = settings.LocalModelsPath?.Trim() ?? string.Empty,
                 Token = token,
                 HasSyntheticAutoBeginConstraint = hasSyntheticAutoBeginConstraint,
@@ -284,24 +277,6 @@ namespace KimodoBridge.Editor
                     ? Mathf.Clamp01(clip.ardyHistoryWeight)
                     : (double?)null
             };
-        }
-
-        private static string CombineConstraintJson(string first, string second)
-        {
-            if (string.IsNullOrWhiteSpace(first)) return second ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(second)) return first;
-            var combined = JArray.Parse(first);
-            combined.Merge(JArray.Parse(second));
-            return combined.ToString(Newtonsoft.Json.Formatting.None);
-        }
-
-        // TODO: expose an internal generation entry that supplies an AvatarMask when Clip Constraint is ready.
-        internal static bool TryGetClipConstraintAvatarMask(
-            KimodoPlayableClip clip,
-            out AvatarMask avatarMask)
-        {
-            avatarMask = null;
-            return false;
         }
 
         private static bool ShouldUseOutsideGuardFrame(
