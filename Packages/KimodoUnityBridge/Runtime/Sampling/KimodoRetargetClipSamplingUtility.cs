@@ -922,11 +922,9 @@ namespace KimodoBridge
         internal static bool TryCaptureSampleData(
             RetargetSkeleton cache,
             out MuscleSample sampleData,
-            out KimodoConstraintMask validMask,
             out string error)
         {
             sampleData = new MuscleSample();
-            validMask = new KimodoConstraintMask();
             error = string.Empty;
 
             if (!TryCaptureMuscleSample(cache, out MuscleSample sample, out error))
@@ -936,10 +934,8 @@ namespace KimodoBridge
 
             if (!sample.IsValid)
             {
-                // Sampling completed, but this pose must not be advertised as
-                // valid. Keep the fixed-size payload and clear all validity bits.
-                error = string.Empty;
-                return true;
+                error = "Captured pose sample is invalid.";
+                return false;
             }
 
             // The retarget sampler already produced the canonical 70D payload,
@@ -947,10 +943,6 @@ namespace KimodoBridge
             // world-space effectors remain separate SampleResult channels.
             sampleData.data = (float[])sample.data.Clone();
 
-            validMask.muscle = true;
-            validMask.rootTQ = true;
-            validMask.leftFootTQ = true;
-            validMask.rightFootTQ = true;
             return true;
         }
 

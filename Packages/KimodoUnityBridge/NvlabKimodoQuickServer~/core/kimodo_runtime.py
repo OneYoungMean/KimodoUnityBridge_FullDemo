@@ -10,9 +10,12 @@ import json
 import math
 import os
 from pathlib import Path
+import shutil
 import sys
+import subprocess
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -35,6 +38,24 @@ def _default_bridge_log_path(root: str) -> str:
     return os.path.join(root, "log", "bridge_server.log")
 
 
+def _detect_nvidia_smi_free_vram_gb(index: int) -> float | None:
+    executable = shutil.which("nvidia-smi")
+    if not executable:
+        return None
+    try:
+        result = subprocess.run(
+            [executable, "--id", str(index), "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        free_mib = float(result.stdout.strip().splitlines()[0].strip())
+        return free_mib / 1024.0 if math.isfinite(free_mib) and free_mib >= 0.0 else None
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        return None
+
+
 def _detect_free_vram_gb(device: str | None = None) -> float:
     """Best-effort currently free accelerator memory in GiB."""
     try:
@@ -43,6 +64,12 @@ def _detect_free_vram_gb(device: str | None = None) -> float:
         target = str(device or "").strip().lower()
         if target.startswith("cuda") and torch.cuda.is_available() and torch.cuda.device_count() > 0:
             index = int(target.split(":", 1)[1]) if ":" in target else 0
+            if sys.platform == "win32" and "nvidia" in torch.cuda.get_device_name(index).lower():
+                # Under Windows WDDM, PyTorch's free-memory view can miss VRAM
+                # already committed by other processes; use the adapter-wide reading.
+                nvidia_free = _detect_nvidia_smi_free_vram_gb(index)
+                if nvidia_free is not None:
+                    return nvidia_free
             free, _ = torch.cuda.mem_get_info(index)
             return float(free) / (1024 ** 3)
         if target.startswith("mps") and torch.backends.mps.is_available():
@@ -875,8 +902,14 @@ def _runtime_self_check(requested_device: str | None) -> _RuntimeSelfCheckResult
     )
 
 
-def _build_generate_response(model: Any, output: dict, prompt: str, sample_index: int = 0) -> dict:
-    output_format = _resolve_bridge_output_format()
+def _build_generate_response(
+    model: Any,
+    output: dict,
+    prompt: str,
+    sample_index: int = 0,
+    output_format: str | None = None,
+) -> dict:
+    output_format = output_format or _resolve_bridge_output_format()
     motion_data = UnityMotionJsonResult.from_model_output(model, output, prompt, sample_index=sample_index)
     if output_format != "bvh":
         return {
@@ -914,6 +947,27 @@ def _build_generate_response(model: Any, output: dict, prompt: str, sample_index
         "output_format": "bvh",
         "motion_bvh": bvh_text,
     }
+
+
+def _build_generate_mp4_file(
+    model: Any,
+    output: dict,
+    prompt: str,
+    sample_index: int = 0,
+) -> str:
+    from core.motion_rendering import render_skeleton_mp4
+
+    sample_joints = np.asarray(output["posed_joints"][sample_index], dtype=np.float32)
+    parents, _ = _parents_and_names(model, int(sample_joints.shape[1]))
+    payload = render_skeleton_mp4(
+        sample_joints,
+        parents,
+        float(model.fps),
+        title=prompt or None,
+    )
+    mp4_path = Path(__file__).resolve().parent.parent / f"generated_animation_{uuid.uuid4().hex}.mp4"
+    mp4_path.write_bytes(payload)
+    return str(mp4_path)
 
 
 def _build_generate_flatbuffer_payload(model: Any, output: dict, sample_index: int = 0) -> bytes:
@@ -1018,7 +1072,17 @@ def _finalize_generation_result(
     else:
         if not output:
             raise ValueError(f"{resolved_format} output requires generated motion.")
-        response = _build_generate_response(model, output, prompt, sample_index=0)
+        response = _build_generate_response(
+            model,
+            output,
+            prompt,
+            sample_index=0,
+            output_format=resolved_format,
+        )
+    if request.get("output_mp4") is True:
+        if not output:
+            raise ValueError("output_mp4 requires generated motion.")
+        response["mp4_path"] = _build_generate_mp4_file(model, output, prompt, sample_index=0)
     if metadata:
         response.update(metadata)
     if analysis is not None:

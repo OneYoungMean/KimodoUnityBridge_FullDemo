@@ -164,17 +164,98 @@ namespace KimodoBridge
 
         public static float ResolvePlanarYawDegrees(Quaternion rotation) => ResolvePlanarHeading(rotation).eulerAngles.y;
 
+        /// <summary>Returns a Unity world position's XZ projection.</summary>
+        public static Vector2 ToPlanar(Vector3 position) => new Vector2(position.x, position.z);
+
+        /// <summary>Returns the XZ displacement from <paramref name="from"/> to <paramref name="to"/>.</summary>
+        public static Vector2 ToPlanarDelta(Vector3 from, Vector3 to) => ToPlanar(to - from);
+
+        /// <summary>Rebuilds a world position from an XZ projection and its preserved height.</summary>
+        public static Vector3 FromPlanar(Vector2 planarPosition, float height) =>
+            new Vector3(planarPosition.x, height, planarPosition.y);
+
+        /// <summary>Projects a world-space displacement into a planar frame, ignoring height, pitch and roll.</summary>
+        public static Vector2 ToPlanarLocalDelta(Vector3 worldDelta, Quaternion frameRotation)
+        {
+            worldDelta.y = 0f;
+            return ToPlanar(Quaternion.Inverse(ResolvePlanarHeading(frameRotation)) * worldDelta);
+        }
+
+        /// <summary>Returns the normalized XZ forward vector for a rotation.</summary>
+        public static Vector2 ToPlanarHeadingVector(Quaternion rotation)
+        {
+            return ToPlanarHeadingVector(ResolvePlanarHeading(rotation) * Vector3.forward);
+        }
+
+        public static Vector2 ToPlanarHeadingVector(Vector3 forward)
+        {
+            Vector2 heading = ToPlanar(forward);
+            return heading.sqrMagnitude > 1e-8f ? heading.normalized : Vector2.up;
+        }
+
+        public static float PlanarDistance(Vector3 from, Vector3 to) => ToPlanarDelta(from, to).magnitude;
+
+        public static float PlanarHeadingAngleDegrees(Quaternion from, Quaternion to) =>
+            Vector2.Angle(ToPlanarHeadingVector(from), ToPlanarHeadingVector(to));
+
+        /// <summary>Returns Unity yaw in degrees from an XZ forward vector.</summary>
+        public static float ResolvePlanarYawDegrees(Vector2 heading)
+        {
+            if (heading.sqrMagnitude <= 1e-8f) return 0f;
+            return Mathf.Atan2(heading.x, heading.y) * Mathf.Rad2Deg;
+        }
+
+        /// <summary>Interpolates normalized XZ forward vectors by the shortest yaw arc.</summary>
+        public static Vector2 InterpolatePlanarHeading(Vector2 from, Vector2 to, float t)
+        {
+            from = from.sqrMagnitude > 1e-8f ? from.normalized : Vector2.up;
+            to = to.sqrMagnitude > 1e-8f ? to.normalized : Vector2.up;
+            float angle = Mathf.LerpAngle(
+                ResolvePlanarYawDegrees(from),
+                ResolvePlanarYawDegrees(to),
+                t) * Mathf.Deg2Rad;
+            return new Vector2(Mathf.Sin(angle), Mathf.Cos(angle));
+        }
+
+        public static Vector3 SignedEulerDegrees(Quaternion rotation)
+        {
+            Vector3 euler = NormalizeRotation(rotation).eulerAngles;
+            return new Vector3(Mathf.DeltaAngle(0f, euler.x), Mathf.DeltaAngle(0f, euler.y),
+                Mathf.DeltaAngle(0f, euler.z));
+        }
+
         public static Vector3 RelativeEulerDegrees(Quaternion origin, Quaternion target) =>
             SignedEulerDegrees(Quaternion.Inverse(NormalizeRotation(origin)) * NormalizeRotation(target));
 
         public static Vector3 ApplyPlanarPosition(Vector3 completePosition, Vector3 planarPosition) =>
             new Vector3(planarPosition.x, completePosition.y, planarPosition.z);
 
+        public static Vector3 NormalizePlanarPosition(
+            Vector3 completePosition,
+            Vector3 originPosition,
+            Quaternion originHeading)
+        {
+            Vector2 localDelta = ToPlanarLocalDelta(completePosition - originPosition, originHeading);
+            return ApplyPlanarPosition(
+                completePosition,
+                new Vector3(localDelta.x, 0f, localDelta.y));
+        }
+
         public static Quaternion ApplyPlanarHeading(Quaternion completeRotation, Quaternion planarHeading)
         {
             Quaternion currentHeading = ResolvePlanarHeading(completeRotation);
             Quaternion desiredHeading = ResolvePlanarHeading(planarHeading);
             return (desiredHeading * Quaternion.Inverse(currentHeading) * NormalizeRotation(completeRotation)).normalized;
+        }
+
+        public static Quaternion NormalizePlanarHeading(
+            Quaternion completeRotation,
+            Quaternion originHeading)
+        {
+            Quaternion origin = ResolvePlanarHeading(originHeading);
+            Quaternion relativeHeading = Quaternion.Inverse(origin) *
+                ResolvePlanarHeading(completeRotation);
+            return ApplyPlanarHeading(completeRotation, relativeHeading);
         }
 
         private static Quaternion NormalizeRotation(Quaternion rotation)
@@ -184,11 +265,5 @@ namespace KimodoBridge
             return magnitudeSquared > 1e-8f ? rotation.normalized : Quaternion.identity;
         }
 
-        private static Vector3 SignedEulerDegrees(Quaternion rotation)
-        {
-            Vector3 euler = NormalizeRotation(rotation).eulerAngles;
-            return new Vector3(Mathf.DeltaAngle(0f, euler.x), Mathf.DeltaAngle(0f, euler.y),
-                Mathf.DeltaAngle(0f, euler.z));
-        }
     }
 }

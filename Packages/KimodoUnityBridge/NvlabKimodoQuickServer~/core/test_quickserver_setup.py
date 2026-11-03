@@ -8,6 +8,21 @@ from core import quickserver_setup
 
 
 class QuickServerSetupTests(unittest.TestCase):
+    def test_windows_installs_pytorch3d_matching_quickserver_torch(self):
+        root = Path("C:/quickserver")
+        paths = SimpleNamespace(venv_python=root / ".venv" / "Scripts" / "python.exe")
+        messages = []
+        logger = SimpleNamespace(log=messages.append)
+        with patch.object(quickserver_setup.sys, "platform", "win32"), patch.object(
+            quickserver_setup, "_run_capture", side_effect=[(1, ""), (0, "2110\ncu128"), (0, "")]
+        ), patch.object(quickserver_setup, "_run_logged") as run_logged:
+            quickserver_setup._ensure_pytorch3d(paths, "uv", logger, "https://pypi.org/simple")
+
+        command = run_logged.call_args.args[0]
+        self.assertIn("pytorch3d==0.7.9+pt2110cu128", command)
+        self.assertIn(quickserver_setup.PYTORCH3D_WHEEL_INDEX, command)
+        self.assertIn("[STEP] Installing GVHMR PyTorch3D wheel pytorch3d==0.7.9+pt2110cu128...", messages)
+
     def test_default_venv_is_at_runtime_root(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

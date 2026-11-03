@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using KimodoUnityBridge;
@@ -20,20 +21,24 @@ namespace KimodoUnityBridge.Command
 {
     internal static partial class command_context
     {
-        private static ResolvedCharacter ResolveCharacter(TimelineSessionRecord session, string name)
+        private static TimelineCharacterRecord ResolveCharacter(TimelineSessionRecord session, string reference)
         {
-            TimelineCharacterRecord sessionCharacter = ResolveSessionCharacterByReference(session, name, addIfMissing: false);
+            TimelineCharacterRecord sessionCharacter = ResolveSessionCharacterByReference(
+                session,
+                reference,
+                addIfMissing: true);
             GameObject root = sessionCharacter.Root;
             Animator animator = sessionCharacter.Animator;
             if (root == null || animator == null || EditorUtility.IsPersistent(root) || !root.scene.IsValid())
             {
-                throw new InvalidOperationException($"Character '{name}' is no longer a valid scene Humanoid Animator.");
+                throw new InvalidOperationException($"Character '{reference}' is no longer a valid scene Humanoid Animator.");
             }
             if (!KimodoRetargetCoreUtility.IsValidHumanoid(sessionCharacter.Avatar))
             {
                 throw new InvalidOperationException($"Character '{sessionCharacter.Name}' does not provide a valid humanoid Avatar.");
             }
-            return new ResolvedCharacter(root, animator, sessionCharacter.Avatar, sessionCharacter.Name);
+            KimodoTimelinePreviewRefreshUtility.InitializeSceneOffset(sessionCharacter.Track, animator);
+            return sessionCharacter;
         }
 
         private static bool BindingMatches(UnityEngine.Object binding, Animator animator)
@@ -98,14 +103,90 @@ namespace KimodoUnityBridge.Command
         {
             lock (JobsLock)
             {
-                if (Jobs.Count >= MaxRememberedJobs)
+                if (!Jobs.ContainsKey(session.RequestId))
                 {
-                    Guid oldest = Jobs.OrderBy(pair => pair.Value.Session.StartedAtUtc).First().Key;
-                    Jobs.Remove(oldest);
+                    TrimTerminalGenerationJobsLocked();
                 }
                 Jobs[session.RequestId] = new JobRecord(target, session, timelineGenerationTrace);
             }
             PersistGenerationJobStatus(session);
+        }
+
+        private static void TrimTerminalGenerationJobsLocked()
+        {
+            while (Jobs.Count >= MaxRememberedJobs)
+            {
+                bool found = false;
+                Guid oldestRequestId = default;
+                DateTime oldestStartedAtUtc = DateTime.MaxValue;
+                foreach (KeyValuePair<Guid, JobRecord> pair in Jobs)
+                {
+                    KimodoEditorGenerationJobStatus status = pair.Value?.Session?.Status ?? KimodoEditorGenerationJobStatus.None;
+                    if (status != KimodoEditorGenerationJobStatus.Completed &&
+                        status != KimodoEditorGenerationJobStatus.Failed &&
+                        status != KimodoEditorGenerationJobStatus.Canceled)
+                    {
+                        continue;
+                    }
+
+                    DateTime startedAtUtc = pair.Value.Session.StartedAtUtc;
+                    if (!found || startedAtUtc < oldestStartedAtUtc)
+                    {
+                        found = true;
+                        oldestRequestId = pair.Key;
+                        oldestStartedAtUtc = startedAtUtc;
+                    }
+                }
+
+                // Active jobs must remain addressable so status, cancellation, persistence,
+                // and Timeline range locking continue to work. The cap is a soft limit when
+                // all remembered generations are still running.
+                if (!found) return;
+                Jobs.Remove(oldestRequestId);
+            }
+        }
+
+        private static bool TryRemoveOldestTerminalTaskLocked(
+            Dictionary<string, JObject> tasks,
+            string firstTerminalStatus,
+            string secondTerminalStatus)
+        {
+            string oldestTerminalKey = null;
+            DateTime oldestStartedAtUtc = DateTime.MaxValue;
+            foreach (KeyValuePair<string, JObject> pair in tasks)
+            {
+                string status = pair.Value?.Value<string>("status");
+                if (string.Equals(status, firstTerminalStatus, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(status, secondTerminalStatus, StringComparison.OrdinalIgnoreCase))
+                {
+                    DateTime startedAtUtc = DateTime.MinValue;
+                    string startedAtValue = pair.Value?.Value<string>("started_at_utc")
+                        ?? pair.Value?.Value<string>("retention_started_at_utc");
+                    DateTime.TryParse(
+                        startedAtValue,
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.RoundtripKind,
+                        out startedAtUtc);
+                    if (oldestTerminalKey == null || startedAtUtc < oldestStartedAtUtc)
+                    {
+                        oldestTerminalKey = pair.Key;
+                        oldestStartedAtUtc = startedAtUtc;
+                    }
+                }
+            }
+            return oldestTerminalKey != null && tasks.Remove(oldestTerminalKey);
+        }
+
+        private static void TrimTerminalTasksLocked(
+            Dictionary<string, JObject> tasks,
+            int maximumCount,
+            string firstTerminalStatus,
+            string secondTerminalStatus)
+        {
+            while (tasks.Count > maximumCount &&
+                   TryRemoveOldestTerminalTaskLocked(tasks, firstTerminalStatus, secondTerminalStatus))
+            {
+            }
         }
 
         internal static void ClearRememberedJobsForTests()
@@ -116,21 +197,12 @@ namespace KimodoUnityBridge.Command
             }
         }
 
-        private static JobRecord GetJob(Guid requestId)
-        {
-            lock (JobsLock)
-            {
-                if (!Jobs.TryGetValue(requestId, out JobRecord record))
-                {
-                    throw new InvalidOperationException($"Unknown or expired request_id '{requestId}'.");
-                }
-                return record;
-            }
-        }
 
-        private static JObject BuildStatus(JobRecord record)
+        private static JObject BuildStatus(JobRecord record, bool includeBackendRequestJson = false)
         {
             KimodoEditorGenerationJobSession session = record.Session;
+            TimelineGenerationTrace reservation = record.TimelineGenerationTrace;
+            string generatedAssetPath = string.Empty;
             var result = new JObject
             {
                 ["request_id"] = session.RequestId.ToString("D"),
@@ -149,10 +221,23 @@ namespace KimodoUnityBridge.Command
                     ? (JToken)session.ProgressRate.Value
                     : JValue.CreateNull()
             };
+            if (includeBackendRequestJson && !string.IsNullOrWhiteSpace(session.BackendRequestJson))
+            {
+                try
+                {
+                    result["backend_request_json"] = JToken.Parse(session.BackendRequestJson);
+                }
+                catch
+                {
+                    result["backend_request_json"] = session.BackendRequestJson;
+                }
+            }
             if (session.Payload is KimodoEditorGenerationResult generated)
             {
                 result["seed"] = generated.Seed;
                 result["prompt"] = generated.Prompt ?? string.Empty;
+                if (generated.ConstraintLoss != null)
+                    result["constraint_loss"] = generated.ConstraintLoss.DeepClone();
                 if (!string.IsNullOrWhiteSpace(generated.AnalysisJson))
                 {
                     try
@@ -167,25 +252,262 @@ namespace KimodoUnityBridge.Command
                         };
                     }
                 }
-                result["path"] = generated.GeneratedClip != null
+                generatedAssetPath = generated.GeneratedClip != null
                     ? AssetDatabase.GetAssetPath(generated.GeneratedClip) ?? string.Empty
                     : string.Empty;
+                result["post_analysis"] = BuildPostAnalysisStatus(
+                    generated,
+                    session.Status,
+                    record.TimelineGenerationTrace?.Session,
+                    session.RequestId);
             }
             else
             {
-                result["path"] = string.Empty;
-            }
-            if (record.TimelineGenerationTrace != null)
-            {
-                TimelineGenerationTrace reservation = record.TimelineGenerationTrace;
-                result["session_name"] = reservation.Session.Name;
-                result["start_frame"] = Mathf.RoundToInt((float)(reservation.StartSeconds * SessionFrameRate));
-                result["duration_frames"] = Mathf.RoundToInt((float)(reservation.DurationSeconds * SessionFrameRate));
-                if (reservation.Animation != null)
+                if (record.TimelineGenerationTrace != null)
                 {
-                    result["animation"] = reservation.Animation.Name;
+                    result["post_analysis"] = new JObject
+                    {
+                        ["status"] = session.Status == KimodoEditorGenerationJobStatus.Running ? "pending" : "skipped"
+                    };
                 }
             }
+            if (record.TimelineGenerationTrace?.PlayableClip != null)
+            {
+                KimodoPlayableClip placeholder = record.TimelineGenerationTrace.PlayableClip;
+                placeholder.commandGenerationStatus = session.Status.ToString().ToLowerInvariant();
+                if (session.Status == KimodoEditorGenerationJobStatus.Failed ||
+                    session.Status == KimodoEditorGenerationJobStatus.Canceled)
+                {
+                    placeholder.isGenerated = false;
+                    placeholder.commandGenerationError = string.IsNullOrWhiteSpace(session.Error)
+                        ? session.Message ?? string.Empty
+                        : session.Error;
+                }
+                else
+                {
+                    placeholder.commandGenerationError = string.Empty;
+                }
+                EditorUtility.SetDirty(placeholder);
+            }
+            if (reservation != null)
+            {
+                if (reservation.InOutSampling != null) result["inout_sampling"] = reservation.InOutSampling.DeepClone();
+                if (reservation.Animation != null)
+                {
+                    result["animation_id"] = reservation.Animation.Id.ToString("D");
+                }
+
+                JObject clip = new JObject
+                {
+                    ["start_timeline_frame_60"] = Mathf.RoundToInt((float)(reservation.StartSeconds * SessionFrameRate)),
+                    ["end_timeline_frame_60_exclusive"] = Mathf.RoundToInt((float)((reservation.StartSeconds + reservation.DurationSeconds) * SessionFrameRate))
+                };
+                if (reservation.Animation != null) clip["name"] = reservation.Animation.Name;
+                if (reservation.Character != null) clip["character"] = reservation.Character.Name;
+                if (!string.IsNullOrWhiteSpace(generatedAssetPath)) clip["asset_path"] = generatedAssetPath;
+                result["clip"] = clip;
+            }
+            return result;
+        }
+
+        private static JObject BuildPostAnalysisStatus(
+            KimodoEditorGenerationResult generated,
+            KimodoEditorGenerationJobStatus generationStatus,
+            TimelineSessionRecord session = null,
+            Guid requestId = default)
+        {
+            if (generated?.PostAnalysisSkipped == true)
+            {
+                return new JObject { ["status"] = "skipped" };
+            }
+            if (!string.IsNullOrWhiteSpace(generated?.PostAnalysisJson))
+            {
+                JObject parsed;
+                try
+                {
+                    parsed = JObject.Parse(generated.PostAnalysisJson);
+                }
+                catch
+                {
+                    return new JObject
+                    {
+                        ["status"] = "failed",
+                        ["error"] = new JObject
+                        {
+                            ["code"] = "post_analysis_result_invalid",
+                            ["message"] = "Post-generation analysis returned invalid JSON."
+                        }
+                    };
+                }
+
+                if (session == null)
+                {
+                    return new JObject
+                    {
+                        ["status"] = "failed",
+                        ["error"] = new JObject
+                        {
+                            ["code"] = "post_analysis_path_unavailable",
+                            ["message"] = "Post-generation analysis cannot be exposed without its owning scene session."
+                        }
+                    };
+                }
+
+                string path = Path.Combine(
+                    GetSessionGeneratedFolder(session),
+                    "Analyses",
+                    $"generation_{requestId:D}_post_analysis.json");
+                try
+                {
+                    if (!File.Exists(path)) WriteJsonAtomically(path, parsed);
+                    return new JObject
+                    {
+                        ["status"] = "completed",
+                        ["analysis_path"] = ToProjectRelativePath(path)
+                    };
+                }
+                catch (Exception exception)
+                {
+                    return new JObject
+                    {
+                        ["status"] = "failed",
+                        ["error"] = new JObject
+                        {
+                            ["code"] = "post_analysis_persist_failed",
+                            ["message"] = exception.Message
+                        }
+                    };
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(generated?.PostAnalysisError))
+            {
+                return new JObject
+                {
+                    ["status"] = "failed",
+                    ["error"] = new JObject
+                    {
+                        ["code"] = "post_analysis_failed",
+                        ["message"] = generated.PostAnalysisError
+                    }
+                };
+            }
+
+            if (generationStatus != KimodoEditorGenerationJobStatus.Completed)
+            {
+                return new JObject { ["status"] = "skipped" };
+            }
+
+            return new JObject
+            {
+                ["status"] = "failed",
+                ["error"] = new JObject
+                {
+                    ["code"] = "post_analysis_unavailable",
+                    ["message"] = "No post-generation analysis result was recorded."
+                }
+            };
+        }
+
+        private static JObject NormalizeInstallStatus(JObject source, string requestId)
+        {
+            JObject result = (JObject)source.DeepClone();
+            string status = result.Value<string>("status") ?? string.Empty;
+            string message = result.Value<string>("message") ?? string.Empty;
+            result["request_id"] = requestId;
+            result.Remove("task_id");
+            result.Remove("retention_started_at_utc");
+            result.Remove("progress");
+            result["status"] = status.ToLowerInvariant() switch
+            {
+                "queued" => "accepted",
+                "loading" => "running",
+                "done" => "completed",
+                "error" => "failed",
+                _ => status.ToLowerInvariant()
+            };
+            if (string.Equals(status, "error", StringComparison.OrdinalIgnoreCase))
+            {
+                result["error"] = new JObject
+                {
+                    ["code"] = "installation_failed",
+                    ["message"] = message
+                };
+                result.Remove("message");
+            }
+            else
+            {
+                result.Remove("error");
+            }
+            return result;
+        }
+
+        private static JObject NormalizeGenerationStatus(JObject source, string requestId, bool includeRequestJson = false)
+        {
+            JObject result = (JObject)source.DeepClone();
+            JObject persistedClip = source["clip"] as JObject;
+            result["request_id"] = requestId;
+            result.Remove("task_id");
+            string progress = result.Value<string>("progress") ?? string.Empty;
+            result.Remove("progress");
+            string[] progressParts = progress.Split('/');
+            if (progressParts.Length == 2 &&
+                int.TryParse(progressParts[0], out int progressCurrent) &&
+                int.TryParse(progressParts[1], out int progressTotal))
+            {
+                result["progress_current"] = progressCurrent;
+                result["progress_total"] = progressTotal;
+            }
+            result.Remove("prompt");
+            JToken completedSeed = source["seed"]?.DeepClone();
+            result.Remove("seed");
+            result.Remove("animation");
+            result.Remove("character");
+            result.Remove("path");
+            result.Remove("generated_asset_path");
+
+            if (!includeRequestJson) result.Remove("backend_request_json");
+
+            if (result["error"] is JValue errorValue && errorValue.Type == JTokenType.String)
+            {
+                string message = errorValue.Value<string>();
+                if (string.IsNullOrWhiteSpace(message))
+                {
+                    result.Remove("error");
+                }
+                else
+                {
+                    result["error"] = new JObject
+                    {
+                        ["code"] = "generation_failed",
+                        ["message"] = message
+                    };
+                }
+            }
+
+            if (string.Equals(result.Value<string>("status"), "completed", StringComparison.OrdinalIgnoreCase))
+            {
+                if (completedSeed != null) result["seed"] = completedSeed;
+                JObject clip = persistedClip != null ? (JObject)persistedClip.DeepClone() : new JObject();
+                if (source.Value<string>("animation") is string name) clip["name"] = name;
+                if (source.Value<string>("character") is string character) clip["character"] = character;
+                if (source.Value<int?>("start_timeline_frame_60") is int startFrame)
+                    clip["start_timeline_frame_60"] = startFrame;
+                if (source.Value<int?>("duration_frames") is int durationFrames)
+                {
+                    if (source.Value<int?>("start_timeline_frame_60") is int clipStart)
+                        clip["end_timeline_frame_60_exclusive"] = clipStart + durationFrames;
+                }
+                string assetPath = source.Value<string>("path");
+                if (!string.IsNullOrWhiteSpace(assetPath)) clip["asset_path"] = assetPath;
+                if (clip.HasValues) result["clip"] = clip;
+            }
+            else
+            {
+                result.Remove("clip");
+            }
+            result.Remove("start_timeline_frame_60");
+            result.Remove("duration_frames");
             return result;
         }
 
@@ -193,22 +515,56 @@ namespace KimodoUnityBridge.Command
         {
             try
             {
-                JObject arguments = string.IsNullOrWhiteSpace(argumentsJson)
-                    ? new JObject()
-                    : JObject.Parse(argumentsJson);
-                return action(arguments);
+                JObject arguments = ParseCommandArguments(argumentsJson);
+                return Execute(arguments, action);
             }
             catch (Exception ex)
             {
-                if (ex is GenerationRangeLockedException locked)
-                {
-                    return Error(locked);
-                }
-                if (ex is CommandException command)
-                {
-                    return Error(command.Code, command.Message);
-                }
+                return Error(ex);
+            }
+        }
+
+        private static string Execute(JObject arguments, Func<JObject, string> action)
+        {
+            try
+            {
+                return action(arguments ?? new JObject());
+            }
+            catch (Exception ex)
+            {
+                return Error(ex);
+            }
+        }
+
+        private static string Error(Exception ex)
+        {
+            if (ex is GenerationRangeLockedException locked) return Error(locked);
+            if (ex is CommandException command) return Error(command.Code, command.Message);
+            if (ex is OperationCanceledException) return Error("canceled", ex.Message);
+            if (ex is TimeoutException) return Error("timeout", ex.Message);
+            if (ex is SocketException || ex is IOException &&
+                !(ex is FileNotFoundException || ex is DirectoryNotFoundException ||
+                  ex is DriveNotFoundException || ex is PathTooLongException))
+                return Error("bridge_unavailable", ex.Message);
+            if (ex is ArgumentException || ex is FormatException || ex is JsonException)
                 return Error("invalid_argument", ex.Message);
+            if (ex is InvalidOperationException) return Error("invalid_operation", ex.Message);
+            return Error("internal_error", ex.Message);
+        }
+
+        private static JObject ParseCommandArguments(string argumentsJson)
+        {
+            if (string.IsNullOrWhiteSpace(argumentsJson)) return new JObject();
+
+            using (var textReader = new StringReader(argumentsJson))
+            using (var jsonReader = new JsonTextReader(textReader) { DateParseHandling = DateParseHandling.None })
+            {
+                JObject arguments = JObject.Load(jsonReader);
+                if (jsonReader.Read())
+                {
+                    throw new FormatException("Additional content after the command arguments object.");
+                }
+                return arguments;
             }
         }
 
@@ -222,12 +578,6 @@ namespace KimodoUnityBridge.Command
         private static string Ok(JObject result)
         {
             result ??= new JObject();
-            if (currentTimelineSession != null)
-            {
-                result["session_id"] = currentTimelineSession.Id.ToString("D");
-                result["session_json_path"] = currentTimelineSession.Metadata?.sessionJsonPath ?? string.Empty;
-                result["session_revision"] = currentTimelineSession.Metadata?.sessionRevision ?? 0;
-            }
             result["ok"] = true;
             return result.ToString(Formatting.None);
         }
@@ -278,26 +628,6 @@ namespace KimodoUnityBridge.Command
             return value;
         }
 
-        private static Vector2 RequiredVector2(JObject value, string name)
-        {
-            JArray array = value?[name] as JArray;
-            if (array == null || array.Count != 2)
-            {
-                throw new InvalidOperationException($"{name} must be [x,z].");
-            }
-            if ((array[0].Type != JTokenType.Integer && array[0].Type != JTokenType.Float) ||
-                (array[1].Type != JTokenType.Integer && array[1].Type != JTokenType.Float))
-            {
-                throw new InvalidOperationException($"{name} must contain finite numbers.");
-            }
-            float x = array[0].Value<float>();
-            float y = array[1].Value<float>();
-            if (float.IsNaN(x) || float.IsInfinity(x) || float.IsNaN(y) || float.IsInfinity(y))
-            {
-                throw new InvalidOperationException($"{name} must contain finite numbers.");
-            }
-            return new Vector2(x, y);
-        }
 
         private static Guid RequiredRequestId(JObject arguments)
         {
@@ -316,7 +646,7 @@ namespace KimodoUnityBridge.Command
                 string candidate = modelName.Trim();
                 if (candidate.IndexOfAny(new[] { '\\', '/', ':' }) >= 0)
                 {
-                    throw new InvalidOperationException("model must be a registered model name/configuration id from kimodo_help section models, not a filesystem path.");
+                    throw new InvalidOperationException("model must be a registered model name/configuration id from kimodo.help section models, not a filesystem path.");
                 }
             }
             return KimodoMotionModelProfiles.NormalizeName(string.IsNullOrWhiteSpace(modelName)
@@ -342,10 +672,9 @@ namespace KimodoUnityBridge.Command
             }
             if (record?.TimelineGenerationTrace == null) return;
             TimelineSessionRecord timelineSession = record.TimelineGenerationTrace.Session;
-            JObject status = BuildStatus(record);
+            JObject status = BuildStatus(record, includeBackendRequestJson: true);
             WriteJsonAtomically(GenerationJobPath(timelineSession, jobSession.RequestId), status);
-            UpdateGenerationHistory(timelineSession, status);
-            PersistTimelineSessionMetadata(timelineSession);
+            PersistTimelineSessionJson(timelineSession);
             EditorUtility.SetDirty(timelineSession.TimelineAsset);
             AssetDatabase.SaveAssets();
         }
@@ -357,46 +686,31 @@ namespace KimodoUnityBridge.Command
         {
             string path = GenerationJobPath(session, requestId);
             if (!System.IO.File.Exists(path))
-                throw new InvalidOperationException($"Unknown request_id '{requestId:D}' in the selected Session.");
+                throw new InvalidOperationException($"Unknown request_id '{requestId:D}' in the current scene context.");
             return JObject.Parse(System.IO.File.ReadAllText(path));
         }
 
         private static void EnsureGenerationBelongsToSession(JobRecord record, TimelineSessionRecord session)
         {
-            if (record?.TimelineGenerationTrace == null || !ReferenceEquals(record.TimelineGenerationTrace.Session, session))
-                throw new InvalidOperationException("request_id belongs to a different Session.");
-        }
-
-        private static void UpdateGenerationHistory(TimelineSessionRecord session, JObject status)
-        {
-            if (session?.Metadata == null || status == null) return;
-            string requestId = status.Value<string>("request_id") ?? string.Empty;
-            KimodoCommandGenerationMetadata history = (session.Metadata.generations ??= new List<KimodoCommandGenerationMetadata>())
-                .FirstOrDefault(item => string.Equals(item.requestId, requestId, StringComparison.OrdinalIgnoreCase));
-            if (history == null)
-            {
-                history = new KimodoCommandGenerationMetadata { requestId = requestId };
-                session.Metadata.generations.Add(history);
-            }
-            history.character = status.Value<string>("character") ?? history.character ?? string.Empty;
-            history.animation = status.Value<string>("animation") ?? history.animation ?? string.Empty;
-            history.status = status.Value<string>("status") ?? string.Empty;
-            history.stage = status.Value<string>("stage") ?? string.Empty;
-            history.message = status.Value<string>("message") ?? string.Empty;
-            history.error = status.Value<string>("error") ?? string.Empty;
-            history.startedAtUtc = status.Value<string>("started_at_utc") ?? history.startedAtUtc ?? string.Empty;
-            history.updatedAtUtc = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+            if (record?.TimelineGenerationTrace == null || session == null ||
+                record.TimelineGenerationTrace.Session == null ||
+                record.TimelineGenerationTrace.Session.Id != session.Id)
+                throw new InvalidOperationException("request_id belongs to a different scene context.");
         }
 
         private static JObject EnsureRegisteredModel(string modelName, KimodoTextEncoderMode textEncoderMode)
         {
             KimodoPlayableClipGenerationSettings settings = KimodoPlayableClipGenerationSettings.instance;
-            JObject response = KimodoBridgeService.Shared.ListModelConfigurationsAsync(
-                modelName,
-                KimodoTextEncoderModeProtocol.ToProtocolValue(textEncoderMode),
-                settings.LocalModelsPath?.Trim() ?? string.Empty,
-                null,
-                CancellationToken.None).GetAwaiter().GetResult();
+            JObject response;
+            using (var timeout = new CancellationTokenSource(CommandBridgeQueryTimeoutMs))
+            {
+                response = KimodoBridgeService.Shared.ListModelConfigurationsAsync(
+                    modelName,
+                    KimodoTextEncoderModeProtocol.ToProtocolValue(textEncoderMode),
+                    settings.LocalModelsPath?.Trim() ?? string.Empty,
+                    null,
+                    timeout.Token).GetAwaiter().GetResult();
+            }
             JObject found = (response["configs"] as JArray)?.Values<JObject>().FirstOrDefault(config =>
                 string.Equals(config.Value<string>("model"), modelName, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(
@@ -407,7 +721,7 @@ namespace KimodoUnityBridge.Command
             if (found == null)
             {
                 throw new InvalidOperationException(
-                    $"Model '{modelName}' with text_encoder_model '{KimodoTextEncoderModeProtocol.ToProtocolValue(textEncoderMode)}' is not listed by kimodo_help section models.");
+                    $"Model '{modelName}' with text_encoder_model '{KimodoTextEncoderModeProtocol.ToProtocolValue(textEncoderMode)}' is not listed by kimodo.help section models.");
             }
             return found;
         }
@@ -468,33 +782,12 @@ namespace KimodoUnityBridge.Command
             return supplied.HasValue ? Mathf.Clamp(supplied.Value, 1, 1000) : 100;
         }
 
-        private static float PositiveFloat(JObject arguments, string name, float fallback)
-        {
-            double value = PositiveDouble(arguments, name, fallback);
-            return (float)value;
-        }
 
-        private static double PositiveDouble(JObject arguments, string name, double fallback)
-        {
-            double value = arguments.Value<double?>(name) ?? fallback;
-            if (double.IsNaN(value) || double.IsInfinity(value) || value <= 0.0)
-            {
-                throw new InvalidOperationException($"{name} must be positive and finite.");
-            }
-            return value;
-        }
+        private static void EnsureCanGenerate() => EnsureEditorIsIdle("Kimodo animation asset generation");
 
-        private static double NonNegativeDouble(JObject arguments, string name, double fallback)
-        {
-            double value = arguments.Value<double?>(name) ?? fallback;
-            if (double.IsNaN(value) || double.IsInfinity(value) || value < 0.0)
-            {
-                throw new InvalidOperationException($"{name} must be non-negative and finite.");
-            }
-            return value;
-        }
+        private static void EnsureCanManageServer() => EnsureEditorIsIdle("Kimodo server maintenance");
 
-        private static void EnsureCanGenerate()
+        private static void EnsureEditorIsIdle(string operation)
         {
             if (EditorApplication.isCompiling || EditorApplication.isUpdating)
             {
@@ -502,19 +795,7 @@ namespace KimodoUnityBridge.Command
             }
             if (EditorApplication.isPlayingOrWillChangePlaymode)
             {
-                throw new InvalidOperationException("Kimodo animation asset generation is available in Edit Mode only.");
-            }
-        }
-
-        private static void EnsureCanManageServer()
-        {
-            if (EditorApplication.isCompiling || EditorApplication.isUpdating)
-            {
-                throw new InvalidOperationException("Unity is compiling or importing assets. Retry when the Editor is ready.");
-            }
-            if (EditorApplication.isPlayingOrWillChangePlaymode)
-            {
-                throw new InvalidOperationException("Kimodo server maintenance is available in Edit Mode only.");
+                throw new InvalidOperationException($"{operation} is available in Edit Mode only.");
             }
         }
 

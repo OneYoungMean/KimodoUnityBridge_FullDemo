@@ -13,12 +13,6 @@ namespace KimodoBridge
             internal Animator Animator;
             internal HumanPoseHandler PoseHandler;
             internal Transform HipsBone;
-            internal Transform LeftUpperLegBone;
-            internal Transform LeftLowerLegBone;
-            internal Transform LeftFootBone;
-            internal Transform RightUpperLegBone;
-            internal Transform RightLowerLegBone;
-            internal Transform RightFootBone;
             internal bool AnimatorWasEnabled;
             internal Quaternion SourceToTargetRotation = Quaternion.identity;
             internal Vector3 SourceHipsAnchorPosition;
@@ -69,12 +63,6 @@ namespace KimodoBridge
                     Animator = animator,
                     PoseHandler = new HumanPoseHandler(avatar, animator.transform),
                     HipsBone = animator.GetBoneTransform(HumanBodyBones.Hips),
-                    LeftUpperLegBone = animator.GetBoneTransform(HumanBodyBones.LeftUpperLeg),
-                    LeftLowerLegBone = animator.GetBoneTransform(HumanBodyBones.LeftLowerLeg),
-                    LeftFootBone = animator.GetBoneTransform(HumanBodyBones.LeftFoot),
-                    RightUpperLegBone = animator.GetBoneTransform(HumanBodyBones.RightUpperLeg),
-                    RightLowerLegBone = animator.GetBoneTransform(HumanBodyBones.RightLowerLeg),
-                    RightFootBone = animator.GetBoneTransform(HumanBodyBones.RightFoot),
                     AnimatorWasEnabled = animator.enabled
                 };
                 animator.enabled = false;

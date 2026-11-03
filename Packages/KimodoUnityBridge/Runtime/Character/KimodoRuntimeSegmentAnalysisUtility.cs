@@ -68,8 +68,7 @@ namespace KimodoBridge
                 return false;
             }
 
-            Vector2 delta = new Vector2(root1.x - root0.x, root1.z - root0.z);
-            deltaSq = delta.sqrMagnitude;
+            deltaSq = KimodoMotionMath.ToPlanarDelta(root0, root1).sqrMagnitude;
             return true;
         }
 

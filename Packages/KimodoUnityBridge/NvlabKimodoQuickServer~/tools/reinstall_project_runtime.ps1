@@ -33,33 +33,40 @@ if (Test-Path -LiteralPath $serverPort -PathType Leaf) {
     }
 
     $client = [Net.Sockets.TcpClient]::new()
+    $serverWasReachable = $false
     try {
         $client.Connect($endpoint.host, [int]$endpoint.port)
+        $serverWasReachable = $true
         $stream = $client.GetStream()
         $request = [Text.Encoding]::UTF8.GetBytes("{`"cmd`":`"session.close`"}`n")
         $stream.Write($request, 0, $request.Length)
         $stream.Flush()
+    } catch [Net.Sockets.SocketException] {
+        Write-Output "QuickServer endpoint is stale or stopped; archiving its endpoint file during reinstall."
     } finally {
         $client.Dispose()
     }
 
-    $deadline = [DateTime]::UtcNow.AddSeconds(30)
-    while ((Test-Path -LiteralPath $serverPort) -and [DateTime]::UtcNow -lt $deadline) {
-        Start-Sleep -Milliseconds 100
-    }
-    if (Test-Path -LiteralPath $serverPort) {
-        throw "Timed out waiting for QuickServer to stop: $serverPort"
+    if ($serverWasReachable) {
+        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        while ((Test-Path -LiteralPath $serverPort) -and [DateTime]::UtcNow -lt $deadline) {
+            Start-Sleep -Milliseconds 100
+        }
+        if (Test-Path -LiteralPath $serverPort) {
+            throw "Timed out waiting for QuickServer to stop: $serverPort"
+        }
     }
 }
 
 New-Item -ItemType Directory -Path $runtimeRoot -Force | Out-Null
-$backupRoot = $runtimeRoot + ".reinstall-backup-" + [DateTime]::Now.ToString("yyyyMMdd-HHmmss")
-$oldEntries = @(Get-ChildItem -LiteralPath $runtimeRoot -Force | Where-Object Name -ne "models")
+$archiveRoot = Join-Path $runtimeRoot "archive"
+$backupRoot = Join-Path $archiveRoot ("reinstall-" + [DateTime]::Now.ToString("yyyyMMdd-HHmmss"))
+$oldEntries = @(Get-ChildItem -LiteralPath $runtimeRoot -Force | Where-Object Name -notin @("models", "archive"))
 if ($oldEntries.Count -gt 0) {
     if (Test-Path -LiteralPath $backupRoot) {
         throw "Refusing to overwrite reinstall backup: $backupRoot"
     }
-    New-Item -ItemType Directory -Path $backupRoot | Out-Null
+    New-Item -ItemType Directory -Path $backupRoot -Force | Out-Null
     foreach ($entry in $oldEntries) {
         Move-Item -LiteralPath $entry.FullName -Destination $backupRoot
     }

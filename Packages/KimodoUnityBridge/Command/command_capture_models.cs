@@ -66,21 +66,18 @@ namespace KimodoUnityBridge.Command
         private sealed class AnalysisSubject
         {
             public AnalysisSubject(
-                string role,
                 TimelineCharacterRecord character,
                 TimelineAnimationRecord animation,
                 AnalysisCacheRecord record,
                 int startFrame,
                 int endFrameExclusive)
             {
-                Role = role;
                 Character = character;
                 Animation = animation;
                 Record = record;
                 StartFrame = startFrame;
                 EndFrameExclusive = endFrameExclusive;
             }
-            public string Role { get; }
             public TimelineCharacterRecord Character { get; }
             public TimelineAnimationRecord Animation { get; }
             public AnalysisCacheRecord Record { get; }
@@ -100,15 +97,13 @@ namespace KimodoUnityBridge.Command
                 Vector3[] rightFoot,
                 Vector3[] leftElbow,
                 Vector3[] rightElbow,
-                Vector3[] leftKnee,
-                Vector3[] rightKnee,
                 Vector3[] head,
+                float[] leftArmSwingAngles,
+                float[] rightArmSwingAngles,
                 bool[] leftContacts,
                 bool[] rightContacts,
-                Bounds firstBounds,
-                Bounds lastBounds,
-                Bounds bounds,
-                Bounds testBounds)
+                Bounds[] poseBounds,
+                Bounds bounds)
             {
                 Subject = subject;
                 Samples = samples;
@@ -119,20 +114,19 @@ namespace KimodoUnityBridge.Command
                 RightFoot = rightFoot;
                 LeftElbow = leftElbow;
                 RightElbow = rightElbow;
-                LeftKnee = leftKnee;
-                RightKnee = rightKnee;
                 Head = head;
+                LeftArmSwingAngles = leftArmSwingAngles;
+                RightArmSwingAngles = rightArmSwingAngles;
                 LeftContacts = leftContacts;
                 RightContacts = rightContacts;
-                FirstBounds = firstBounds;
-                LastBounds = lastBounds;
+                PoseBounds = poseBounds;
                 Bounds = bounds;
-                TestBounds = testBounds;
-                KeyframeCount = Mathf.Max(1,
-                    subject.Record.Analysis?.Value<int?>("keyframe_count") ?? 8);
                 KeyFrameSet = new HashSet<int>((subject.Record.Analysis?["keyframes"] as JArray ?? new JArray())
                     .OfType<JObject>()
-                    .Select(item => Mathf.Clamp(item.Value<int?>("frame") ?? 0, 0, Math.Max(0, pelvis.Length - 1))));
+                    .Select(item => Mathf.Clamp(
+                        (item.Value<int?>("timeline_frame_60") ?? subject.StartFrame) - subject.StartFrame,
+                        0,
+                        Math.Max(0, pelvis.Length - 1))));
             }
             public AnalysisSubject Subject { get; }
             public KimodoMarkerSampleResult[] Samples { get; }
@@ -143,17 +137,27 @@ namespace KimodoUnityBridge.Command
             public Vector3[] RightFoot { get; }
             public Vector3[] LeftElbow { get; }
             public Vector3[] RightElbow { get; }
-            public Vector3[] LeftKnee { get; }
-            public Vector3[] RightKnee { get; }
             public Vector3[] Head { get; }
+            public float[] LeftArmSwingAngles { get; }
+            public float[] RightArmSwingAngles { get; }
             public bool[] LeftContacts { get; }
             public bool[] RightContacts { get; }
-            public Bounds FirstBounds { get; }
-            public Bounds LastBounds { get; }
+            public Bounds[] PoseBounds { get; }
             public Bounds Bounds { get; }
-            public Bounds TestBounds { get; }
-            public int KeyframeCount { get; }
             public HashSet<int> KeyFrameSet { get; }
+
+            public void RefreshKeyframes()
+            {
+                JArray keyframes = Subject.Record.Analysis?["keyframes"] as JArray ?? new JArray();
+                KeyFrameSet.Clear();
+                foreach (JObject item in keyframes.OfType<JObject>())
+                {
+                    KeyFrameSet.Add(Mathf.Clamp(
+                        (item.Value<int?>("timeline_frame_60") ?? Subject.StartFrame) - Subject.StartFrame,
+                        0,
+                        Math.Max(0, Pelvis.Length - 1)));
+                }
+            }
 
             public KimodoMarkerSampleResult GetSample(int localFrame)
             {
@@ -178,42 +182,21 @@ namespace KimodoUnityBridge.Command
             public string Presentation { get; }
             public JObject Description { get; }
             public Vector3 Direction { get; private set; }
-            public bool Orthographic { get; private set; }
             public int Frame { get; private set; }
             public string PoseKind { get; private set; }
             public List<int> TrajectoryFrames { get; private set; } = new List<int>();
             public HashSet<int> PrimaryFrames { get; private set; } = new HashSet<int>();
-            public HashSet<int> StationaryBoostFrames { get; private set; } = new HashSet<int>();
-            public bool ShowTestTrajectories { get; private set; }
+            public bool IsEmpty { get; private set; }
+            public string TileType { get; private set; }
 
-            public static PictureTile Ghost(SubjectPictureData subject, string view, Vector3 direction, bool orthographic)
+            public static PictureTile RootTrajectory(SubjectPictureData subject, Vector3 direction)
             {
-                return new PictureTile(subject, "ghost", new JObject { ["presentation"] = "ghost", ["view"] = view })
-                {
-                    Direction = direction,
-                    Orthographic = orthographic
-                };
-            }
-
-            public static PictureTile TestFootTransitions(SubjectPictureData subject, Vector3 direction)
-            {
-                return TestFrameSet(subject, "test_foot_transitions", "foot_transitions", FootTransitionFrames(subject), direction, false);
-            }
-
-            public static PictureTile TestKeyframes(SubjectPictureData subject, Vector3 direction)
-            {
-                return TestFrameSet(subject, "test_keyframes", "keyframes", SelectKeyFrames(subject, subject.KeyframeCount), direction, true);
-            }
-
-            public static PictureTile TestRoot2D(SubjectPictureData subject, Vector3 direction)
-            {
-                var keyframes = new HashSet<int>(SelectKeyFrames(subject, subject.KeyframeCount));
-                List<int> frames = BuildTestSampleFrames(
+                var keyframes = subject.KeyFrameSet;
+                List<int> frames = BuildAnalysisSampleFrames(
                     subject,
                     keyframes,
-                    false,
-                    out HashSet<int> stationaryBoostFrames);
-                return new PictureTile(subject, "test_root2d", new JObject
+                    false);
+                return new PictureTile(subject, "root_trajectory", new JObject
                 {
                     ["presentation"] = "root2d_pelvis_projection",
                     ["keyframes"] = new JArray(keyframes.OrderBy(frame => frame)),
@@ -225,279 +208,193 @@ namespace KimodoUnityBridge.Command
                 })
                 {
                     Direction = direction,
-                    Orthographic = true,
                     TrajectoryFrames = frames,
-                    PrimaryFrames = keyframes,
-                    StationaryBoostFrames = stationaryBoostFrames
+                    PrimaryFrames = keyframes
                 };
             }
 
-            public static PictureTile TestPose(
+            public static PictureTile Overview(SubjectPictureData subject, string type, Vector3 direction)
+            {
+                // The 3d_track slot is rendered as the Root2D pelvis projection
+                // by SceneAnalysisLayout, so it must describe itself as that
+                // tile rather than as a plain overview.
+                PictureTile root2D = type == "3d_track" ? RootTrajectory(subject, direction) : null;
+                var description = root2D != null
+                    ? root2D.Description
+                    : new JObject
+                    {
+                        ["presentation"] = type,
+                        ["frames"] = type == "height_time_track"
+                            ? new JArray(BuildHeightTimePoseFrames(subject))
+                            : new JArray()
+                    };
+                return new PictureTile(subject, "overview_" + type, description)
+                {
+                    Direction = direction,
+                    TileType = type,
+                    TrajectoryFrames = root2D?.TrajectoryFrames ?? new List<int>(),
+                    PrimaryFrames = root2D?.PrimaryFrames ?? new HashSet<int>()
+                };
+            }
+
+            public static PictureTile SelectedOverview(
                 SubjectPictureData subject,
-                int frame,
-                string poseKind,
+                string type,
+                IEnumerable<int> frames,
                 Vector3 direction)
             {
-                int clampedFrame = Mathf.Clamp(frame, 0, Math.Max(0, subject.Pelvis.Length - 1));
-                return new PictureTile(subject, "test_pose", new JObject
+                var ordered = (frames ?? Enumerable.Empty<int>())
+                    .Distinct().OrderBy(frame => frame).ToList();
+                HashSet<int> primary = new HashSet<int>(ordered);
+                List<int> sampled = BuildAnalysisSampleFrames(subject, ordered, true);
+                return new PictureTile(subject, "selected_" + type, new JObject
                 {
-                    ["presentation"] = "test_pose",
-                    ["frame"] = clampedFrame,
-                    ["pose_kind"] = poseKind
+                    ["presentation"] = type,
+                    ["frames"] = new JArray(sampled),
+                    ["candidate_frames"] = new JArray(ordered),
+                    ["sample_frames"] = new JArray(sampled.Where(frame => !primary.Contains(frame)))
                 })
                 {
                     Direction = direction,
-                    Orthographic = true,
-                    Frame = clampedFrame,
-                    PoseKind = poseKind
+                    TileType = type,
+                    TrajectoryFrames = sampled,
+                    PrimaryFrames = primary
                 };
             }
 
-            public static PictureTile MeshPose(
-                SubjectPictureData subject,
-                int frame,
-                string poseKind)
+            public static PictureTile PoseSlot(SubjectPictureData subject, int? frame, string row, int slot)
             {
-                int clampedFrame = Mathf.Clamp(frame, 0, Math.Max(0, subject.Pelvis.Length - 1));
-                return new PictureTile(subject, "mesh_pose", new JObject
+                if (!frame.HasValue)
                 {
-                    ["presentation"] = "mesh_pose",
-                    ["frame"] = clampedFrame,
-                    ["pose_kind"] = poseKind
+                    return new PictureTile(subject, "empty_pose", new JObject
+                    {
+                        ["presentation"] = "empty_pose",
+                        ["row"] = row,
+                        ["slot"] = slot
+                    }) { IsEmpty = true, TileType = row };
+                }
+
+                int clamped = Mathf.Clamp(frame.Value, 0, Math.Max(0, subject.Pelvis.Length - 1));
+                return new PictureTile(subject, "pose", new JObject
+                {
+                    ["presentation"] = row == "key_pose" ? "key_pose" : "step_pose",
+                    ["frame"] = clamped,
+                    ["row"] = row,
+                    ["slot"] = slot
                 })
                 {
                     Direction = new Vector3(1f, .75f, -1f),
-                    Orthographic = true,
-                    Frame = clampedFrame,
-                    PoseKind = poseKind
+                    Frame = clamped,
+                    PoseKind = row,
+                    TileType = row
                 };
             }
-
-            private static PictureTile TestFrameSet(
-                SubjectPictureData subject,
-                string presentation,
-                string label,
-                IEnumerable<int> primaryFrames,
-                Vector3 direction,
-                bool showTrajectories)
-            {
-                int lastFrame = Math.Max(0, subject.Pelvis.Length - 1);
-                var primary = new HashSet<int>((primaryFrames ?? Enumerable.Empty<int>())
-                    .Select(frame => Mathf.Clamp(frame, 0, lastFrame)));
-                List<int> frames = BuildTestSampleFrames(
-                    subject,
-                    primary,
-                    presentation == "test_foot_transitions",
-                    out HashSet<int> stationaryBoostFrames);
-                primary.IntersectWith(frames);
-                return new PictureTile(subject, presentation, new JObject
-                {
-                    ["presentation"] = label,
-                    ["primary_frames"] = new JArray(primary.OrderBy(frame => frame)),
-                    ["frames"] = new JArray(frames),
-                    ["test"] = true
-                })
-                {
-                    Direction = direction,
-                    Orthographic = true,
-                    TrajectoryFrames = frames,
-                    PrimaryFrames = primary,
-                    StationaryBoostFrames = stationaryBoostFrames,
-                    ShowTestTrajectories = showTrajectories
-                };
-            }
-
-            public static PictureTile Key(SubjectPictureData subject, int frame) =>
-                new PictureTile(subject, "key", new JObject { ["presentation"] = "key_pose", ["frame"] = frame }) { Frame = frame };
-
-            public static PictureTile FootContact(SubjectPictureData subject, int frame, JObject contact) =>
-                new PictureTile(subject, "foot_contact", new JObject
-                {
-                    ["presentation"] = "foot_contact",
-                    ["frame"] = frame,
-                    ["foot_contact"] = contact.DeepClone()
-                }) { Frame = frame };
-
-            public static PictureTile FootFallback(SubjectPictureData subject, int frame) =>
-                new PictureTile(subject, "foot_fallback", new JObject
-                {
-                    ["presentation"] = "key_pose_fallback_for_foot_contact",
-                    ["frame"] = frame
-                }) { Frame = frame };
-
         }
 
-        private static void TintPreview(GameObject preview, Color tint, List<Material> transientMaterials)
+        private sealed class AnalysisPreviewPose
         {
-            foreach (Renderer renderer in preview.GetComponentsInChildren<Renderer>(true))
-            {
-                Material[] sourceMaterials = renderer.sharedMaterials;
-                if (sourceMaterials == null)
-                {
-                    continue;
-                }
-
-                Material[] replacements = null;
-                for (int index = 0; index < sourceMaterials.Length; index++)
-                {
-                    Material material = sourceMaterials[index];
-                    if (material == null) continue;
-
-                    Shader fallbackShader = ResolvePoseFallbackShader(material.shader);
-                    if (fallbackShader != null)
-                    {
-                        replacements ??= (Material[])sourceMaterials.Clone();
-                        Material replacement = new Material(fallbackShader)
-                        {
-                            hideFlags = HideFlags.HideAndDontSave
-                        };
-                        CopyPoseMaterialProperties(material, replacement);
-                        replacements[index] = replacement;
-                        transientMaterials?.Add(replacement);
-                    }
-                }
-                if (replacements != null)
-                {
-                    renderer.sharedMaterials = replacements;
-                }
-
-                Material[] materials = renderer.sharedMaterials;
-                for (int index = 0; index < materials.Length; index++)
-                {
-                    Material material = materials[index];
-                    if (material == null) continue;
-                    MaterialPropertyBlock block = new MaterialPropertyBlock();
-                    renderer.GetPropertyBlock(block, index);
-                    Color source = material.HasProperty("_BaseColor")
-                        ? material.GetColor("_BaseColor")
-                        : material.HasProperty("_Color")
-                            ? material.GetColor("_Color")
-                            : material.HasProperty("_TintColor")
-                                ? material.GetColor("_TintColor")
-                                : Color.white;
-                    Color blended = Color.Lerp(source, tint, .9f);
-                    if (material.HasProperty("_BaseColor")) block.SetColor("_BaseColor", blended);
-                    else if (material.HasProperty("_Color")) block.SetColor("_Color", blended);
-                    else if (material.HasProperty("_TintColor")) block.SetColor("_TintColor", blended);
-                    else continue;
-                    renderer.SetPropertyBlock(block, index);
-                }
-            }
-        }
-
-        private static Shader ResolvePoseFallbackShader(Shader sourceShader)
-        {
-            if (sourceShader == null) return null;
-            string sourceName = sourceShader.name ?? string.Empty;
-            bool isStandard = string.Equals(sourceName, "Standard", StringComparison.Ordinal) ||
-                string.Equals(sourceName, "Standard (Specular setup)", StringComparison.Ordinal);
-            bool isUrpLit = string.Equals(sourceName, "Universal Render Pipeline/Lit", StringComparison.Ordinal);
-            bool isHdrpLit = string.Equals(sourceName, "HDRP/Lit", StringComparison.Ordinal);
-
-            RenderPipelineAsset pipeline = GraphicsSettings.currentRenderPipeline;
-            string pipelineName = pipeline?.GetType().FullName ?? string.Empty;
-            bool isHdrp = pipelineName.IndexOf("HighDefinition", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                pipelineName.IndexOf("HDRenderPipeline", StringComparison.OrdinalIgnoreCase) >= 0;
-            bool isUrp = pipelineName.IndexOf("Universal", StringComparison.OrdinalIgnoreCase) >= 0;
-
-            string targetName = null;
-            if (isHdrp && (isStandard || isUrpLit)) targetName = "HDRP/Lit";
-            else if (isUrp && isStandard) targetName = "Universal Render Pipeline/Lit";
-            else if (!isHdrp && !isUrp && (isHdrpLit || isUrpLit)) targetName = "Standard";
-            if (targetName == null) return null;
-
-            Shader target = Shader.Find(targetName);
-            return target != null && target.isSupported ? target : null;
-        }
-
-        private static void CopyPoseMaterialProperties(Material source, Material target)
-        {
-            if (source == null || target == null) return;
-            Texture texture = null;
-            if (source.HasProperty("_BaseColorMap")) texture = source.GetTexture("_BaseColorMap");
-            if (texture == null && source.HasProperty("_BaseMap")) texture = source.GetTexture("_BaseMap");
-            if (texture == null && source.HasProperty("_MainTex")) texture = source.GetTexture("_MainTex");
-            if (texture != null)
-            {
-                if (target.HasProperty("_BaseColorMap")) target.SetTexture("_BaseColorMap", texture);
-                if (target.HasProperty("_BaseMap")) target.SetTexture("_BaseMap", texture);
-                if (target.HasProperty("_MainTex")) target.SetTexture("_MainTex", texture);
-            }
-
-            Color color = source.HasProperty("_BaseColor")
-                ? source.GetColor("_BaseColor")
-                : source.HasProperty("_Color") ? source.GetColor("_Color") : Color.white;
-            if (target.HasProperty("_BaseColor")) target.SetColor("_BaseColor", color);
-            if (target.HasProperty("_Color")) target.SetColor("_Color", color);
-            if (source.HasProperty("_Cutoff") && target.HasProperty("_Cutoff"))
-            {
-                target.SetFloat("_Cutoff", source.GetFloat("_Cutoff"));
-            }
-        }
-
-        private sealed class TestVirtualPose
-        {
-            public TestVirtualPose(
-                GameObject preview,
-                IReadOnlyList<Material> transientMaterials,
-                float alpha,
-                bool usesGhostMaterial)
-            {
-                Preview = preview;
-                TransientMaterials = transientMaterials;
-                Alpha = alpha;
-                UsesGhostMaterial = usesGhostMaterial;
-            }
-
-            public TestVirtualPose(
-                EvaluatedPosePreview preview,
-                IReadOnlyList<Material> transientMaterials,
-                float alpha,
-                bool usesGhostMaterial)
-            {
-                EvaluatedPreview = preview;
-                Preview = preview?.Root;
-                TransientMaterials = transientMaterials;
-                Alpha = alpha;
-                UsesGhostMaterial = usesGhostMaterial;
-            }
+            public AnalysisPreviewPose(GameObject preview) => Preview = preview;
 
             public GameObject Preview { get; }
-            private EvaluatedPosePreview EvaluatedPreview { get; }
-            public IReadOnlyList<Material> TransientMaterials { get; }
-            public float Alpha { get; }
-            public bool UsesGhostMaterial { get; }
 
             public void Dispose()
             {
-                if (TransientMaterials != null)
-                {
-                    foreach (Material material in TransientMaterials)
-                    {
-                        if (material != null) UnityEngine.Object.DestroyImmediate(material);
-                    }
-                }
-                if (EvaluatedPreview != null) EvaluatedPreview.Dispose();
-                else if (Preview != null) UnityEngine.Object.DestroyImmediate(Preview);
+                if (Preview != null) UnityEngine.Object.DestroyImmediate(Preview);
             }
         }
 
-        private sealed class TestPosePlan : IDisposable
+        /// <summary>
+        /// Owns every transient pose object used by one 20-tile capture composite.
+        /// The renderer only enables one of these objects (or a selected subset)
+        /// for each tile; it never instantiates the same frame twice.
+        /// </summary>
+        private sealed class CapturePosePool : IDisposable
+        {
+            private readonly Dictionary<SubjectPictureData, AnalysisPosePlan> plans =
+                new Dictionary<SubjectPictureData, AnalysisPosePlan>();
+            private readonly Dictionary<SubjectPictureData, Dictionary<int, AnalysisPreviewPose>> poses =
+                new Dictionary<SubjectPictureData, Dictionary<int, AnalysisPreviewPose>>();
+
+            public CapturePosePool(IReadOnlyList<PictureTile> tiles)
+            {
+                var framesBySubject = new Dictionary<SubjectPictureData, HashSet<int>>();
+                foreach (PictureTile tile in tiles ?? Array.Empty<PictureTile>())
+                {
+                    if (tile?.Subject == null) continue;
+                    if (!framesBySubject.TryGetValue(tile.Subject, out HashSet<int> frames))
+                    {
+                        frames = new HashSet<int>();
+                        framesBySubject[tile.Subject] = frames;
+                    }
+
+                    int last = Math.Max(0, tile.Subject.Pelvis.Length - 1);
+                    frames.Add(0);
+                    frames.Add(last);
+                    foreach (int frame in tile.TrajectoryFrames ?? new List<int>()) frames.Add(Mathf.Clamp(frame, 0, last));
+                    if (tile.Presentation == "pose") frames.Add(Mathf.Clamp(tile.Frame, 0, last));
+                    if (tile.TileType == "height_time_track")
+                    {
+                        foreach (int frame in BuildHeightTimePoseFrames(tile.Subject)) frames.Add(Mathf.Clamp(frame, 0, last));
+                    }
+                }
+
+                foreach (KeyValuePair<SubjectPictureData, HashSet<int>> item in framesBySubject)
+                {
+                    List<int> frames = item.Value.OrderBy(frame => frame).ToList();
+                    AnalysisPosePlan plan = BuildAnalysisPosePlan(item.Key, frames);
+                    plans[item.Key] = plan;
+                    var subjectPoses = new Dictionary<int, AnalysisPreviewPose>();
+                    foreach (int frame in frames)
+                    {
+                        // Reuse the source material and color for every pooled pose.
+                        subjectPoses[frame] = CreatePooledOriginalMaterialPose(plan.Get(frame));
+                    }
+                    poses[item.Key] = subjectPoses;
+                }
+            }
+
+            public AnalysisPosePlan GetPlan(SubjectPictureData subject)
+            {
+                return subject != null && plans.TryGetValue(subject, out AnalysisPosePlan plan) ? plan : null;
+            }
+
+            public AnalysisPreviewPose Get(SubjectPictureData subject, int frame)
+            {
+                if (subject == null || !poses.TryGetValue(subject, out Dictionary<int, AnalysisPreviewPose> subjectPoses) ||
+                    !subjectPoses.TryGetValue(frame, out AnalysisPreviewPose pose))
+                {
+                    throw new InvalidOperationException($"Analysis pose pool is missing frame {frame}.");
+                }
+                return pose;
+            }
+
+            public void Dispose()
+            {
+                foreach (Dictionary<int, AnalysisPreviewPose> subjectPoses in poses.Values)
+                    foreach (AnalysisPreviewPose pose in subjectPoses.Values)
+                        pose?.Dispose();
+                foreach (AnalysisPosePlan plan in plans.Values) plan?.Dispose();
+                poses.Clear();
+                plans.Clear();
+            }
+        }
+
+        private sealed class AnalysisPosePlan : IDisposable
         {
             private readonly EvaluatedPosePreview source;
-            private readonly Dictionary<int, TestPoseSnapshot> snapshots;
+            private readonly Dictionary<int, AnalysisPoseSnapshot> snapshots;
 
-            public TestPosePlan(
+            public AnalysisPosePlan(
                 EvaluatedPosePreview source,
-                Dictionary<int, TestPoseSnapshot> snapshots)
+                Dictionary<int, AnalysisPoseSnapshot> snapshots)
             {
                 this.source = source;
                 this.snapshots = snapshots;
             }
 
-            public TestPoseSnapshot Get(int frame)
+            public AnalysisPoseSnapshot Get(int frame)
             {
-                if (snapshots.TryGetValue(frame, out TestPoseSnapshot snapshot)) return snapshot;
+                if (snapshots.TryGetValue(frame, out AnalysisPoseSnapshot snapshot)) return snapshot;
                 return snapshots.Values.First();
             }
 
@@ -507,16 +404,16 @@ namespace KimodoUnityBridge.Command
             }
         }
 
-        private sealed class TestPoseSnapshot
+        private sealed class AnalysisPoseSnapshot
         {
-            private readonly TestTransformSnapshot[] transforms;
+            private readonly AnalysisTransformSnapshot[] transforms;
 
-            private TestPoseSnapshot(
+            private AnalysisPoseSnapshot(
                 GameObject sourcePrefab,
                 Vector3 rootPosition,
                 Quaternion rootRotation,
                 Vector3 rootScale,
-                TestTransformSnapshot[] transforms)
+                AnalysisTransformSnapshot[] transforms)
             {
                 SourcePrefab = sourcePrefab;
                 RootPosition = rootPosition;
@@ -530,21 +427,21 @@ namespace KimodoUnityBridge.Command
             public Quaternion RootRotation { get; }
             public Vector3 RootScale { get; }
 
-            public static TestPoseSnapshot Capture(GameObject source)
+            public static AnalysisPoseSnapshot Capture(GameObject source)
             {
                 Transform root = source.transform;
                 Transform[] all = source.GetComponentsInChildren<Transform>(true);
-                var values = new TestTransformSnapshot[all.Length];
+                var values = new AnalysisTransformSnapshot[all.Length];
                 for (int index = 0; index < all.Length; index++)
                 {
                     Transform transform = all[index];
-                    values[index] = new TestTransformSnapshot(
+                    values[index] = new AnalysisTransformSnapshot(
                         GetTransformPath(root, transform),
                         transform.localPosition,
                         transform.localRotation,
                         transform.localScale);
                 }
-                return new TestPoseSnapshot(
+                return new AnalysisPoseSnapshot(
                     source,
                     root.position,
                     root.rotation,
@@ -556,7 +453,7 @@ namespace KimodoUnityBridge.Command
             {
                 target.transform.SetPositionAndRotation(RootPosition, RootRotation);
                 target.transform.localScale = RootScale;
-                foreach (TestTransformSnapshot value in transforms)
+                foreach (AnalysisTransformSnapshot value in transforms)
                 {
                     Transform transform = FindTransform(target.transform, value.Path);
                     if (transform == null) continue;
@@ -586,9 +483,9 @@ namespace KimodoUnityBridge.Command
             }
         }
 
-        private readonly struct TestTransformSnapshot
+        private readonly struct AnalysisTransformSnapshot
         {
-            public TestTransformSnapshot(
+            public AnalysisTransformSnapshot(
                 string path,
                 Vector3 localPosition,
                 Quaternion localRotation,
@@ -606,44 +503,6 @@ namespace KimodoUnityBridge.Command
             public Vector3 LocalScale { get; }
         }
 
-        private readonly struct PictureLayout
-        {
-            private PictureLayout(int tileColumns, int tileRows, int tileSize)
-            {
-                TileColumns = Math.Max(1, tileColumns);
-                TileRows = Math.Max(1, tileRows);
-                TileSize = Math.Max(1, tileSize);
-            }
-            public int TileColumns { get; }
-            public int TileRows { get; }
-            public int TileSize { get; }
-
-            public static PictureLayout ForLevel(int tileColumns, bool splitHighRows, int requestedTileSize)
-            {
-                // Keep one composite within Unity's texture limit while retaining
-                // the largest readable tile size for shorter animations.
-                int maxTextureSize = Mathf.Max(1, SystemInfo.maxTextureSize);
-                int maxTileSize = Mathf.Max(1, maxTextureSize / Math.Max(1, tileColumns));
-                int tileSize = Mathf.Clamp(requestedTileSize, 1, maxTileSize);
-                return new PictureLayout(tileColumns, splitHighRows ? 2 : 1, tileSize);
-            }
-        }
-
-        private readonly struct TrajectoryScale
-        {
-            public TrajectoryScale(float minSpeed, float maxSpeed, float minAcceleration, float maxAcceleration)
-            {
-                MinSpeed = minSpeed;
-                MaxSpeed = maxSpeed;
-                MinAcceleration = minAcceleration;
-                MaxAcceleration = maxAcceleration;
-            }
-            public float MinSpeed { get; }
-            public float MaxSpeed { get; }
-            public float MinAcceleration { get; }
-            public float MaxAcceleration { get; }
-        }
-
         private sealed class AnalysisCacheRecord
         {
             public string Id;
@@ -656,7 +515,6 @@ namespace KimodoUnityBridge.Command
             public double End;
             public DateTime CreatedAtUtc;
             public JObject Analysis;
-            public JArray Poses;
             public string MotionPath;
             public string AnimationId;
             public string AnimationName;
@@ -674,7 +532,6 @@ namespace KimodoUnityBridge.Command
                 ["animation_id"] = AnimationId ?? string.Empty,
                 ["animation_name"] = AnimationName ?? string.Empty,
                 ["input_signature"] = InputSignature ?? string.Empty,
-                ["poses"] = Poses?.DeepClone() ?? new JArray(),
                 ["analysis"] = Analysis?.DeepClone() ?? new JObject(),
                 ["pictures"] = Pictures?.DeepClone() ?? new JObject(),
                 ["root_trajectory"] = RootTrajectory?.DeepClone() ?? new JObject()
@@ -691,7 +548,6 @@ namespace KimodoUnityBridge.Command
                 AnimationId = json.Value<string>("animation_id"),
                 AnimationName = json.Value<string>("animation_name"),
                 InputSignature = json.Value<string>("input_signature"),
-                Poses = json["poses"] as JArray ?? json["analysis"]?["poses"] as JArray ?? new JArray(),
                 Analysis = json["analysis"] as JObject ?? new JObject(),
                 Pictures = json["pictures"] as JObject ?? new JObject(),
                 RootTrajectory = json["root_trajectory"] as JObject ?? new JObject()

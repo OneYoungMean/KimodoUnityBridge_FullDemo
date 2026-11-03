@@ -11,13 +11,6 @@ using Debug = UnityEngine.Debug;
 
 namespace KimodoBridge
 {
-    // Runtime bridge result marker.  Result storage and compatibility aliases
-    // live on KimodoGenerationResultDto so bridge and pipeline boundaries share
-    // one representation.
-    public sealed class KimodoBridgeGenerationResult : KimodoGenerationResultDto
-    {
-    }
-
     public sealed class KimodoBridgeKmbAttachment
     {
         public int Index { get; internal set; }
@@ -28,11 +21,12 @@ namespace KimodoBridge
         public int EndFrameExclusive { get; internal set; }
     }
 
-    public sealed class KimodoBridgeService : IDisposable
+    public sealed class KimodoBridgeService : IDisposable, IKimodoGenerationTransport, IKimodoModelConfigurationTransport
     {
         // The editor command job id is propagated to the TCP task so status
         // queries can use one stable identifier across both layers.
         internal static readonly AsyncLocal<string> GenerationTaskIdContext = new AsyncLocal<string>();
+        internal static readonly AsyncLocal<Action<string>> GenerationRequestPayloadContext = new AsyncLocal<Action<string>>();
         private sealed class ActiveLogPump
         {
             public string Path = string.Empty;
@@ -44,6 +38,7 @@ namespace KimodoBridge
             public string RuntimeRoot = string.Empty;
             public string LauncherPath = string.Empty;
             public bool? EnableKimodoStaticGraph;
+            public string MocapRepositoryPath = string.Empty;
         }
 
         private enum ExistingServerProbeResult
@@ -108,7 +103,7 @@ namespace KimodoBridge
         public bool IsDisposed => Volatile.Read(ref disposeStarted) != 0;
         public string TextEncoderStatusMessage => Volatile.Read(ref textEncoderStatusMessage) ?? string.Empty;
 
-        public Task<KimodoBridgeGenerationResult> GenerateAsync(
+        public Task<KimodoGenerationResultDto> GenerateAsync(
             string prompt,
             float durationSeconds,
             CancellationToken token = default)
@@ -123,11 +118,29 @@ namespace KimodoBridge
                 token);
         }
 
-        public Task<KimodoBridgeGenerationResult> GenerateAsync(
+        public Task<KimodoGenerationResultDto> GenerateAsync(
             KimodoGenerationRequestDto request,
             CancellationToken token = default)
         {
             return GenerateAsync(request, progress: null, token);
+        }
+
+        Task<KimodoGenerationResultDto> IKimodoGenerationTransport.SendGenerateAsync(
+            KimodoGenerationRequestDto request,
+            Action<string> progress,
+            CancellationToken token)
+        {
+            return GenerateAsync(request, progress, token);
+        }
+
+        Task<JObject> IKimodoModelConfigurationTransport.ListModelConfigurationsAsync(
+            string model,
+            string textEncoderMode,
+            string modelsRoot,
+            Action<string> progress,
+            CancellationToken token)
+        {
+            return ListModelConfigurationsAsync(model, textEncoderMode, modelsRoot, progress, token);
         }
 
         internal async Task WarmupAsync(
@@ -156,6 +169,19 @@ namespace KimodoBridge
             return RequireDoneResponse(response, "Bridge model list returned no response.", "Bridge model list request failed.");
         }
 
+        internal async Task<JObject> AnalyzeMocapAsync(
+            string kind,
+            string mediaPath,
+            string person,
+            CancellationToken token)
+        {
+            ThrowIfStopRequested();
+            await EnsureConnectedAsync(null, token).ConfigureAwait(false);
+            BridgeProtocolResponse response = await protocolClient.AnalyzeMocapAsync(
+                currentHost, currentPort, kind, mediaPath, person, token).ConfigureAwait(false);
+            return RequireDoneResponse(response, "QuickServer returned no Mocap analysis.", "Mocap analysis failed.");
+        }
+
         public async Task<JObject> GetStatusAsync(string taskId, CancellationToken token = default)
         {
             ThrowIfStopRequested();
@@ -164,8 +190,7 @@ namespace KimodoBridge
                 currentHost, currentPort, taskId, token).ConfigureAwait(false);
             return response?.Header ?? new JObject { ["status"] = "idle" };
         }
-
-        internal async Task<KimodoBridgeGenerationResult> GenerateAsync(
+        internal async Task<KimodoGenerationResultDto> GenerateAsync(
             KimodoGenerationRequestDto request,
             Action<string> progress,
             CancellationToken token)
@@ -246,26 +271,28 @@ namespace KimodoBridge
                 if (string.Equals(outputFormat, "kmb_v1", StringComparison.OrdinalIgnoreCase))
                 {
                     byte[] payload = response.BinaryPayload ?? Array.Empty<byte>();
+                    byte[] motionPayload = payload;
                     KimodoRawMotionData motionData = null;
-                    if (payload.Length > 0 &&
-                        !KimodoRawMotionUtility.TryParseFlatBuffer(payload, out motionData, out string parseError))
+                    if (motionPayload.Length > 0 &&
+                        !KimodoRawMotionUtility.TryParseFlatBuffer(motionPayload, out motionData, out string parseError))
                     {
                         throw new Exception($"Failed to parse bridge KMB: {parseError}");
                     }
                     ReportProgress(progress, "Bridge generation complete.");
-                    return new KimodoBridgeGenerationResult
+                    return new KimodoGenerationResultDto
                     {
-                        MotionData = motionData,
-                        MotionBytes = payload,
-                        MotionFormat = outputFormat,
-                        RawStatus = status,
-                        Message = string.IsNullOrWhiteSpace(responseMessage) ? "Bridge generation complete." : responseMessage,
-                        MotionRepFingerprint = header?.Value<string>("motion_rep_fingerprint") ?? string.Empty,
-                        ResolvedSeed = header?.Value<int?>("resolved_seed"),
-                        StartFrame = header?.Value<int?>("start_frame") ?? 0,
-                        EndFrameExclusive = header?.Value<int?>("end_frame_exclusive") ?? 0,
-                        ArdyPlaybackReserveSeconds = header?.Value<double?>("ardy_playback_reserve_seconds"),
-                        AnalysisJson = analysisJson
+                        motionData = motionData,
+                        motionBytes = motionPayload,
+                        mp4Path = header?.Value<string>("mp4_path"),
+                        motionFormat = outputFormat,
+                        rawStatus = status,
+                        message = string.IsNullOrWhiteSpace(responseMessage) ? "Bridge generation complete." : responseMessage,
+                        motionRepFingerprint = header?.Value<string>("motion_rep_fingerprint") ?? string.Empty,
+                        resolvedSeed = header?.Value<int?>("resolved_seed"),
+                        startFrame = header?.Value<int?>("start_frame") ?? 0,
+                        endFrameExclusive = header?.Value<int?>("end_frame_exclusive") ?? 0,
+                        ardyPlaybackReserveSeconds = header?.Value<double?>("ardy_playback_reserve_seconds"),
+                        analysisJson = analysisJson
                     };
                 }
 
@@ -276,19 +303,20 @@ namespace KimodoBridge
                         response?.BinaryPayload ?? Array.Empty<byte>());
                     KimodoBridgeKmbAttachment first = attachments.Count > 0 ? attachments[0] : null;
                     ReportProgress(progress, "Bridge KMB analysis complete.");
-                    return new KimodoBridgeGenerationResult
+                    return new KimodoGenerationResultDto
                     {
                         // Preserve the existing single-motion contract for callers that send
                         // exactly one ClipConstraint, while exposing every attachment above.
-                        MotionData = first?.MotionData,
-                        MotionBytes = first?.MotionBytes,
-                        MotionFormat = outputFormat,
-                        RawStatus = status,
-                        Message = string.IsNullOrWhiteSpace(responseMessage) ? "Bridge KMB analysis complete." : responseMessage,
-                        StartFrame = first?.StartFrame ?? 0,
-                        EndFrameExclusive = first?.EndFrameExclusive ?? 0,
-                        AnalysisJson = analysisJson,
-                        KmbAttachments = attachments
+                        motionData = first?.MotionData,
+                        motionBytes = first?.MotionBytes,
+                        motionFormat = outputFormat,
+                        rawStatus = status,
+                        message = string.IsNullOrWhiteSpace(responseMessage) ? "Bridge KMB analysis complete." : responseMessage,
+                        startFrame = first?.StartFrame ?? 0,
+                        endFrameExclusive = first?.EndFrameExclusive ?? 0,
+                        analysisJson = analysisJson,
+                        mp4Path = header?.Value<string>("mp4_path"),
+                        kmbAttachments = attachments
                     };
                 }
 
@@ -298,13 +326,14 @@ namespace KimodoBridge
                 }
 
                 ReportProgress(progress, "Bridge generation complete.");
-                return new KimodoBridgeGenerationResult
+                return new KimodoGenerationResultDto
                 {
-                    MotionJsonCompact = motionJson,
-                    MotionFormat = string.IsNullOrWhiteSpace(outputFormat) ? "json_compact" : outputFormat,
-                    RawStatus = status,
-                    Message = string.IsNullOrWhiteSpace(responseMessage) ? "Bridge generation complete." : responseMessage,
-                    AnalysisJson = analysisJson
+                    motionJsonCompact = motionJson,
+                    mp4Path = header?.Value<string>("mp4_path"),
+                    motionFormat = string.IsNullOrWhiteSpace(outputFormat) ? "json_compact" : outputFormat,
+                    rawStatus = status,
+                    message = string.IsNullOrWhiteSpace(responseMessage) ? "Bridge generation complete." : responseMessage,
+                    analysisJson = analysisJson
                 };
             }
             catch (IOException exception) when (requestSessionVersion != Volatile.Read(ref sessionVersion))
@@ -432,6 +461,23 @@ namespace KimodoBridge
 
         private async Task EnsureConnectedAsync(Action<string> progress, CancellationToken token)
         {
+            // This method is also reached by synchronous command wrappers. Resolve
+            // all Editor-owned values before the first await so no Unity API call
+            // is made after ConfigureAwait(false) resumes on a worker thread.
+            ResolvedRuntimeContext context = ResolveRuntimeContext();
+#if UNITY_EDITOR
+            if (IsEditorRuntimeSyncRequired(context.RuntimeRoot))
+            {
+                ReportProgress(progress, "Synchronizing QuickServer runtime...");
+                if (!TrySyncEditorRuntimeRoot(context.RuntimeRoot, out string syncMessage))
+                {
+                    throw new InvalidOperationException(syncMessage);
+                }
+
+                context = ResolveRuntimeContext();
+                ReportProgress(progress, syncMessage);
+            }
+#endif
             await lifecycleGate.WaitAsync(token).ConfigureAwait(false);
             try
             {
@@ -448,7 +494,6 @@ namespace KimodoBridge
                         return;
                     }
 
-                    ResolvedRuntimeContext context = ResolveRuntimeContext();
                     currentRuntimeRoot = context.RuntimeRoot;
 
                     if (isDefaultSession)
@@ -483,26 +528,12 @@ namespace KimodoBridge
                     if (!startupInProgress)
                     {
 
-#if UNITY_EDITOR
-                        if (IsEditorRuntimeSyncRequired(context.RuntimeRoot))
-                        {
-                            ReportProgress(progress, "Synchronizing QuickServer runtime...");
-                            if (!TrySyncEditorRuntimeRoot(context.RuntimeRoot, out string syncMessage))
-                            {
-                                throw new InvalidOperationException(syncMessage);
-                            }
-
-                            context = ResolveRuntimeContext();
-                            currentRuntimeRoot = context.RuntimeRoot;
-                            ReportProgress(progress, syncMessage);
-                        }
-#endif
-
                         StartLogPumpsIfNeeded(currentRuntimeRoot, creationContext);
                         processManager.Start(
                             context.LauncherPath,
                             ownerProcessId: Process.GetCurrentProcess().Id,
-                            enableKimodoStaticGraph: context.EnableKimodoStaticGraph);
+                            enableKimodoStaticGraph: context.EnableKimodoStaticGraph,
+                            mocapRepositoryPath: context.MocapRepositoryPath);
                         ReportProgress(progress, "Bridge process launched.");
                     }
                     else
@@ -859,7 +890,6 @@ namespace KimodoBridge
                     BridgeRuntimeDefaults.LogPumpWaitFileTimeoutMs * 3,
                     BridgeRuntimeDefaults.LogPumpMissingFilePollMinMs,
                     BridgeRuntimeDefaults.LogPumpMissingFilePollMinMs);
-                StartLogPumpForPath(pumps, Path.Combine(root, "log", "run_server.log"), "[RunServer]");
                 StartLogPumpForPath(pumps, Path.Combine(root, "log", "setup.log"), "[Setup]");
             }
         }
@@ -872,8 +902,7 @@ namespace KimodoBridge
             lock (LogPumpLock)
             {
                 if (!SharedLogPumps.TryGetValue(root, out List<ActiveLogPump> pumps)) return;
-                StartLogPumpForPath(pumps, Path.Combine(root, "log", "bridge_server.log"), "[BridgeServer]");
-                StartLogPumpForPath(pumps, BridgeEndpointResolver.ResolveAttachLogPath(root), "[Bridge]");
+                StartLogPumpForPath(pumps, BridgeEndpointResolver.ResolveAttachLogPath(root), "[BridgeServer]");
             }
         }
 
@@ -1099,9 +1128,11 @@ namespace KimodoBridge
         {
             string runtimeRoot;
             bool? enableKimodoStaticGraph = null;
+            string mocapRepositoryPath = string.Empty;
 #if UNITY_EDITOR
             runtimeRoot = ResolveEditorRuntimeRootOrThrow();
             enableKimodoStaticGraph = ResolveEditorKimodoStaticGraphEnabled();
+            mocapRepositoryPath = KimodoEditorRuntimeHooks.ResolveMocapRepositoryPath();
 #else
             runtimeRoot = KimodoRuntimeBootstrapUtility.EnsureRuntimeRootForCurrentMode(
                 Path.GetFullPath(Path.Combine(Application.streamingAssetsPath, "NvlabKimodoQuickServer~")));
@@ -1122,7 +1153,8 @@ namespace KimodoBridge
             {
                 RuntimeRoot = Path.GetFullPath(runtimeRoot),
                 LauncherPath = Path.GetFullPath(launcherPath),
-                EnableKimodoStaticGraph = enableKimodoStaticGraph
+                EnableKimodoStaticGraph = enableKimodoStaticGraph,
+                MocapRepositoryPath = mocapRepositoryPath
             };
         }
 
@@ -1155,3 +1187,4 @@ namespace KimodoBridge
 #endif
     }
 }
+

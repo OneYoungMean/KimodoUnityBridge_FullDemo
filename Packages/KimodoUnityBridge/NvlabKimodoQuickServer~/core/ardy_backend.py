@@ -1706,6 +1706,14 @@ def execute_stream_generate(
     from core import kimodo_runtime
     fixed_length = "duration" in request
     analysis_option = request.get("analysis_option")
+    # Keep ARDY's historical KMB default for raw TCP callers that omit the
+    # output format; MP4 is an optional extra output.
+    output_mp4 = request.get("output_mp4") is True
+    output_format = (
+        kimodo_runtime._resolve_requested_output_format(request)
+        if "output_format" in request
+        else "kmb_v1"
+    )
     if fixed_length:
         try:
             duration_seconds = float(request.get("duration"))
@@ -1745,10 +1753,14 @@ def execute_stream_generate(
             int(metadata["end_frame_exclusive"]) - int(metadata["start_frame"]),
         )
         response, payload = kimodo_runtime._finalize_generation_result(
-            {"analysis_option": analysis_option},
+            {
+                "analysis_option": analysis_option,
+                "output_format": output_format,
+                "output_mp4": output_mp4,
+            },
             model,
             output,
-            output_format="kmb_v1",
+            output_format=output_format,
             metadata={
                 "motion_rep_fingerprint": profile.motion_rep_fingerprint,
                 "resolved_seed": session.resolved_seed,

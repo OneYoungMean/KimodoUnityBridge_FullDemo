@@ -20,34 +20,12 @@ namespace KimodoBridge
             }
 
             string logDir = Path.Combine(runtimeRoot, "log");
+            string bridgeServerLog = Path.Combine(logDir, "bridge_server.log");
             try
             {
-                if (Directory.Exists(logDir))
+                if (Directory.Exists(logDir) && File.Exists(bridgeServerLog))
                 {
-                    string bridgeServerLog = Path.Combine(logDir, "bridge_server.log");
-                    if (File.Exists(bridgeServerLog))
-                    {
-                        return bridgeServerLog;
-                    }
-
-                    string runServerLog = Path.Combine(logDir, "run_server.log");
-                    if (File.Exists(runServerLog))
-                    {
-                        return runServerLog;
-                    }
-
-                    string bridgeRuntimeLog = Path.Combine(logDir, "test_input_log.log");
-                    if (File.Exists(bridgeRuntimeLog))
-                    {
-                        return bridgeRuntimeLog;
-                    }
-
-                    string[] bridgeLogs = Directory.GetFiles(logDir, "unity_bridge_*.log");
-                    if (bridgeLogs.Length > 0)
-                    {
-                        Array.Sort(bridgeLogs, (a, b) => File.GetLastWriteTimeUtc(b).CompareTo(File.GetLastWriteTimeUtc(a)));
-                        return bridgeLogs[0];
-                    }
+                    return bridgeServerLog;
                 }
             }
             catch
@@ -167,13 +145,8 @@ namespace KimodoBridge
                     return true;
                 }
 
-                if (!TryParsePort(firstLine, out port))
-                {
-                    error = $"invalid serverport content: '{firstLine}'";
-                    return false;
-                }
-
-                return true;
+                error = $"invalid serverport content: '{firstLine}'";
+                return false;
             }
             catch (Exception e)
             {

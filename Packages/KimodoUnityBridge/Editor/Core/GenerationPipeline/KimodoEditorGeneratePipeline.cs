@@ -30,7 +30,7 @@ namespace KimodoBridge.Editor
             ThrowIfCanceled(request);
             request.Progress?.Invoke(KimodoBridgeCommandStage.InvokeBackend, "Generating motion...");
 
-            KimodoBridgeCommandResult runtimeResult = await ExecuteRuntimePipelineAsync(request, prompt, modelName);
+            KimodoGenerationResultDto runtimeResult = await ExecuteRuntimePipelineAsync(request, prompt, modelName);
             return BakeRuntimeResult(request, prompt, modelName, runtimeResult);
         }
 
@@ -38,7 +38,7 @@ namespace KimodoBridge.Editor
             KimodoEditorGenerateRequest request,
             string prompt,
             string modelName,
-            KimodoBridgeCommandResult runtimeResult)
+            KimodoGenerationResultDto runtimeResult)
         {
             if (request == null)
             {
@@ -49,7 +49,9 @@ namespace KimodoBridge.Editor
                 throw new InvalidOperationException("Runtime generation returned null result.");
             }
 
-            string motionJson = runtimeResult.MotionJsonCompact;
+            string motionJson = string.IsNullOrWhiteSpace(request.BakeMotionJsonCompact)
+                ? runtimeResult.motionJsonCompact
+                : request.BakeMotionJsonCompact;
             if (string.IsNullOrWhiteSpace(motionJson))
             {
                 throw new InvalidOperationException("No motion json found in runtime generation result.");
@@ -70,9 +72,21 @@ namespace KimodoBridge.Editor
                     KimodoMotionModelProfiles.ResolveBakeSkeletonType(modelName),
                     modelName,
                     null,
-                    out string bakeError))
+                    out string bakeError,
+                    hasRealCoverageSample: !string.IsNullOrWhiteSpace(request.BakeMotionJsonCompact)))
             {
                 throw new InvalidOperationException(string.IsNullOrWhiteSpace(bakeError) ? "Bake failed." : bakeError);
+            }
+
+            // Normalize only the horizontal root path before Humanoid conversion.
+            // Keep generated root height in the muscle curves and compensate for
+            // its first-frame value in the Timeline Clip offset.
+            if (request.UseRelativeOffset)
+            {
+                KimodoPlayableClipGenerationHostService.NormalizeRootPathToFrameZero(
+                    request.TargetClip,
+                    out request.RelativeRootOriginY,
+                    out request.RelativeRootOriginRotation);
             }
 
             ThrowIfCanceled(request);
@@ -101,7 +115,7 @@ namespace KimodoBridge.Editor
             if (outputPlan.SkipRetarget)
             {
                 TryFilterGeneratedBoneClip(request.TargetClip, outputPlan.TargetRetargetAvatar, outputPlan.CurveFilterOptions);
-                KimodoFootContactTrackUtility.Apply(request.TargetClip, runtimeResult.MotionData);
+                ApplyGeneratedFootContacts(request, runtimeResult.motionData);
                 request.Progress?.Invoke(KimodoBridgeCommandStage.Retarget, "Skipping retarget: binding hierarchy already matches clip bindings.");
                 return CompleteBakedOutput(request, prompt, modelName, runtimeResult, outputPlan, rawBoneClip);
             }
@@ -127,7 +141,7 @@ namespace KimodoBridge.Editor
             if (outputPlan.ExportMuscleClip)
             {
                 request.TargetClip.EnsureQuaternionContinuity();
-                KimodoFootContactTrackUtility.Apply(request.TargetClip, runtimeResult.MotionData);
+                ApplyGeneratedFootContacts(request, runtimeResult.motionData);
                 EditorUtility.SetDirty(request.TargetClip);
                 return CompleteBakedOutput(request, prompt, modelName, runtimeResult, outputPlan, rawBoneClip);
             }
@@ -162,13 +176,13 @@ namespace KimodoBridge.Editor
 
             ThrowIfCanceled(request);
             TryFilterGeneratedBoneClip(request.TargetClip, outputPlan.TargetRetargetAvatar, outputPlan.CurveFilterOptions);
-            KimodoFootContactTrackUtility.Apply(request.TargetClip, runtimeResult.MotionData);
+            ApplyGeneratedFootContacts(request, runtimeResult.motionData);
             ThrowIfCanceled(request);
 
             return CompleteBakedOutput(request, prompt, modelName, runtimeResult, outputPlan, rawBoneClip);
         }
 
-        internal static async Task<KimodoBridgeCommandResult> ExecuteRuntimePipelineAsync(
+        internal static async Task<KimodoGenerationResultDto> ExecuteRuntimePipelineAsync(
             KimodoEditorGenerateRequest request,
             string prompt,
             string modelName)
@@ -182,77 +196,107 @@ namespace KimodoBridge.Editor
             return await ExecuteKimodoRuntimePipelineAsync(request, prompt, modelName);
         }
 
-        private static async Task<KimodoBridgeCommandResult> ExecuteKimodoRuntimePipelineAsync(
+        private static async Task<KimodoGenerationResultDto> ExecuteKimodoRuntimePipelineAsync(
             KimodoEditorGenerateRequest request,
             string prompt,
             string modelName)
         {
-            KimodoBridgeCommandRequest commandRequest = CreateRuntimePipelineRequest(request, prompt, modelName);
+            KimodoGenerationRequestDto commandRequest = CreateRuntimePipelineRequest(request, prompt, modelName);
             request.Progress?.Invoke(KimodoBridgeCommandStage.InvokeBackend, "Generating Kimodo motion...");
             var pipeline = new KimodoBridgeCommand();
-            KimodoBridgeCommandResult result = await pipeline.ExecuteAsync(
+            KimodoGenerationResultDto result = await pipeline.ExecuteAsync(
                 commandRequest,
                 (stage, message) => request.Progress?.Invoke(stage, message),
                 request.Token);
-            if (result?.MotionData == null || result.MotionData.FrameCount != request.EffectiveRuntimeFrameCount)
+            if (result?.motionData == null || result.motionData.FrameCount != request.EffectiveBackendRuntimeFrameCount)
             {
                 throw new InvalidOperationException(
-                    $"Kimodo returned {result?.MotionData?.FrameCount ?? 0} frames; expected {request.EffectiveRuntimeFrameCount}.");
+                    $"Kimodo returned {result?.motionData?.FrameCount ?? 0} frames; expected {request.EffectiveBackendRuntimeFrameCount}.");
             }
+            request.DebugRuntimeMotion = request.DebugCaptureUntrimmedMotion
+                ? result.motionData
+                : null;
             return TrimRuntimeResultForOutput(request, result, modelName);
         }
 
-        private static async Task<KimodoBridgeCommandResult> ExecuteArdyRuntimePipelineAsync(
+        private static async Task<KimodoGenerationResultDto> ExecuteArdyRuntimePipelineAsync(
             KimodoEditorGenerateRequest request,
             string prompt,
             KimodoMotionModelProfile profile)
         {
             byte[] historyPayload = BuildInitialArdyHistoryPayload(request, profile);
 
-            KimodoBridgeCommandRequest commandRequest = CreateRuntimePipelineRequest(request, prompt, profile.ModelName);
-            commandRequest.GenerationRequest.time_as_double = 0.0;
-            commandRequest.GenerationRequest.seed = request.EffectiveSeed;
-            commandRequest.GenerationRequest.steps = KimodoMotionModelProfiles.ResolveArdyProtocolSteps(
+            KimodoGenerationRequestDto commandRequest = CreateRuntimePipelineRequest(request, prompt, profile.ModelName);
+            commandRequest.time_as_double = 0.0;
+            commandRequest.seed = request.EffectiveSeed;
+            commandRequest.steps = KimodoMotionModelProfiles.ResolveArdyProtocolSteps(
                 request.DiffusionSteps,
                 profile);
-            PrependArdyHistoryConstraint(commandRequest.GenerationRequest.constraints.clips, historyPayload, profile);
-            commandRequest.GenerationRequest.ardy_playback_reserve_seconds = 0.0;
+            PrependArdyHistoryConstraint(commandRequest.constraints.clips, historyPayload, profile);
+            commandRequest.ardy_playback_reserve_seconds = 0.0;
 
             request.Progress?.Invoke(KimodoBridgeCommandStage.InvokeBackend, "Generating complete ARDY KMB...");
             var pipeline = new KimodoBridgeCommand();
-            KimodoBridgeCommandResult directResult = await pipeline.ExecuteAsync(
+            KimodoGenerationResultDto directResult = await pipeline.ExecuteAsync(
                 commandRequest,
                 (stage, message) => request.Progress?.Invoke(stage, message),
                 request.Token);
             ValidateArdyResult(directResult, profile, request.EffectiveSeed);
-            KimodoRawMotionData sourceMotion = directResult.MotionData;
+            KimodoRawMotionData sourceMotion = directResult.motionData;
+            request.DebugRuntimeMotion = request.DebugCaptureUntrimmedMotion
+                ? sourceMotion
+                : null;
             byte[] sourcePayload = KimodoRawMotionUtility.ToFlatBuffer(sourceMotion, profile.ModelName);
-            return new KimodoBridgeCommandResult
+            return new KimodoGenerationResultDto
             {
-                MotionJsonCompact = KimodoRawMotionUtility.ToCompactJson(sourceMotion),
-                MotionData = sourceMotion,
-                MotionBytes = sourcePayload,
-                MotionFormat = "kmb_v1",
-                Message = "ARDY generation complete.",
-                RawStatus = "done",
-                MotionRepFingerprint = profile.MotionRepFingerprint,
-                ResolvedSeed = directResult.ResolvedSeed,
-                AnalysisJson = directResult.AnalysisJson
+                motionJsonCompact = KimodoRawMotionUtility.ToCompactJson(sourceMotion),
+                motionData = sourceMotion,
+                motionBytes = sourcePayload,
+                motionFormat = "kmb_v1",
+                message = "ARDY generation complete.",
+                rawStatus = "done",
+                motionRepFingerprint = profile.MotionRepFingerprint,
+                resolvedSeed = directResult.resolvedSeed,
+                analysisJson = directResult.analysisJson
             };
         }
 
-        internal static KimodoBridgeCommandResult TrimRuntimeResultForOutput(
+        internal static KimodoGenerationResultDto TrimRuntimeResultForOutput(
             KimodoEditorGenerateRequest request,
-            KimodoBridgeCommandResult result,
+            KimodoGenerationResultDto result,
             string modelName)
         {
-            if (request == null || result == null || request.RuntimeTrimStartFrame <= 0)
+            if (request == null || result == null)
+            {
+                return result;
+            }
+
+            if (request.RequestEndpointSample && string.IsNullOrWhiteSpace(request.BakeMotionJsonCompact))
+            {
+                if (!KimodoRawMotionUtility.TrySlice(
+                        result.motionData,
+                        request.RuntimeTrimStartFrame,
+                        request.TargetFrameCount + 1,
+                        out KimodoRawMotionData bakeMotion,
+                        out string bakeSliceError))
+                {
+                    throw new InvalidOperationException(
+                        $"The generated runtime did not contain the real endpoint sample: {bakeSliceError}");
+                }
+
+                request.BakeMotionData = bakeMotion;
+                request.BakeMotionJsonCompact = KimodoRawMotionUtility.ToCompactJson(bakeMotion);
+            }
+
+            if (!request.RequestEndpointSample &&
+                request.RuntimeTrimStartFrame <= 0 &&
+                request.EffectiveRuntimeFrameCount == request.TargetFrameCount)
             {
                 return result;
             }
 
             if (!KimodoRawMotionUtility.TrySlice(
-                    result.MotionData,
+                    result.motionData,
                     request.RuntimeTrimStartFrame,
                     request.TargetFrameCount,
                     out KimodoRawMotionData trimmed,
@@ -261,22 +305,22 @@ namespace KimodoBridge.Editor
                 throw new InvalidOperationException(trimError);
             }
 
-            result.MotionData = trimmed;
-            result.MotionJsonCompact = KimodoRawMotionUtility.ToCompactJson(trimmed);
-            result.AnalysisJson = TrimAnalysisForOutput(
-                result.AnalysisJson,
+            result.motionData = trimmed;
+            result.motionJsonCompact = KimodoRawMotionUtility.ToCompactJson(trimmed);
+            result.analysisJson = TrimAnalysisForOutput(
+                result.analysisJson,
                 request.RuntimeTrimStartFrame,
                 request.TargetFrameRate,
                 trimmed.FrameCount);
-            if (result.MotionBytes != null ||
-                string.Equals(result.MotionFormat, "kmb_v1", StringComparison.OrdinalIgnoreCase))
+            if (result.motionBytes != null ||
+                string.Equals(result.motionFormat, "kmb_v1", StringComparison.OrdinalIgnoreCase))
             {
-                result.MotionBytes = KimodoRawMotionUtility.ToFlatBuffer(trimmed, modelName);
+                result.motionBytes = KimodoRawMotionUtility.ToFlatBuffer(trimmed, modelName);
             }
-            if (result.EndFrameExclusive > result.StartFrame)
+            if (result.endFrameExclusive > result.startFrame)
             {
-                result.StartFrame += request.RuntimeTrimStartFrame;
-                result.EndFrameExclusive = result.StartFrame + trimmed.FrameCount;
+                result.startFrame += request.RuntimeTrimStartFrame;
+                result.endFrameExclusive = result.startFrame + trimmed.FrameCount;
             }
             return result;
         }
@@ -285,7 +329,7 @@ namespace KimodoBridge.Editor
             KimodoEditorGenerateRequest request,
             string prompt,
             string modelName,
-            KimodoBridgeCommandResult runtimeResult,
+            KimodoGenerationResultDto runtimeResult,
             KimodoEditorGenerateOutputPlan outputPlan,
             AnimationClip rawBoneClip)
         {
@@ -295,6 +339,15 @@ namespace KimodoBridge.Editor
                 runtimeResult,
                 outputPlan,
                 rawBoneClip);
+            if (request.UseRelativeOffset &&
+                KimodoPlayableClipGenerationHostService.TryReadRootOriginY(
+                    request.TargetClip,
+                    out float finalRootOriginY))
+            {
+                // Humanoid conversion can express root height in avatar space;
+                // use the final output curve when compensating the Timeline offset.
+                request.RelativeRootOriginY = finalRootOriginY;
+            }
             KimodoEditorClipWritebackService.FlushWritebackAssets();
             if (rawBoneClip != null && string.IsNullOrWhiteSpace(AssetDatabase.GetAssetPath(rawBoneClip)))
             {
@@ -305,19 +358,35 @@ namespace KimodoBridge.Editor
             return Complete(
                 request,
                 prompt,
-                runtimeResult.MotionJsonCompact,
-                runtimeResult.MotionBytes,
-                runtimeResult.StartFrame,
-                runtimeResult.EndFrameExclusive,
+                runtimeResult.motionJsonCompact,
+                runtimeResult.motionBytes,
+                runtimeResult.startFrame,
+                runtimeResult.endFrameExclusive,
                 request.TargetClip,
                 rawBoneClip,
-                runtimeResult.AnalysisJson);
+                runtimeResult.analysisJson);
+        }
+
+        private static void ApplyGeneratedFootContacts(
+            KimodoEditorGenerateRequest request,
+            KimodoRawMotionData outputMotion)
+        {
+            if (request?.BakeMotionData != null && request.BakeMotionData.HasFootContacts)
+            {
+                KimodoFootContactTrackUtility.Apply(
+                    request.TargetClip,
+                    request.BakeMotionData,
+                    appendCoverageHoldFrame: false);
+                return;
+            }
+
+            KimodoFootContactTrackUtility.Apply(request?.TargetClip, outputMotion);
         }
 
         private static void FinalizeArdyLeadingGuardOutput(
             KimodoEditorGenerateRequest request,
             string modelName,
-            KimodoBridgeCommandResult runtimeResult,
+            KimodoGenerationResultDto runtimeResult,
             KimodoEditorGenerateOutputPlan outputPlan,
             AnimationClip rawBoneClip)
         {
@@ -353,14 +422,14 @@ namespace KimodoBridge.Editor
             }
 
             TrimRuntimeResultForOutput(request, runtimeResult, modelName);
-            KimodoFootContactTrackUtility.Apply(request.TargetClip, runtimeResult.MotionData);
+            KimodoFootContactTrackUtility.Apply(request.TargetClip, runtimeResult.motionData);
             EditorUtility.SetDirty(request.TargetClip);
 
             if (rawBoneClip != null && !ReferenceEquals(rawBoneClip, request.TargetClip))
             {
                 if (!KimodoRetargetToolsEditor.BakeIntoClip(
                         rawBoneClip,
-                        runtimeResult.MotionJsonCompact,
+                        runtimeResult.motionJsonCompact,
                         KimodoMotionModelProfiles.ResolveBakeSkeletonType(modelName),
                         modelName,
                         null,
@@ -373,7 +442,7 @@ namespace KimodoBridge.Editor
 
             KimodoPlayableClipGenerationSettings.DebugLog(
                 $"[Kimodo][ArdyGuard] trimmed final-target leading guard: " +
-                $"targetAvatar='{samplingAvatar.name}', visibleFrames={runtimeResult.MotionData.FrameCount}.");
+                $"targetAvatar='{samplingAvatar.name}', visibleFrames={runtimeResult.motionData.FrameCount}.");
         }
 
         internal static bool TryTrimRetargetedClipForOutput(
@@ -618,28 +687,28 @@ namespace KimodoBridge.Editor
         }
 
         internal static void ValidateArdyResult(
-            KimodoBridgeCommandResult result,
+            KimodoGenerationResultDto result,
             KimodoMotionModelProfile profile,
             int requestedSeed)
         {
-            if (result?.MotionData == null ||
-                result.MotionData.FrameCount <= 0 ||
-                result.MotionData.JointCount != profile.JointCount ||
-                Mathf.Abs(result.MotionData.FrameRate - profile.SourceFps) > 1e-4f)
+            if (result?.motionData == null ||
+                result.motionData.FrameCount <= 0 ||
+                result.motionData.JointCount != profile.JointCount ||
+                Mathf.Abs(result.motionData.FrameRate - profile.SourceFps) > 1e-4f)
             {
                 throw new InvalidOperationException("ARDY Generate did not return compatible KMB motion.");
             }
-            if (!string.Equals(result.MotionRepFingerprint, profile.MotionRepFingerprint, StringComparison.Ordinal))
+            if (!string.Equals(result.motionRepFingerprint, profile.MotionRepFingerprint, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException("ARDY motion representation fingerprint mismatch.");
             }
-            if (!result.ResolvedSeed.HasValue || result.ResolvedSeed.Value != requestedSeed)
+            if (!result.resolvedSeed.HasValue || result.resolvedSeed.Value != requestedSeed)
             {
                 throw new InvalidOperationException("ARDY resolved_seed mismatch.");
             }
         }
 
-        internal static KimodoBridgeCommandRequest CreateRuntimePipelineRequest(
+        internal static KimodoGenerationRequestDto CreateRuntimePipelineRequest(
             KimodoEditorGenerateRequest request,
             string prompt,
             string modelName)
@@ -656,7 +725,7 @@ namespace KimodoBridge.Editor
             var generationRequest = new KimodoGenerationRequestDto
             {
                 prompt = prompt ?? string.Empty,
-                duration = request.EffectiveRuntimeDurationSeconds,
+                duration = request.EffectiveBackendRuntimeDurationSeconds,
                 seed = request.EffectiveSeed,
                 steps = request.DiffusionSteps,
                 constraints = new KimodoConstraintPayload
@@ -666,20 +735,14 @@ namespace KimodoBridge.Editor
                         ? new List<KimodoClipConstraint>(request.Constraints.clips)
                         : new List<KimodoClipConstraint>()
                 },
-                analysis_option_json = request.AnalysisOptionsJson ?? string.Empty,
                 model = KimodoMotionModelProfiles.NormalizeName(modelName),
                 text_encoder_mode = KimodoTextEncoderModeProtocol.ToProtocolValue(request.TextEncoderMode),
                 simulate_free_vram_gb = KimodoPlayableClipGenerationSettings.instance.KeepCpuForceExperimental ? 0 : (int?)null,
                 models_root = modelsRoot,
-                ardy_history_weight = request.ArdyHistoryWeight,
-                ardy_max_speed = request.ArdyMaxSpeed,
-                ardy_max_acceleration = request.ArdyMaxAcceleration
+                ardy_history_weight = request.ArdyHistoryWeight
             };
 
-            return new KimodoBridgeCommandRequest
-            {
-                GenerationRequest = generationRequest
-            };
+            return generationRequest;
         }
 
         private static void ValidateTargetLength(KimodoEditorGenerateRequest request)
@@ -709,7 +772,7 @@ namespace KimodoBridge.Editor
             request.Progress?.Invoke(KimodoBridgeCommandStage.Finalize, "Finalizing generated assets...");
             request.Progress?.Invoke(KimodoBridgeCommandStage.Completed, "Generation complete.");
 
-            return new KimodoEditorGenerationResult
+            var result = new KimodoEditorGenerationResult
             {
                 ConstraintsPath = string.Empty,
                 Prompt = prompt,
@@ -722,6 +785,9 @@ namespace KimodoBridge.Editor
                 GeneratedClip = generatedClip,
                 RawBoneClip = rawBoneClip,
             };
+            if (request.DebugConstraintPasses != null)
+                result.DebugConstraintPasses.AddRange(request.DebugConstraintPasses);
+            return result;
         }
 
         private static void ThrowIfCanceled(KimodoEditorGenerateRequest request)

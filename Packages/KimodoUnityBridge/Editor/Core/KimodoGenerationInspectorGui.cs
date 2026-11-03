@@ -7,6 +7,8 @@ namespace KimodoBridge.Editor
 {
     internal static class KimodoGenerationInspectorGui
     {
+        private static GUIStyle promptTextAreaStyle;
+
         private static readonly string[] BaseModelOptions = { "Kimodo", "ARDY" };
 
         internal static bool IsArdy(string modelName)
@@ -107,8 +109,8 @@ namespace KimodoBridge.Editor
         internal static string GetRuntimePlacementHint()
         {
             return Application.platform == RuntimePlatform.OSXEditor
-                ? "Runtime target: Kimodo model — Metal/MPS (CPU fallback); Text Encoder — Metal/MPS (CPU fallback)."
-                : "Runtime target: Kimodo model — GPU/CPU automatic; Text Encoder — GPU/CPU automatic.";
+                ? "Runtime target: Kimodo model - Metal/MPS (CPU fallback); Text Encoder - Metal/MPS (CPU fallback)."
+                : "Runtime target: Kimodo model - GPU/CPU automatic; Text Encoder - GPU/CPU automatic.";
         }
 
         internal static void DrawResolvedTextEncoderStatus()
@@ -126,7 +128,14 @@ namespace KimodoBridge.Editor
             bool previousShowMixedValue = EditorGUI.showMixedValue;
             EditorGUI.showMixedValue = prompt.hasMultipleDifferentValues;
             EditorGUI.BeginChangeCheck();
-            string value = EditorGUILayout.TextArea(prompt.stringValue, GUILayout.Height(60));
+            if (promptTextAreaStyle == null)
+            {
+                promptTextAreaStyle = new GUIStyle(EditorStyles.textArea)
+                {
+                    wordWrap = true
+                };
+            }
+            string value = EditorGUILayout.TextArea(prompt.stringValue, promptTextAreaStyle, GUILayout.Height(60));
             ApplyPromptEdit(prompt, value, EditorGUI.EndChangeCheck());
             EditorGUI.showMixedValue = previousShowMixedValue;
         }
@@ -143,7 +152,8 @@ namespace KimodoBridge.Editor
             SerializedProperty generationFrames,
             float minSeconds,
             float maxSeconds,
-            string tooltip)
+            string tooltip,
+            bool generatesAndTrims = true)
         {
             int oldFrames = generationFrames.intValue;
             bool previousShowMixedValue = EditorGUI.showMixedValue;
@@ -156,12 +166,32 @@ namespace KimodoBridge.Editor
                 maxSeconds);
             bool changed = EditorGUI.EndChangeCheck();
             EditorGUI.showMixedValue = previousShowMixedValue;
+            DrawDurationWarning(duration, generatesAndTrims);
             if (!changed)
             {
                 return false;
             }
             generationFrames.intValue = KimodoInOutConstraintTools.DurationSecondsToFrameCount(duration);
             return true;
+        }
+
+        internal static void DrawDurationWarning(float durationSeconds, bool generatesAndTrims = true)
+        {
+            if (durationSeconds < KimodoGenerationWarningCheckService.MinimumGenerationDurationSeconds)
+            {
+                string message = generatesAndTrims
+                    ? $"This duration is below {KimodoGenerationWarningCheckService.MinimumGenerationDurationSeconds:F1}s. It will be generated at {KimodoGenerationWarningCheckService.MinimumGenerationDurationSeconds:F1}s and truncated to the requested duration."
+                    : $"This duration is below {KimodoGenerationWarningCheckService.MinimumGenerationDurationSeconds:F1}s. Runtime generation will use {KimodoGenerationWarningCheckService.MinimumGenerationDurationSeconds:F1}s segments.";
+                EditorGUILayout.HelpBox(
+                    message,
+                    MessageType.Warning);
+            }
+            else if (durationSeconds < KimodoGenerationWarningCheckService.GenerationDurationWarningSeconds)
+            {
+                EditorGUILayout.HelpBox(
+                    $"Durations shorter than {KimodoGenerationWarningCheckService.GenerationDurationWarningSeconds:F1}s may reduce motion quality.",
+                    MessageType.Warning);
+            }
         }
 
         internal static void DrawDiffusionSteps(

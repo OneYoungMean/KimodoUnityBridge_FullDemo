@@ -26,7 +26,13 @@ namespace KimodoBridge.Editor
 
         public static AvatarResolveResult ResolveAvatarFromGameObject(GameObject avatarRoot)
         {
-            if (TryEnsureHumanoidAvatar(avatarRoot, out Avatar avatar, out string source, out string error))
+            return ResolveAvatarFromGameObject(avatarRoot, allowGeneration: true);
+        }
+
+        public static AvatarResolveResult ResolveAvatarFromGameObject(GameObject avatarRoot, bool allowGeneration)
+        {
+            if (TryEnsureHumanoidAvatar(avatarRoot, out Avatar avatar, out string source, out string error,
+                    allowGeneration))
             {
                 return new AvatarResolveResult(avatar, KimodoRetargetCoreUtility.IsValidHumanoid(avatar), source, string.Empty);
             }
@@ -53,7 +59,7 @@ namespace KimodoBridge.Editor
                     valid ? string.Empty : "The first Track clip Custom Avatar is invalid or does not match the Timeline binding skeleton.");
             }
 
-            return ResolveAvatarFromGameObject(animator.gameObject);
+            return ResolveAvatarFromGameObject(animator.gameObject, allowGeneration: false);
         }
 
         public static Avatar ResolveTrackCustomAvatar(TrackAsset track)
@@ -74,7 +80,8 @@ namespace KimodoBridge.Editor
             GameObject avatarRoot,
             out Avatar avatar,
             out string source,
-            out string error)
+            out string error,
+            bool allowGeneration = true)
         {
             avatar = null;
             source = string.Empty;
@@ -113,6 +120,18 @@ namespace KimodoBridge.Editor
                 }
             }
 
+            if (KimodoEditorAvatarCacheUtility.HasGeneratedAvatarCache(avatarRoot))
+            {
+                error = "A generated Avatar cache exists but is invalid for this character; automatic regeneration was skipped.";
+                return false;
+            }
+
+            if (!allowGeneration)
+            {
+                error = "No valid Humanoid Avatar is assigned, imported, or cached; automatic generation was not requested.";
+                return false;
+            }
+
             Avatar generated = KimodoHumanoidAvatarBuilderUtility.GenerateHumanoidAvatar(
                 avatarRoot,
                 out string generateError);
@@ -124,17 +143,9 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            string generatedAssetPath = AssetDatabase.GetAssetPath(generated);
-            if (!string.IsNullOrEmpty(generatedAssetPath))
-            {
-                avatar = generated;
-                source = "GeneratedImporter";
-                return true;
-            }
-
             if (KimodoEditorAvatarCacheUtility.TrySaveGeneratedAvatarCache(avatarRoot, generated, out Avatar saved, out string saveError))
             {
-                if (KimodoRetargetCoreUtility.IsValidHumanoid(saved))
+                if (KimodoRetargetCoreUtility.IsValidHumanoid(saved) && CheckAvatarValid(saved, avatarRoot))
                 {
                     avatar = saved;
                     source = "GeneratedCache";
@@ -146,9 +157,10 @@ namespace KimodoBridge.Editor
                 Debug.LogWarning($"[Kimodo][Avatar] Save generated avatar failed: {saveError}");
             }
 
-            avatar = generated;
-            source = "GeneratedTemp";
-            return true;
+            error = string.IsNullOrWhiteSpace(saveError)
+                ? "Generated Avatar could not be cached; original model import settings have been restored."
+                : $"Generated Avatar could not be cached: {saveError}";
+            return false;
         }
 
         public static bool CheckAvatarValid(Avatar avatar, GameObject gameObject)

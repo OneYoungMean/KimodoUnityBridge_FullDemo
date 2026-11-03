@@ -9,20 +9,70 @@ namespace KimodoBridge
 {
     /// <summary>
     /// Canonical constraint pose path shared by preview and protocol
-    /// projection. Constraint targets are world-space values; the single
-    /// playable graph evaluates the authored MuscleSample, root override and
-    /// IK together. Timeline generation converts the resulting world pose
-    /// back to track space before writing the character clip.
+    /// projection. Root overrides are world-space; local effector targets are
+    /// normalized against that root at this boundary. The single playable
+    /// graph evaluates the authored MuscleSample, root override and IK
+    /// together. Timeline generation converts the resulting world pose back
+    /// to track space before writing the character clip.
     /// </summary>
     internal static class KimodoConstraintPosePipeline
     {
+        internal static bool TryApplyCanonical(
+            KimodoMarkerSampleResult sample,
+            float frameRate,
+            RetargetSkeleton cache,
+            out BoneSample boneSample,
+            out MuscleSample muscleSample,
+            out string error,
+            bool fullBodyRootSemantics = false)
+        {
+            boneSample = null;
+            muscleSample = null;
+            error = string.Empty;
+            if (sample == null)
+            {
+                error = "Constraint pose input is null.";
+                return false;
+            }
+
+            KimodoMarkerSampleResult canonical;
+            try
+            {
+                KimodoConstraintInternal.ValidateSample(sample);
+                canonical = sample.Clone();
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+
+            if (canonical == null)
+            {
+                error = "Constraint pose input is empty.";
+                return false;
+            }
+
+            // Preview callers may apply the complete Root2D root transform.
+
+            return TryApply(
+                canonical,
+                frameRate,
+                cache,
+                out boneSample,
+                out muscleSample,
+                out error,
+                fullBodyRootSemantics);
+        }
+
         internal static bool TryApply(
             KimodoMarkerSampleResult sample,
             float frameRate,
             RetargetSkeleton cache,
             out BoneSample boneSample,
             out MuscleSample muscleSample,
-            out string error)
+            out string error,
+            bool fullBodyRootSemantics = false)
         {
             return TryApply(
                 sample,
@@ -32,7 +82,8 @@ namespace KimodoBridge
                 Quaternion.identity,
                 out boneSample,
                 out muscleSample,
-                out error);
+                out error,
+                fullBodyRootSemantics);
         }
 
         internal static bool TryApply(
@@ -43,32 +94,25 @@ namespace KimodoBridge
             Quaternion unusedTrackRotation,
             out BoneSample boneSample,
             out MuscleSample muscleSample,
-            out string error)
+            out string error,
+            bool fullBodyRootSemantics = false)
         {
             boneSample = null;
             muscleSample = null;
             error = string.Empty;
 
-            if (sample == null || cache == null)
+            if (sample == null || cache == null || !sample.sampleValid)
             {
-                error = "Constraint pose input is null.";
+                error = sample != null && !sample.sampleValid
+                    ? "Constraint sample is invalid."
+                    : "Constraint pose input is null.";
                 return false;
             }
 
-            // A Root2D constraint has no authored MuscleSample, but it still
-            // follows the same profile-skeleton path as FullBody: use the
-            // target avatar's initial pose as the FK input, apply the explicit
-            // hips override, then run the common IK stage.
-            KimodoMarkerSampleResult pipelineSample = sample;
-            if (IsRootOnlySample(sample))
-            {
-                if (!TryBuildRootOnlyPipelineSample(sample, cache, out pipelineSample, out error))
-                {
-                    return false;
-                }
-            }
-
-            if (!KimodoConstraintIkSolver.TryApply(pipelineSample, frameRate, cache, out error))
+            // Every command constraint is evaluated from its authored support
+            // pose. The concrete family decides which authored channels the
+            // solver applies.
+            if (!KimodoConstraintIkSolver.TryApply(sample, frameRate, cache, out error, fullBodyRootSemantics))
             {
                 return false;
             }
@@ -92,80 +136,12 @@ namespace KimodoBridge
                 return false;
             }
 
-            string mode = KimodoConstraintInternal.NormalizeMode(sample.constraintMode);
+            string mode = KimodoConstraintInternal.ResolveExecutionMode(sample);
             if (mode == "root2d")
             {
                 return sample.rootOverride != null;
             }
-            if (mode != "mix")
-            {
-                return false;
-            }
-
-            if (KimodoConstraintMask.IsActive(sample, "muscle") ||
-                KimodoConstraintMask.IsActive(sample, "lefthand") ||
-                KimodoConstraintMask.IsActive(sample, "righthand") ||
-                KimodoConstraintMask.IsActive(sample, "leftfoot") ||
-                KimodoConstraintMask.IsActive(sample, "rightfoot"))
-            {
-                return false;
-            }
-
-            return sample.rootOverride != null;
-        }
-
-        private static bool TryBuildRootOnlyPipelineSample(
-            KimodoMarkerSampleResult source,
-            RetargetSkeleton cache,
-            out KimodoMarkerSampleResult result,
-            out string error)
-        {
-            result = null;
-            error = string.Empty;
-            if (source == null || cache == null || source.rootOverride == null)
-            {
-                error = "Root2D pipeline input is invalid.";
-                return false;
-            }
-
-            KimodoRetargetClipSamplingUtility.ResetRetargetSkeletonPose(cache);
-            if (!KimodoRetargetSamplingUtility.TryCaptureMuscleSample(
-                    cache,
-                    out MuscleSample initialPose,
-                    out error) ||
-                initialPose == null ||
-                !initialPose.IsValid)
-            {
-                if (string.IsNullOrEmpty(error))
-                {
-                    error = "Failed to capture the target skeleton initial pose for Root2D.";
-                }
-                return false;
-            }
-
-            result = source.Clone();
-            result.sampleData = initialPose;
-            result.constraintMode = "root2d";
-            result.enableMask ??= new KimodoConstraintMask();
-            result.validMask ??= new KimodoConstraintMask();
-            result.enableMask.muscle = false;
-            result.enableMask.rootTQ = false;
-            result.enableMask.leftFootTQ = false;
-            result.enableMask.rightFootTQ = false;
-            result.validMask.muscle = false;
-            result.validMask.rootTQ = false;
-            result.validMask.leftFootTQ = false;
-            result.validMask.rightFootTQ = false;
-            result.enableMask.leftHand = false;
-            result.enableMask.rightHand = false;
-            result.enableMask.leftFoot = false;
-            result.enableMask.rightFoot = false;
-            result.validMask.leftHand = false;
-            result.validMask.rightHand = false;
-            result.validMask.leftFoot = false;
-            result.validMask.rightFoot = false;
-            result.effectors = new KimodoConstraintEffectors();
-            return true;
+            return false;
         }
 
     }
@@ -182,6 +158,7 @@ namespace KimodoBridge
             public bool solveRightHand;
             public bool solveLeftFoot;
             public bool solveRightFoot;
+            public bool rotateLeftHand, rotateRightHand, rotateLeftFoot, rotateRightFoot;
             public Vector3 leftHandPosition;
             public Quaternion leftHandRotation;
             public Vector3 rightHandPosition;
@@ -191,10 +168,18 @@ namespace KimodoBridge
             public Vector3 rightFootPosition;
             public Quaternion rightFootRotation;
             public bool applyRoot;
+            public bool applyRootPosition;
             public bool rootPlanar;
             public bool rootHeading;
+            public bool footIKEnabled;
+            public bool compensateLeftFoot;
+            public bool compensateRightFoot;
             public Vector3 rootPosition;
             public Quaternion rootRotation;
+            public Vector3 compensatedLeftFootPosition;
+            public Quaternion compensatedLeftFootRotation;
+            public Vector3 compensatedRightFootPosition;
+            public Quaternion compensatedRightFootRotation;
             public TransformStreamHandle hips;
 
             public void ProcessRootMotion(AnimationStream stream)
@@ -221,15 +206,20 @@ namespace KimodoBridge
                 }
 
                 ApplyGoal(human, AvatarIKGoal.LeftHand, solveLeftHand,
-                    leftHandPosition, leftHandRotation);
+                    leftHandPosition, leftHandRotation, rotateLeftHand);
                 ApplyGoal(human, AvatarIKGoal.RightHand, solveRightHand,
-                    rightHandPosition, rightHandRotation);
-                ApplyGoal(human, AvatarIKGoal.LeftFoot, solveLeftFoot,
-                    leftFootPosition, leftFootRotation);
-                ApplyGoal(human, AvatarIKGoal.RightFoot, solveRightFoot,
-                    rightFootPosition, rightFootRotation);
+                    rightHandPosition, rightHandRotation, rotateRightHand);
+                ApplyGoal(human, AvatarIKGoal.LeftFoot, solveLeftFoot || compensateLeftFoot,
+                    compensateLeftFoot ? compensatedLeftFootPosition : leftFootPosition,
+                    compensateLeftFoot ? compensatedLeftFootRotation : leftFootRotation,
+                    compensateLeftFoot || rotateLeftFoot);
+                ApplyGoal(human, AvatarIKGoal.RightFoot, solveRightFoot || compensateRightFoot,
+                    compensateRightFoot ? compensatedRightFootPosition : rightFootPosition,
+                    compensateRightFoot ? compensatedRightFootRotation : rightFootRotation,
+                    compensateRightFoot || rotateRightFoot);
 
-                if (solveLeftHand || solveRightHand || solveLeftFoot || solveRightFoot)
+                if (solveLeftHand || solveRightHand || solveLeftFoot || solveRightFoot ||
+                    compensateLeftFoot || compensateRightFoot)
                 {
                     human.SolveIK();
                 }
@@ -240,13 +230,33 @@ namespace KimodoBridge
                 AnimationHumanStream human = stream.AsHuman();
                 Vector3 currentHipsPosition = hips.GetPosition(stream);
                 Quaternion currentHipsRotation = hips.GetRotation(stream).normalized;
-                Vector3 targetPosition = rootPosition;
+                Vector3 leftFootPosePosition = Vector3.zero;
+                Quaternion leftFootPoseRotation = Quaternion.identity;
+                Vector3 rightFootPosePosition = Vector3.zero;
+                Quaternion rightFootPoseRotation = Quaternion.identity;
+                if (footIKEnabled && (!solveLeftFoot || !solveRightFoot))
+                {
+                    if (!solveLeftFoot)
+                    {
+                        leftFootPosePosition = human.GetGoalPositionFromPose(AvatarIKGoal.LeftFoot);
+                        leftFootPoseRotation = human.GetGoalRotationFromPose(AvatarIKGoal.LeftFoot);
+                    }
+                    if (!solveRightFoot)
+                    {
+                        rightFootPosePosition = human.GetGoalPositionFromPose(AvatarIKGoal.RightFoot);
+                        rightFootPoseRotation = human.GetGoalRotationFromPose(AvatarIKGoal.RightFoot);
+                    }
+                }
+                Vector3 targetPosition = applyRootPosition ? rootPosition : currentHipsPosition;
                 Quaternion targetRotation = rootRotation.normalized;
                 if (rootPlanar)
                 {
-                    targetPosition = KimodoMotionMath.ApplyPlanarPosition(
-                        currentHipsPosition,
-                        targetPosition);
+                    if (applyRootPosition)
+                    {
+                        targetPosition = KimodoMotionMath.ApplyPlanarPosition(
+                            currentHipsPosition,
+                            targetPosition);
+                    }
                     targetRotation = rootHeading
                         ? KimodoMotionMath.ApplyPlanarHeading(currentHipsRotation, targetRotation)
                         : currentHipsRotation;
@@ -256,13 +266,39 @@ namespace KimodoBridge
                     targetRotation = currentHipsRotation;
                 }
 
-                float scale = Mathf.Max(1e-6f, human.humanScale);
-                Vector3 deltaPosition = (targetPosition - currentHipsPosition) / scale;
                 Quaternion deltaRotation = rootHeading
                     ? (targetRotation * Quaternion.Inverse(currentHipsRotation)).normalized
                     : Quaternion.identity;
-                human.bodyPosition += deltaPosition;
+                Vector3 hipDelta = targetPosition - currentHipsPosition;
+                // AnimationHumanStream.bodyPosition is world-space COM, unlike
+                // the human-scale-normalized HumanPose.bodyPosition used by
+                // MuscleSample. Rotate its offset about Hips and translate in
+                // world units so the requested Hips position stays fixed.
+                human.bodyPosition = targetPosition +
+                    deltaRotation * (human.bodyPosition - currentHipsPosition);
                 human.bodyRotation = (deltaRotation * human.bodyRotation).normalized;
+
+                bool rootMoved = hipDelta.sqrMagnitude > 1e-10f ||
+                    Quaternion.Angle(deltaRotation, Quaternion.identity) > 1e-4f;
+                if (footIKEnabled && rootMoved)
+                {
+                    if (!solveLeftFoot)
+                    {
+                        compensateLeftFoot = true;
+                        compensatedLeftFootPosition = targetPosition +
+                            deltaRotation * (leftFootPosePosition - currentHipsPosition);
+                        compensatedLeftFootRotation =
+                            (deltaRotation * leftFootPoseRotation).normalized;
+                    }
+                    if (!solveRightFoot)
+                    {
+                        compensateRightFoot = true;
+                        compensatedRightFootPosition = targetPosition +
+                            deltaRotation * (rightFootPosePosition - currentHipsPosition);
+                        compensatedRightFootRotation =
+                            (deltaRotation * rightFootPoseRotation).normalized;
+                    }
+                }
             }
 
             private static void ApplyGoal(
@@ -270,29 +306,29 @@ namespace KimodoBridge
                 AvatarIKGoal goal,
                 bool enabled,
                 Vector3 position,
-                Quaternion rotation)
+                Quaternion rotation,
+                bool enableRotation)
             {
                 human.SetGoalWeightPosition(goal, enabled ? 1f : 0f);
-                // human.SetGoalWeightRotation(goal, enabled ? 1f : 0f);
-                //todo :fix this 
-                human.SetGoalWeightRotation(goal,0f);
+                human.SetGoalWeightRotation(goal, enabled && enableRotation ? 1f : 0f);
                 if (!enabled)
                 {
                     return;
                 }
 
                 human.SetGoalPosition(goal, position);
-                human.SetGoalRotation(goal, rotation);
+                if (enableRotation) human.SetGoalRotation(goal, rotation);
             }
         }
         internal static bool TryApply(
             KimodoMarkerSampleResult sample,
             float frameRate,
             RetargetSkeleton cache,
-            out string error)
+            out string error,
+            bool fullBodyRootSemantics = false)
         {
             error = string.Empty;
-            if (!TryBuildJob(sample, cache, out SolveJob job, out bool any, out error) || !any)
+            if (!TryBuildJob(sample, cache, out SolveJob job, out bool any, out error, fullBodyRootSemantics) || !any)
             {
                 return string.IsNullOrEmpty(error);
             }
@@ -330,6 +366,7 @@ namespace KimodoBridge
                 }
                 graph = PlayableGraph.Create("KimodoConstraintIkGraph");
                 graph.SetTimeUpdateMode(DirectorUpdateMode.Manual);
+                job.footIKEnabled = true;
                 AnimationClipPlayable clipPlayable =
                     KimodoRetargetClipSamplingUtility.CreateClipPlayable(graph, clip);
                 Playable sourcePlayable = AnimationOffsetPlayableAccess.CreateMotionXToDeltaAndConnect(
@@ -385,7 +422,8 @@ namespace KimodoBridge
             RetargetSkeleton cache,
             out SolveJob job,
             out bool any,
-            out string error)
+            out string error,
+            bool fullBodyRootSemantics = false)
         {
             job = default;
             any = false;
@@ -401,7 +439,11 @@ namespace KimodoBridge
             // into an IK solve. Other modes retain their explicit effector
             // channel semantics.
             bool calculateEffectors =
-                KimodoConstraintInternal.NormalizeMode(sample.constraintMode) != "root2d";
+                KimodoConstraintInternal.ResolveExecutionMode(sample) != "root2d";
+            job.rotateLeftHand = sample.effectors?.leftHand?.enableRotation == true;
+            job.rotateRightHand = sample.effectors?.rightHand?.enableRotation == true;
+            job.rotateLeftFoot = sample.effectors?.leftFoot?.enableRotation == true;
+            job.rotateRightFoot = sample.effectors?.rightFoot?.enableRotation == true;
             if (calculateEffectors)
             {
                 any |= job.solveLeftHand = KimodoConstraintMask.IsActive(sample, "lefthand");
@@ -410,12 +452,14 @@ namespace KimodoBridge
                 any |= job.solveRightFoot = KimodoConstraintMask.IsActive(sample, "rightfoot");
             }
 
-            if (KimodoConstraintMask.IsActive(sample, "rootposition") &&
-                sample.rootOverride != null)
+            bool applyRootPosition = KimodoConstraintMask.IsActive(sample, "rootposition");
+            bool applyRootHeading = KimodoConstraintMask.IsActive(sample, "rootheading");
+            if ((applyRootPosition || applyRootHeading) && sample.rootOverride != null)
             {
                 job.applyRoot = true;
-                job.rootPlanar = KimodoConstraintInternal.NormalizeMode(sample.constraintMode) == "root2d" ||
-                    KimodoConstraintInternal.NormalizeMode(sample.constraintMode) == "mix";
+                job.applyRootPosition = applyRootPosition;
+                job.rootPlanar = !fullBodyRootSemantics &&
+                    KimodoConstraintInternal.ResolveExecutionMode(sample) == "root2d";
                 job.rootHeading = KimodoConstraintMask.IsActive(sample, "rootheading");
                 job.rootPosition = sample.rootOverride.t;
                 job.rootRotation = sample.rootOverride.q.normalized;
@@ -431,13 +475,13 @@ namespace KimodoBridge
                 any = true;
             }
 
-            if (!TryResolveTarget(sample.effectors?.leftHand, job.solveLeftHand,
+            if (!TryResolveTarget(sample.effectors?.leftHand, sample.rootOverride, job.solveLeftHand,
                     HumanBodyBones.LeftHand, cache, out job.leftHandPosition, out job.leftHandRotation, out error) ||
-                !TryResolveTarget(sample.effectors?.rightHand, job.solveRightHand,
+                !TryResolveTarget(sample.effectors?.rightHand, sample.rootOverride, job.solveRightHand,
                     HumanBodyBones.RightHand, cache, out job.rightHandPosition, out job.rightHandRotation, out error) ||
-                !TryResolveTarget(sample.effectors?.leftFoot, job.solveLeftFoot,
+                !TryResolveTarget(sample.effectors?.leftFoot, sample.rootOverride, job.solveLeftFoot,
                     HumanBodyBones.LeftFoot, cache, out job.leftFootPosition, out job.leftFootRotation, out error) ||
-                !TryResolveTarget(sample.effectors?.rightFoot, job.solveRightFoot,
+                !TryResolveTarget(sample.effectors?.rightFoot, sample.rootOverride, job.solveRightFoot,
                     HumanBodyBones.RightFoot, cache, out job.rightFootPosition, out job.rightFootRotation, out error))
             {
                 return false;
@@ -447,6 +491,7 @@ namespace KimodoBridge
 
         private static bool TryResolveTarget(
             KimodoRigidTransform value,
+            KimodoRigidTransform root,
             bool enabled,
             HumanBodyBones bone,
             RetargetSkeleton cache,
@@ -466,17 +511,20 @@ namespace KimodoBridge
                 error = $"Constraint effector '{bone}' is enabled but has no value.";
                 return false;
             }
-            position = value.t;
+            // Local effector coordinates are relative to the canonical sample
+            // root override. Resolve that boundary exactly once.
+            KimodoRigidTransform worldValue = KimodoConstraintSpaceUtility.ToWorld(value, root);
+            position = worldValue.t;
             if (bone == HumanBodyBones.LeftHand || bone == HumanBodyBones.RightHand)
             {
-                // Effector q is the bind-relative delta expected directly by
-                // the Humanoid IK goal; it is not a world or track rotation.
-                rotation = value.q.normalized;
+                // Hand q is the Unity public IK-goal rotation produced by
+                // boneWorld * Avatar.GetPostRotation * handGoalOffset.
+                rotation = value.enableRotation ? worldValue.q.normalized : Quaternion.identity;
             }
             else
             {
                 // Foot effectors retain their existing transport protocol.
-                rotation = value.q;
+                rotation = value.enableRotation ? worldValue.q : Quaternion.identity;
             }
             return true;
         }

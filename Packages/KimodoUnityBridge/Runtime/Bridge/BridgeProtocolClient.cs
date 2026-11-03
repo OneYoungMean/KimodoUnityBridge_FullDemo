@@ -175,6 +175,31 @@ namespace KimodoBridge
                 reconnect: true);
         }
 
+        internal Task<BridgeProtocolResponse> AnalyzeMocapAsync(
+            string host,
+            int port,
+            string kind,
+            string mediaPath,
+            string person,
+            CancellationToken token)
+        {
+            string normalizedKind = (kind ?? string.Empty).Trim().ToLowerInvariant();
+            if (normalizedKind != "video" && normalizedKind != "picture")
+            {
+                throw new ArgumentException("Mocap analysis kind must be video or picture.", nameof(kind));
+            }
+            var request = new JObject
+            {
+                ["cmd"] = normalizedKind == "video" ? "pose.fromvideo" : "pose.frompicture",
+                ["media_path"] = mediaPath ?? string.Empty
+            };
+            if (normalizedKind == "video" && !string.IsNullOrWhiteSpace(person))
+            {
+                request["person"] = person;
+            }
+            return SendRequestAsync(host, port, request, null, null, token, reconnect: true);
+        }
+
         internal Task<BridgeProtocolResponse> GenerateAsync(
             string host,
             int port,
@@ -237,6 +262,10 @@ namespace KimodoBridge
                 payload["output_format"] = string.IsNullOrWhiteSpace(request.output_format)
                     ? "kmb_v1"
                     : request.output_format.Trim();
+                if (request.output_mp4)
+                {
+                    payload["output_mp4"] = true;
+                }
                 if (request.duration.HasValue)
                 {
                     float duration = request.duration.Value;
@@ -332,7 +361,9 @@ namespace KimodoBridge
                 payload["attachment_byte_length"] = binaryPayload.Length;
             }
 
-            UnityEngine.Debug.Log($"[KimodoBridge] Generate JSON: {payload.ToString(Formatting.None)}");
+            string requestJson = payload.ToString(Formatting.None);
+            KimodoBridgeService.GenerationRequestPayloadContext.Value?.Invoke(requestJson);
+            UnityEngine.Debug.Log($"[KimodoBridge] Generate JSON: {requestJson}");
             return SendRequestAsync(host, port, payload, binaryPayload, progress, token, reconnect: true);
         }
 
@@ -344,13 +375,6 @@ namespace KimodoBridge
             }
         }
 
-        private static void AddOptional(JObject payload, string name, bool? value)
-        {
-            if (value.HasValue)
-            {
-                payload[name] = value.Value;
-            }
-        }
 
         internal async Task<bool> TryCancelGenerateAsync(
             string host,

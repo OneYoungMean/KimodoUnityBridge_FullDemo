@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using KimodoUnityBridge;
 using TimelineInject;
 using UnityEngine;
 using UnityEngine.Timeline;
@@ -19,12 +20,13 @@ namespace KimodoBridge
 
             KimodoMarkerSampleResult authored = marker.SampleData;
             bool useSampledValues = marker.autoSample;
-            KimodoMarkerSampleResult normalized = useSampledValues && sample != null
+            KimodoMarkerSampleResult normalized = useSampledValues
                 ? sample.Clone()
                 : authored?.Clone() ?? new KimodoMarkerSampleResult();
             if (useSampledValues)
             {
                 normalized.enableMask = authored?.enableMask?.Clone() ?? new KimodoConstraintMask();
+                PreserveAuthoredEffectorSpaces(authored, normalized);
             }
             normalized.sampleTime = marker.time;
             normalized.constraintMode = marker.ConstraintMode == KimodoConstraintMode.Root2D
@@ -33,13 +35,41 @@ namespace KimodoBridge
             // constraintMode changes application behavior only. In particular,
             // Root2D keeps the complete sampled rootOverride payload.
             normalized.enabled = marker.constraintEnabled;
-            if (!useSampledValues && sample != null &&
+            if (!useSampledValues &&
                 KimodoSampleDataLayout.IsValid(sample.sampleData))
             {
                 normalized.sampleData = sample.sampleData.Clone();
             }
             normalized.enableMask ??= new KimodoConstraintMask();
             return normalized;
+        }
+
+        private static void PreserveAuthoredEffectorSpaces(
+            KimodoMarkerSampleResult authored,
+            KimodoMarkerSampleResult normalized)
+        {
+            if (authored?.effectors == null || normalized?.effectors == null) return;
+            KimodoRigidTransform[] source =
+            {
+                normalized.effectors.leftHand,
+                normalized.effectors.rightHand,
+                normalized.effectors.leftFoot,
+                normalized.effectors.rightFoot
+            };
+            KimodoRigidTransform[] authoredValues =
+            {
+                authored.effectors.leftHand,
+                authored.effectors.rightHand,
+                authored.effectors.leftFoot,
+                authored.effectors.rightFoot
+            };
+            for (int i = 0; i < source.Length; i++)
+            {
+                if (source[i] == null || authoredValues[i] == null) continue;
+                KimodoConstraintSpace target = authoredValues[i].space;
+                source[i].space = KimodoConstraintSpace.World;
+                KimodoConstraintSpaceUtility.ConvertSpace(source[i], normalized.rootOverride, target);
+            }
         }
 
         public static bool TryNormalizeConstraintMarkerSample(
@@ -55,7 +85,7 @@ namespace KimodoBridge
                 return true;
             }
 
-            error = "failed to normalize unified constraint sample";
+            error = "failed to normalize constraint sample";
             return false;
         }
 
@@ -66,42 +96,14 @@ namespace KimodoBridge
         {
             var result = new KimodoMarkerSampleResult
             {
+                sampleValid = true,
                 sampleData = new MuscleSample(),
-                enableMask = new KimodoConstraintMask
-                {
-                    muscle = true,
-                    rootTQ = true,
-                    leftFootTQ = true,
-                    rightFootTQ = true
-                },
-                validMask = new KimodoConstraintMask
-                {
-                    muscle = true,
-                    rootTQ = true,
-                    leftFootTQ = true,
-                    rightFootTQ = true
-                },
+                enableMask = KimodoConstraintMask.ForType("fullbody"),
                 constraintMode = "fullbody",
                 sampleTime = 0d,
             };
             result.sampleData.SetRoot(Vector3.zero, Quaternion.identity);
             return result;
-        }
-
-        /// <summary>Compatibility entry that returns canonical same-frame samples.
-        /// Protocol family selection occurs only in KimodoConstraintInternal.</summary>
-        public static List<KimodoMarkerSampleResult> ExpandUnifiedConstraintSamples(
-            IReadOnlyList<KimodoMarkerSampleResult> samples,
-            double frameRate)
-        {
-            return KimodoConstraintSampleComposer.ComposeCanonicalSamples(samples, frameRate);
-        }
-
-        public static List<KimodoMarkerSampleResult> MergeAsUnifiedConstraintSamples(
-            IReadOnlyList<KimodoMarkerSampleResult> samples,
-            double frameRate)
-        {
-            return KimodoConstraintSampleComposer.MergeAsUnifiedSamples(samples, frameRate);
         }
 
         public static List<string> BuildHighlightJointsForConstraint(
@@ -208,15 +210,11 @@ namespace KimodoBridge
                 return Math.Max(0.0, timelineTime);
             }
 
-            double clipRelativeTime = timelineClip.ToLocalTime(timelineTime);
-            clipRelativeTime = Math.Max(0.0, Math.Min(timelineClip.duration, clipRelativeTime));
-            double sourceSampleTime = timelineClip.clipIn + (clipRelativeTime * timelineClip.timeScale);
-            if (sourceSampleTime < 0.0)
-            {
-                return 0.0;
-            }
-
-            return sourceSampleTime;
+            // TimelineClip.ToLocalTime already applies the clip start, clipIn,
+            // timeScale, looping, and extrapolation rules. Do not apply those
+            // factors a second time here.
+            double sourceSampleTime = timelineClip.ToLocalTime(timelineTime);
+            return Math.Max(0.0, sourceSampleTime);
         }
 
         internal static bool TryResolveEndEffectorBone(string markerType, out HumanBodyBones bone)

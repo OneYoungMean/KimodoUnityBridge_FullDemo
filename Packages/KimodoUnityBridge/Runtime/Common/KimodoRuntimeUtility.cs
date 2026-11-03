@@ -1,12 +1,48 @@
 using TimelineInject;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.Playables;
 using System;
 
 namespace KimodoBridge
 {
     public static class KimodoRuntimeUtility
     {
+        // Scene object classification is shared by command and editor code. Keep
+        // these tokens in Runtime so every caller applies the same protocol.
+        public const string SessionRootPrefix = "KimodoSession_";
+        public const string SessionDirectorPrefix = "Kimodo_CommandSession_";
+
+        public static bool IsContextObject(GameObject gameObject)
+        {
+            Transform current = gameObject != null ? gameObject.transform : null;
+            while (current != null)
+            {
+                if (current.name.StartsWith(SessionRootPrefix, StringComparison.Ordinal) ||
+                    current.name.StartsWith(SessionDirectorPrefix, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+
+                current = current.parent;
+            }
+
+            return false;
+        }
+
+        public static bool IsContextSessionName(string name)
+        {
+            return !string.IsNullOrEmpty(name) &&
+                (name.StartsWith(SessionRootPrefix, StringComparison.Ordinal) ||
+                 name.StartsWith(SessionDirectorPrefix, StringComparison.Ordinal));
+        }
+
+        public static bool IsUsableSceneDirector(PlayableDirector director, Scene scene)
+        {
+            return director != null && director.gameObject != null &&
+                scene.IsValid() && director.gameObject.scene == scene;
+        }
+
         public static string SanitizeName(string input, string defaultName = "joint")
         {
             if (string.IsNullOrWhiteSpace(input))

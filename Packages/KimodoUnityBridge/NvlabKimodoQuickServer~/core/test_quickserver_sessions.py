@@ -306,15 +306,52 @@ class QuickServerProtocolV2Tests(unittest.TestCase):
         np.testing.assert_allclose(session.constraints[0].root_2d.cpu(), [[-0.539, 0.0]], atol=1e-7)
         self.assertIsNone(session.constraint_origin)
 
-    def test_direct_kmb_is_the_only_binary_motion_format(self):
+    def test_mp4_is_an_optional_extra_output_not_a_motion_format(self):
         self.assertEqual(
             kimodo_runtime._resolve_requested_output_format({"output_format": "kmb_v1"}),
             "kmb_v1",
         )
-        self.assertNotEqual(
-            kimodo_runtime._resolve_requested_output_format({"output_format": "removed_format"}),
-            "removed_format",
-        )
+        with patch.dict(os.environ, {"KIMODO_BRIDGE_OUTPUT_FORMAT": "json_compact"}):
+            self.assertEqual(kimodo_runtime._resolve_requested_output_format({"output_format": "mp4"}), "json_compact")
+
+    def test_finalize_returns_mp4_path_without_changing_motion_payload(self):
+        model = SimpleNamespace(fps=30.0)
+        output = {"posed_joints": np.zeros((1, 1, 1, 3), dtype=np.float32)}
+        mp4_path = "C:/quickserver/generated_animation_test.mp4"
+        with (
+            patch.object(kimodo_runtime, "_build_generate_flatbuffer_payload", return_value=b"kmb"),
+            patch.object(
+                kimodo_runtime,
+                "_build_generate_mp4_file",
+                return_value=mp4_path,
+            ),
+            patch("core.animation_analysis.build_generation_analysis", return_value=None),
+        ):
+            response, payload = kimodo_runtime._finalize_generation_result(
+                {"output_format": "kmb_v1", "output_mp4": True},
+                model,
+                output,
+                "walk",
+            )
+
+        self.assertEqual(response["output_format"], "kmb_v1")
+        self.assertEqual(response["byte_length"], 3)
+        self.assertEqual(response["mp4_path"], mp4_path)
+        self.assertNotIn("binary_attachments", response)
+        self.assertEqual(payload, b"kmb")
+
+    def test_generate_mp4_file_saves_under_quickserver_root(self):
+        model = SimpleNamespace(fps=30.0, skeleton=None)
+        output = {"posed_joints": np.zeros((1, 1, 1, 3), dtype=np.float32)}
+        with (
+            patch("core.motion_rendering.render_skeleton_mp4", return_value=b"mp4"),
+            patch.object(Path, "write_bytes", autospec=True, return_value=3) as write_bytes,
+        ):
+            mp4_path = Path(kimodo_runtime._build_generate_mp4_file(model, output, "walk"))
+
+        self.assertEqual(mp4_path.parent, Path(kimodo_runtime.__file__).resolve().parent.parent)
+        self.assertRegex(mp4_path.name, r"^generated_animation_[0-9a-f]{32}\.mp4$")
+        write_bytes.assert_called_once_with(mp4_path, b"mp4")
 
     def test_ardy_clip_mask_accepts_object_and_rejects_legacy_array(self):
         names = ("Hips", "Spine", "LeftArm")
@@ -1589,7 +1626,7 @@ class QuickServerProtocolV2Tests(unittest.TestCase):
             patch.object(ardy_backend, "ArdySession", return_value=fixed),
             patch.object(kimodo_runtime, "_build_generate_flatbuffer_payload", return_value=b"kmb") as build_payload,
         ):
-            _, _, payload = ardy_backend.execute_stream_generate(
+            _, response, payload = ardy_backend.execute_stream_generate(
                 None,
                 {"duration": 0.05, "prompt": "walk"},
                 (),
@@ -1599,9 +1636,57 @@ class QuickServerProtocolV2Tests(unittest.TestCase):
                 ".",
             )
 
+        self.assertEqual(response["output_format"], "kmb_v1")
         self.assertEqual(payload, b"kmb")
         restored = build_payload.call_args.args[1]
         np.testing.assert_allclose(restored["root_positions"][0, 0], [-0.539, 0.0, 0.0], atol=1e-6)
+
+    def test_fixed_duration_ardy_preserves_kmb_and_forwards_output_mp4(self):
+        class FakeSession:
+            resolved_seed = 7
+            effective_playback_reserve_frames = 0
+            settings = SimpleNamespace(adaptive_playback_reserve=False)
+            constraint_origin = None
+
+            def generate(self, _request, _attachments, _model, _cancel_event):
+                return {"start_frame": 0, "end_frame_exclusive": 1}, {"posed_joints": np.zeros((1, 1, 1, 3))}
+
+            def record_response_duration(self, _elapsed, _delivered_frames):
+                pass
+
+            def close(self):
+                pass
+
+        profile = SimpleNamespace(source_fps=20.0, motion_rep_fingerprint="test")
+        with (
+            patch.object(ardy_backend, "ArdySession", return_value=FakeSession()),
+            patch.object(
+                kimodo_runtime,
+                "_finalize_generation_result",
+                return_value=(
+                    {
+                        "status": "done",
+                        "output_format": "kmb_v1",
+                        "mp4_path": "C:/quickserver/generated_animation_test.mp4",
+                    },
+                    b"kmb",
+                ),
+            ) as finalize,
+        ):
+            _, response, payload = ardy_backend.execute_stream_generate(
+                None,
+                {"duration": 0.05, "prompt": "walk", "output_mp4": True},
+                (),
+                SimpleNamespace(),
+                profile,
+                threading.Event(),
+                ".",
+            )
+
+        self.assertEqual(response["output_format"], "kmb_v1")
+        self.assertEqual(payload, b"kmb")
+        self.assertEqual(finalize.call_args.kwargs["output_format"], "kmb_v1")
+        self.assertTrue(finalize.call_args.args[0]["output_mp4"])
 
     def test_fixed_duration_rejects_zero_without_closing_the_stream(self):
         stream = SimpleNamespace(close=lambda: self.fail("invalid duration closed the stream"))

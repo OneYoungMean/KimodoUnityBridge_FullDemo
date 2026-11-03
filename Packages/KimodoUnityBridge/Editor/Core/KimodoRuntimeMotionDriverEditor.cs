@@ -95,7 +95,8 @@ namespace KimodoBridge.Editor
                     generationFrames,
                     1f,
                     10f,
-                    "Duration of each generated motion segment.");
+                    "Duration of each generated motion segment.",
+                    generatesAndTrims: false);
             }
             else
             {

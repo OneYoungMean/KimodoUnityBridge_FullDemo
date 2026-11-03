@@ -22,9 +22,21 @@ namespace KimodoBridge.Editor
         public Avatar SourceAvatar;
         public string ModelName = KimodoMotionModelProfiles.DefaultModelName;
         public int GenerationFrames = 1;
+        public int OutputStartFrame;
+        public int OutputFrameCount;
+        public KimodoConstraintWindowSpec BeginWindow = KimodoConstraintWindowSpec.FromModelFrames(1, 1);
+        public KimodoConstraintWindowSpec EndWindow = KimodoConstraintWindowSpec.FromModelFrames(1, 1);
         public bool AutoBeginAnchor;
         public bool DeferNormalization;
+        public bool DeferBeginConstraint;
+        public bool DeferEndConstraint;
         public KimodoTimelineInOutConstraintContext TimelineContext;
+        public KimodoTimelineInOutConstraintContext BeginTimelineContext;
+        public KimodoTimelineInOutConstraintContext EndTimelineContext;
+        public bool HasExplicitBeginSource;
+        public bool HasExplicitEndSource;
+        public int BeginSourceFrame = -1;
+        public int EndSourceFrame = -1;
         public List<KimodoMarkerSampleResult> ManualSamples = new List<KimodoMarkerSampleResult>();
     }
 
@@ -34,6 +46,12 @@ namespace KimodoBridge.Editor
         public string ConstraintsJson = string.Empty;
         public bool HasSyntheticAutoBeginConstraint;
         public bool DenseRootPath;
+        public KimodoConstraintWindow DeferredInWindow = new KimodoConstraintWindow();
+        public KimodoConstraintWindow DeferredOutWindow = new KimodoConstraintWindow();
+        public KimodoConstraintWindow BeginWindow = new KimodoConstraintWindow();
+        public KimodoConstraintWindow EndWindow = new KimodoConstraintWindow();
         public KimodoMarkerSampleResult BeginBoundarySample;
+        public List<KimodoMarkerSampleResult> BeginBoundarySamples = new List<KimodoMarkerSampleResult>();
+        public List<KimodoMarkerSampleResult> EndBoundarySamples = new List<KimodoMarkerSampleResult>();
     }
 }

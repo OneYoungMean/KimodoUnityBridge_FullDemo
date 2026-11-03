@@ -19,9 +19,9 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            if (sample == null)
+            if (sample == null || !sample.sampleValid)
             {
-                error = "sample is null";
+                error = sample == null ? "sample is null" : "sample is invalid";
                 return false;
             }
 
@@ -34,41 +34,18 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            // Normalization preserves channel validity; a Scene drag is the
-            // explicit editor path that may promote newly changed channels.
-            if (sample.enableMask != null)
+            // AutoSample supplies values and validity, never channel intent.
+            // Scene drags disable AutoSample and carry the complete edited mask.
+            if (!marker.autoSample)
             {
-                normalized.enableMask ??= new KimodoConstraintMask();
-                normalized.validMask ??= new KimodoConstraintMask();
-                KimodoConstraintMask sourceValid = KimodoConstraintMask.FromSample(sample);
-                normalized.enableMask.muscle |= sample.enableMask.muscle;
-                normalized.validMask.muscle |= sourceValid.muscle;
-                normalized.enableMask.rootTQ |= sample.enableMask.rootTQ;
-                normalized.validMask.rootTQ |= sourceValid.rootTQ;
-                normalized.enableMask.leftFootTQ |= sample.enableMask.leftFootTQ;
-                normalized.validMask.leftFootTQ |= sourceValid.leftFootTQ;
-                normalized.enableMask.rightFootTQ |= sample.enableMask.rightFootTQ;
-                normalized.validMask.rightFootTQ |= sourceValid.rightFootTQ;
-                normalized.enableMask.rootPosition |= sample.enableMask.rootPosition;
-                normalized.validMask.rootPosition |= sourceValid.rootPosition;
-                normalized.enableMask.rootHeading |= sample.enableMask.rootHeading;
-                normalized.validMask.rootHeading |= sourceValid.rootHeading;
-                normalized.enableMask.leftHand |= sample.enableMask.leftHand;
-                normalized.validMask.leftHand |= sourceValid.leftHand;
-                normalized.enableMask.rightHand |= sample.enableMask.rightHand;
-                normalized.validMask.rightHand |= sourceValid.rightHand;
-                normalized.enableMask.leftFoot |= sample.enableMask.leftFoot;
-                normalized.validMask.leftFoot |= sourceValid.leftFoot;
-                normalized.enableMask.rightFoot |= sample.enableMask.rightFoot;
-                normalized.validMask.rightFoot |= sourceValid.rightFoot;
+                normalized.enableMask = sample.enableMask?.Clone() ?? new KimodoConstraintMask();
             }
 
             // Scene edits author effector targets separately from the canonical pose.
             // Normalization starts from the marker payload, so copy the edited
             // world-space targets explicitly or a drag is lost on the next
             // render.
-            if (sample.effectors != null &&
-                (!marker.autoSample || HasEffectors(sample.effectors)))
+            if (!marker.autoSample && sample.effectors != null)
             {
                 normalized.effectors = sample.effectors.Clone();
             }
@@ -78,7 +55,7 @@ namespace KimodoBridge.Editor
             // starts from the marker's authored sample for non-AutoSample
             // markers.
             if (sample.rootOverride != null &&
-                (!marker.autoSample || KimodoConstraintMask.IsActive(sample, "rootposition")))
+                (!marker.autoSample || sample.sampleValid))
             {
                 normalized.rootOverride = sample.rootOverride.Clone();
             }
@@ -130,11 +107,11 @@ namespace KimodoBridge.Editor
             }
 
             return string.Equals(left.constraintMode ?? string.Empty, right.constraintMode ?? string.Empty, System.StringComparison.Ordinal) &&
+                left.sampleValid == right.sampleValid &&
                 string.Equals(SampleDataSignature(left), SampleDataSignature(right), System.StringComparison.Ordinal) &&
                 string.Equals(EffectorsSignature(left), EffectorsSignature(right), System.StringComparison.Ordinal) &&
                 string.Equals(RootOverrideSignature(left), RootOverrideSignature(right), System.StringComparison.Ordinal) &&
-                string.Equals(MaskSignature(left.enableMask), MaskSignature(right.enableMask), System.StringComparison.Ordinal) &&
-                string.Equals(MaskSignature(left.validMask), MaskSignature(right.validMask), System.StringComparison.Ordinal);
+                string.Equals(MaskSignature(left.enableMask), MaskSignature(right.enableMask), System.StringComparison.Ordinal);
         }
 
         private static string SampleDataSignature(KimodoMarkerSampleResult sample)
@@ -159,85 +136,10 @@ namespace KimodoBridge.Editor
                 : string.Empty;
         }
 
-        private static bool HasEffectors(KimodoConstraintEffectors targets)
-        {
-            return targets?.leftHand != null || targets?.rightHand != null ||
-                targets?.leftFoot != null || targets?.rightFoot != null;
-        }
 
-        private static bool StringListsEqual(System.Collections.Generic.IReadOnlyList<string> left, System.Collections.Generic.IReadOnlyList<string> right)
-        {
-            int leftCount = left != null ? left.Count : 0;
-            int rightCount = right != null ? right.Count : 0;
-            if (leftCount != rightCount)
-            {
-                return false;
-            }
 
-            for (int i = 0; i < leftCount; i++)
-            {
-                if (!string.Equals(left[i] ?? string.Empty, right[i] ?? string.Empty, System.StringComparison.Ordinal))
-                {
-                    return false;
-                }
-            }
 
-            return true;
-        }
 
-        private static bool Vector3ListsEqual(System.Collections.Generic.IReadOnlyList<Vector3> left, System.Collections.Generic.IReadOnlyList<Vector3> right)
-        {
-            int leftCount = left != null ? left.Count : 0;
-            int rightCount = right != null ? right.Count : 0;
-            if (leftCount != rightCount)
-            {
-                return false;
-            }
 
-            for (int i = 0; i < leftCount; i++)
-            {
-                if (!Approximately(left[i], right[i]))
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        private static bool IntListsEqual(System.Collections.Generic.IReadOnlyList<int> left, System.Collections.Generic.IReadOnlyList<int> right)
-        {
-            int leftCount = left != null ? left.Count : 0;
-            int rightCount = right != null ? right.Count : 0;
-            if (leftCount != rightCount)
-            {
-                return false;
-            }
-
-            for (int i = 0; i < leftCount; i++)
-            {
-                if (left[i] != right[i])
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        private static bool Approximately(Vector2 left, Vector2 right)
-        {
-            return (left - right).sqrMagnitude <= 1e-10f;
-        }
-
-        private static bool Approximately(Vector3 left, Vector3 right)
-        {
-            return (left - right).sqrMagnitude <= 1e-10f;
-        }
-
-        private static bool Approximately(Quaternion left, Quaternion right)
-        {
-            return Mathf.Abs(Quaternion.Dot(left, right)) >= 1f - 1e-10f;
-        }
     }
 }

@@ -12,7 +12,6 @@ namespace KimodoBridge.Editor
             KimodoPlayableClip playableClip,
             TimelineClip timelineClip,
             string modelName,
-            int runtimeFrameCount,
             float frameRate,
             int runtimeTrimStartFrame,
             bool includeTimelineInConstraint,
@@ -21,6 +20,7 @@ namespace KimodoBridge.Editor
             var result = new List<KimodoClipConstraint>();
             if (playableClip == null) return result;
             if (includeTimelineInConstraint &&
+                KimodoMotionModelProfiles.TryGetArdy(modelName, out _) &&
                 playableClip.inOutConstraintMode != KimodoInOutConstraintMode.None &&
                 playableClip.enableInConstraint &&
                 HasBeginBoundary(playableClip, timelineClip))
@@ -33,28 +33,6 @@ namespace KimodoBridge.Editor
                     runtimeTrimStartFrame / frameRate,
                     token));
             }
-            if (!KimodoPlayableClipGenerationHostService.TryGetClipConstraintAvatarMask(
-                    playableClip,
-                    out UnityEngine.AvatarMask avatarMask))
-            {
-                return result;
-            }
-            result.Add(new KimodoClipConstraint
-            {
-                motionBytes = KimodoClipConstraintEncoder.EncodeTimeline(
-                    timelineClip,
-                    modelName,
-                    runtimeFrameCount,
-                    frameRate,
-                    runtimeTrimStartFrame,
-                    playableClip.inOutConstraintMode,
-                    playableClip.enableInConstraint,
-                    playableClip.enableOutConstraint,
-                    token),
-                startTime = 0f,
-                duration = runtimeFrameCount / frameRate,
-                mask = KimodoClipConstraintMask.FromAvatarMask(modelName, avatarMask)
-            });
             return result;
         }
 

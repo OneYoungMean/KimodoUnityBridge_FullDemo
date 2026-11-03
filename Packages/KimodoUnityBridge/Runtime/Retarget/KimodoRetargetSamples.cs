@@ -122,13 +122,11 @@ namespace KimodoBridge
 
         public bool TryCaptureSampleData(
             out MuscleSample sampleData,
-            out KimodoConstraintMask validMask,
             out string error)
         {
             return KimodoRetargetSamplingUtility.TryCaptureSampleData(
                 cache,
                 out sampleData,
-                out validMask,
                 out error);
         }
 

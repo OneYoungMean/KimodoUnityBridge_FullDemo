@@ -145,6 +145,26 @@ namespace KimodoBridge.Editor
             EditorGUILayout.LabelField("Server Version", KimodoServerRuntimeUtil.ReadQuickServerVersion(runtimeRoot));
 
             EditorGUI.BeginChangeCheck();
+            string mocapRepository = EditorGUILayout.DelayedTextField(
+                new GUIContent("Mixamo Mocap Repository", "Checkout containing pipeline/estimate_pose_gvhmr.py."),
+                settings.MocapRepositoryPath);
+            if (GUILayout.Button("Browse Mocap...", GUILayout.Width(120f)))
+            {
+                string selected = EditorUtility.OpenFolderPanel(
+                    "Select Mixamo Mocap Repository", mocapRepository, string.Empty);
+                if (!string.IsNullOrWhiteSpace(selected))
+                {
+                    mocapRepository = selected;
+                    GUI.changed = true;
+                }
+            }
+            if (EditorGUI.EndChangeCheck())
+            {
+                settings.MocapRepositoryPath = mocapRepository;
+                settings.SaveSettings();
+            }
+
+            EditorGUI.BeginChangeCheck();
             bool autoSync = EditorGUILayout.Toggle(
                 new GUIContent(
                     "Auto Sync Server",
@@ -277,16 +297,6 @@ namespace KimodoBridge.Editor
                 if (EditorGUI.EndChangeCheck())
                 {
                     settings.EnableDebugLog = enableDebugLog;
-                    settings.SaveSettings();
-                }
-
-                EditorGUI.BeginChangeCheck();
-                bool enableDebugMode = EditorGUILayout.Toggle(
-                    new GUIContent("Debug Mode", "Show editor-only diagnostic actions such as clip analysis."),
-                    settings.EnableDebugMode);
-                if (EditorGUI.EndChangeCheck())
-                {
-                    settings.EnableDebugMode = enableDebugMode;
                     settings.SaveSettings();
                 }
 
@@ -704,16 +714,6 @@ namespace KimodoBridge.Editor
             }
         }
 
-        private string ResolveModelsRootForServer()
-        {
-            string customPath = KimodoPlayableClipGenerationSettings.instance.LocalModelsPath?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(customPath))
-            {
-                return string.Empty;
-            }
-
-            return Path.GetFullPath(customPath);
-        }
 
         private void PullServerStatusFromController()
         {
@@ -869,21 +869,6 @@ namespace KimodoBridge.Editor
                 CancellationToken.None);
         }
 
-        private static string SummarizeForUi(string message, int maxLength = 320)
-        {
-            if (string.IsNullOrWhiteSpace(message))
-            {
-                return string.Empty;
-            }
-
-            string normalized = string.Join(" ", message.Split(new[] { '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries)).Trim();
-            if (normalized.Length <= maxLength)
-            {
-                return normalized;
-            }
-
-            return normalized.Substring(0, maxLength) + "...";
-        }
 
     }
 }

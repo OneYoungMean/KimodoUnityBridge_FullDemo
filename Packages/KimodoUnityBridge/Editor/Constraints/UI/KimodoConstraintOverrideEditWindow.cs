@@ -4,6 +4,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEditor.Timeline;
 using UnityEngine;
+using UnityEngine.Playables;
 using UnityEngine.SceneManagement;
 using UnityEngine.Timeline;
 
@@ -553,14 +554,6 @@ namespace KimodoBridge.Editor
             CollapseSceneDragUndo();
         }
 
-        private void EnsureSceneDragUndo()
-        {
-            if (sceneDragUndoGroup >= 0 || marker == null) return;
-            Undo.IncrementCurrentGroup();
-            sceneDragUndoGroup = Undo.GetCurrentGroup();
-            Undo.SetCurrentGroupName("Edit Kimodo Constraint");
-            Undo.RecordObject(marker, "Edit Kimodo Constraint");
-        }
 
         private void CollapseSceneDragUndo()
         {
@@ -615,7 +608,12 @@ namespace KimodoBridge.Editor
             }
 
             Scene scene = SceneManager.GetActiveScene();
-            var director = TimelineEditor.inspectedDirector;
+            PlayableDirector director = null;
+            TimelineAsset timelineAsset = TimelineEditor.inspectedAsset;
+            if (KimodoDirectorResolver.TryResolve(timelineAsset, out PlayableDirector resolvedDirector, out _))
+            {
+                director = resolvedDirector;
+            }
             if (director != null && director.gameObject != null && director.gameObject.scene.IsValid())
             {
                 scene = director.gameObject.scene;

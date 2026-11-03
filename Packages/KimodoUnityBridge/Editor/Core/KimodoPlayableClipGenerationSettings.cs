@@ -1,6 +1,5 @@
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 namespace KimodoBridge.Editor
 {
@@ -21,16 +20,15 @@ namespace KimodoBridge.Editor
         [SerializeField] private string localModelsPath = string.Empty;
         [SerializeField] private string defaultPrompt = DefaultPromptFallback;
         [SerializeField] private string defaultBridgeModelName = KimodoMotionModelProfiles.DefaultModelName;
-        [FormerlySerializedAs("defaultBridgeVramMode")]
         [SerializeField] private KimodoTextEncoderMode defaultTextEncoderMode = KimodoTextEncoderMode.HighPerformance;
         [SerializeField] private bool keepCpuForceExperimental;
         [SerializeField] private bool writeResampledTimelineCacheClips;
         [SerializeField] private bool enableDebugLog;
-        [SerializeField] private bool enableDebugMode;
         [SerializeField] private bool enableKimodoStaticGraph;
         [SerializeField] private bool enableSplineExperimental;
         [SerializeField] private bool setupWizardCompleted;
         [SerializeField] private string quickServerPath = string.Empty;
+        [SerializeField] private string mocapRepositoryPath = string.Empty;
         [SerializeField] private bool autoSyncQuickServer = true;
         [SerializeField, HideInInspector] private bool advancedCurveFilterFoldout = true;
 
@@ -113,12 +111,6 @@ namespace KimodoBridge.Editor
             set => enableDebugLog = value;
         }
 
-        internal bool EnableDebugMode
-        {
-            get => enableDebugMode;
-            set => enableDebugMode = value;
-        }
-
         internal bool EnableKimodoStaticGraph
         {
             get => enableKimodoStaticGraph;
@@ -165,6 +157,12 @@ namespace KimodoBridge.Editor
             set => autoSyncQuickServer = value;
         }
 
+        internal string MocapRepositoryPath
+        {
+            get => mocapRepositoryPath?.Trim() ?? string.Empty;
+            set => mocapRepositoryPath = value?.Trim() ?? string.Empty;
+        }
+
         internal void SaveSettings()
         {
             bool effectiveKeepCpuForce = KeepCpuForceExperimental;
@@ -178,6 +176,7 @@ namespace KimodoBridge.Editor
             defaultBridgeModelName = KimodoMotionModelProfiles.NormalizeName(defaultBridgeModelName);
             keepCpuForceExperimental = effectiveKeepCpuForce;
             quickServerPath = quickServerPath?.Trim() ?? string.Empty;
+            mocapRepositoryPath = mocapRepositoryPath?.Trim() ?? string.Empty;
             EditorPrefs.SetBool(KeepCpuForceEditorPrefsKey, effectiveKeepCpuForce);
             Save(true);
         }

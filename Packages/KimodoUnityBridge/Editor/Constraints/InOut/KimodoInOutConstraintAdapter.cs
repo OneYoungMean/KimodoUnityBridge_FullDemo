@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using TimelineInject;
 using UnityEditor;
 using UnityEditor.Timeline;
@@ -15,9 +16,15 @@ namespace KimodoBridge.Editor
         public TrackAsset Track;
         public PlayableDirector Director;
         public Animator Animator;
+        public Avatar TargetAvatar;
         public string ModelName = KimodoMotionModelProfiles.DefaultModelName;
         public TimelineClip PreviousTimelineClip;
         public TimelineClip NextTimelineClip;
+        // Captured only when AutoBegin is needed; preview is suspended when
+        // this context is the inspected Timeline so the scene root is stable.
+        public Vector3 OriginalRootPosition;
+        public Quaternion OriginalRootRotation = Quaternion.identity;
+        public bool HasOriginalRootSnapshot;
         // Frozen before any Timeline evaluation so generation projection uses
         // the scene origin rather than the animated Animator pose.
         public Vector3 TrackOffsetPosition;
@@ -38,7 +45,11 @@ namespace KimodoBridge.Editor
             double sampleTimeOffsetSeconds,
             out KimodoInOutConstraintResult result,
             out string error,
-            IReadOnlyList<KimodoMarkerSampleResult> additionalManualSamples = null)
+            IReadOnlyList<KimodoMarkerSampleResult> additionalManualSamples = null,
+            bool deferEndConstraint = false,
+            bool deferBeginConstraint = false,
+            int outputStartFrame = 0,
+            int outputFrameCount = 0)
         {
             result = null;
             error = string.Empty;
@@ -73,7 +84,11 @@ namespace KimodoBridge.Editor
                 enableOut,
                 generationFrames,
                 manualSamples,
-                sampleTimeOffsetSeconds);
+                sampleTimeOffsetSeconds,
+                deferEndConstraint,
+                deferBeginConstraint,
+                outputStartFrame,
+                outputFrameCount);
             if (request == null)
             {
                 result = new KimodoInOutConstraintResult();
@@ -99,8 +114,8 @@ namespace KimodoBridge.Editor
             bool enableIn,
             bool enableOut,
             int generationFrames,
-            out KimodoMarkerSampleResult beginBoundaryPose,
-            out KimodoMarkerSampleResult endBoundaryPose,
+            out List<KimodoMarkerSampleResult> beginBoundaryPose,
+            out List<KimodoMarkerSampleResult> endBoundaryPose,
             out string warning)
         {
             beginBoundaryPose = null;
@@ -127,12 +142,19 @@ namespace KimodoBridge.Editor
                 enableOut,
                 generationFrames,
                 manualSamples: null);
+            if (request != null && mode == KimodoInOutConstraintMode.Outside)
+            {
+                KimodoInOutConstraintTools.ResolveOutsideContextFrames(sourceClip, out int before, out int after);
+                request.OutputStartFrame = before;
+                request.OutputFrameCount = KimodoInOutConstraintTools.ClampFrameCount(generationFrames);
+                request.GenerationFrames += before + after;
+            }
             if (request == null)
             {
                 return true;
             }
 
-            if (!KimodoInOutConstraintTools.TrySampleBoundaryPair(
+            if (!KimodoInOutConstraintTools.TrySampleBoundaries(
                     request,
                     out beginBoundaryPose,
                     out endBoundaryPose,
@@ -151,6 +173,60 @@ namespace KimodoBridge.Editor
         {
             TryResolveNeighborTimelineClips(clip, out TimelineClip previousClip, out _);
             return previousClip != null;
+        }
+
+        internal static bool TryResolveSourceClip(
+            TimelineClip targetClip,
+            TrackAsset sourceTrack,
+            PlayableAsset sourceAsset,
+            double sourceClipStart,
+            out TimelineClip resolvedClip,
+            out string error)
+        {
+            resolvedClip = null;
+            error = string.Empty;
+            if (sourceTrack == null && sourceAsset == null)
+            {
+                return true;
+            }
+            if (sourceTrack == null || sourceAsset == null)
+            {
+                error = "In/Out source Clip reference is incomplete.";
+                return false;
+            }
+            if (targetClip?.GetParentTrack()?.timelineAsset != sourceTrack.timelineAsset)
+            {
+                error = "In/Out source Clip must belong to the generation Timeline.";
+                return false;
+            }
+
+            TimelineClip[] matches = sourceTrack.GetClips()
+                .Where(item => item != null && ReferenceEquals(item.asset, sourceAsset) &&
+                    (sourceClipStart < 0.0 || Math.Abs(item.start - sourceClipStart) <= 1e-6))
+                .ToArray();
+            if (matches.Length != 1)
+            {
+                error = matches.Length == 0
+                    ? "The selected In/Out source Clip is no longer present on its Timeline track. Select it again."
+                    : "The selected In/Out PlayableAsset appears more than once on its track and cannot be resolved uniquely.";
+                return false;
+            }
+            if (!IsUsableSourceClip(matches[0]))
+            {
+                error = "The selected In/Out source Clip does not contain a usable animation.";
+                return false;
+            }
+            resolvedClip = matches[0];
+            return true;
+        }
+
+        internal static bool IsUsableSourceClip(TimelineClip timelineClip)
+        {
+            if (timelineClip?.asset is KimodoPlayableClip playable)
+            {
+                return playable.clip != null;
+            }
+            return TryResolveAnimationClip(timelineClip, out _, out _);
         }
 
         internal static bool TryResolveTimelineContext(
@@ -179,10 +255,12 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            Animator animator = director.GetGenericBinding(track) as Animator;
-            if (animator == null)
+            if (!KimodoConstraintMarkerEditorUtility.TryGetTrackAnimatorBinding(
+                    director,
+                    track,
+                    out Animator animator))
             {
-                error = "Animation track has no Animator binding.";
+                error = "Animation track and its parent tracks have no Animator binding.";
                 return false;
             }
 
@@ -217,51 +295,7 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            PlayableDirector inspectedDirector = TimelineEditor.inspectedDirector;
-            if (inspectedDirector != null && inspectedDirector.playableAsset == timelineAsset)
-            {
-                director = inspectedDirector;
-                return true;
-            }
-
-            var candidates = new List<PlayableDirector>();
-            PlayableDirector[] directors = Resources.FindObjectsOfTypeAll<PlayableDirector>();
-            for (int i = 0; i < directors.Length; i++)
-            {
-                PlayableDirector candidate = directors[i];
-                if (candidate == null ||
-                    candidate.playableAsset != timelineAsset ||
-                    EditorUtility.IsPersistent(candidate) ||
-                    candidate.gameObject == null ||
-                    !candidate.gameObject.scene.IsValid())
-                {
-                    continue;
-                }
-
-                candidates.Add(candidate);
-            }
-
-            if (candidates.Count == 0)
-            {
-                error = "Timeline inspected director is null and no scene PlayableDirector references this TimelineAsset.";
-                return false;
-            }
-
-            PlayableDirector selectedDirector = TryResolveSelectedDirector(candidates);
-            if (selectedDirector != null)
-            {
-                director = selectedDirector;
-                return true;
-            }
-
-            if (candidates.Count == 1)
-            {
-                director = candidates[0];
-                return true;
-            }
-
-            error = "Timeline inspected director is null and multiple scene PlayableDirectors reference this TimelineAsset. Select/open the correct PlayableDirector in Timeline.";
-            return false;
+            return KimodoDirectorResolver.TryResolve(timelineAsset, out director, out error);
         }
 
         private static TimelineAsset ResolveTimelineAsset(TimelineClip sourceClip, TrackAsset track)
@@ -273,26 +307,6 @@ namespace KimodoBridge.Editor
             }
 
             return TimelineEditor.inspectedAsset;
-        }
-
-        private static PlayableDirector TryResolveSelectedDirector(List<PlayableDirector> candidates)
-        {
-            GameObject selectedGameObject = Selection.activeGameObject;
-            if (selectedGameObject == null)
-            {
-                return null;
-            }
-
-            PlayableDirector selectedDirector = selectedGameObject.GetComponent<PlayableDirector>();
-            if (selectedDirector != null && candidates.Contains(selectedDirector))
-            {
-                return selectedDirector;
-            }
-
-            selectedDirector = selectedGameObject.GetComponentInParent<PlayableDirector>();
-            return selectedDirector != null && candidates.Contains(selectedDirector)
-                ? selectedDirector
-                : null;
         }
 
         internal static void TryResolveNeighborTimelineClips(
@@ -378,7 +392,11 @@ namespace KimodoBridge.Editor
             bool enableOut,
             int generationFrames,
             List<KimodoMarkerSampleResult> manualSamples,
-            double sampleTimeOffsetSeconds = 0.0)
+            double sampleTimeOffsetSeconds = 0.0,
+            bool deferEndConstraint = false,
+            bool deferBeginConstraint = false,
+            int outputStartFrame = 0,
+            int outputFrameCount = 0)
         {
             if (context == null)
             {
@@ -386,27 +404,68 @@ namespace KimodoBridge.Editor
             }
 
             bool hasManualSamples = manualSamples != null && manualSamples.Count > 0;
-            bool enableBegin = false;
-            bool enableEnd = false;
-
-            switch (mode)
+            var playable = context.SourceClip?.asset as KimodoPlayableClip;
+            bool isArdy = KimodoMotionModelProfiles.TryGetArdy(context.ModelName, out _);
+            if (isArdy && (playable?.inConstraintSourceAsset != null || playable?.outConstraintSourceAsset != null))
             {
-                case KimodoInOutConstraintMode.Inside:
-                    enableBegin = enableIn && context.SourceClip != null;
-                    enableEnd = enableOut && context.SourceClip != null;
-                    break;
-
-                case KimodoInOutConstraintMode.Outside:
-                    enableBegin = enableIn && context.PreviousTimelineClip != null;
-                    enableEnd = enableOut && context.NextTimelineClip != null;
-                    break;
+                throw new InvalidOperationException("Explicit In/Out source Clips currently require a standard motion model; ARDY uses Timeline history constraints.");
             }
 
+            KimodoLocalAvatarUtility.AvatarResolveResult targetAvatarResult = context.Track != null && context.Animator != null
+                ? KimodoLocalAvatarUtility.ResolveTimelineSourceAvatar(context.Track, context.Animator)
+                : default;
+            Avatar targetAvatar = targetAvatarResult.IsHumanoid ? targetAvatarResult.Avatar : context.TargetAvatar;
+            KimodoTimelineInOutConstraintContext ResolveSource(
+                bool isBegin,
+                TrackAsset selectedTrack,
+                PlayableAsset selectedAsset,
+                double selectedClipStart)
+            {
+                TimelineClip source = null;
+                if (selectedTrack != null || selectedAsset != null)
+                {
+                    if (!TryResolveSourceClip(context.SourceClip, selectedTrack, selectedAsset, selectedClipStart, out source, out string sourceError))
+                    {
+                        throw new InvalidOperationException(sourceError);
+                    }
+                }
+                else if (mode == KimodoInOutConstraintMode.Inside)
+                {
+                    source = context.SourceClip;
+                }
+                else if (mode == KimodoInOutConstraintMode.Outside)
+                {
+                    source = isBegin ? context.PreviousTimelineClip : context.NextTimelineClip;
+                }
+
+                if (source == null)
+                {
+                    return null;
+                }
+                if (!TryResolveTimelineContext(source, out KimodoTimelineInOutConstraintContext sourceContext, out string sourceContextError))
+                {
+                    throw new InvalidOperationException(sourceContextError);
+                }
+                sourceContext.TargetAvatar = targetAvatar;
+                return sourceContext;
+            }
+
+            KimodoTimelineInOutConstraintContext beginSource = ResolveSource(
+                true,
+                playable?.inConstraintSourceTrack,
+                playable?.inConstraintSourceAsset,
+                playable?.inConstraintSourceClipStart ?? -1.0);
+            KimodoTimelineInOutConstraintContext endSource = ResolveSource(
+                false,
+                playable?.outConstraintSourceTrack,
+                playable?.outConstraintSourceAsset,
+                playable?.outConstraintSourceClipStart ?? -1.0);
+            bool enableBegin = enableIn && beginSource != null;
+            bool enableEnd = enableOut && endSource != null;
             if (!enableBegin && !enableEnd && !hasManualSamples && !autoBeginAnchor)
             {
                 return null;
             }
-
             return new KimodoInOutConstraintRequest
             {
                 Mode = mode,
@@ -414,9 +473,31 @@ namespace KimodoBridge.Editor
                 EnableEnd = enableEnd,
                 ModelName = context.ModelName,
                 GenerationFrames = KimodoInOutConstraintTools.ClampFrameCount(generationFrames),
+                OutputStartFrame = Mathf.Max(0, outputStartFrame),
+                OutputFrameCount = Mathf.Max(0, outputFrameCount),
+                BeginWindow = isArdy
+                    ? KimodoConstraintWindowSpec.FromModelFrames(1, 1)
+                    : KimodoConstraintWindowSpec.FromCommandFrames60(
+                        playable?.inConstraintWindowFrames60 ?? 1,
+                        playable?.inConstraintSampleCount ?? 1,
+                        KimodoMotionModelProfiles.ResolveGenerationFrameRate(context.ModelName)),
+                EndWindow = isArdy
+                    ? KimodoConstraintWindowSpec.FromModelFrames(1, 1)
+                    : KimodoConstraintWindowSpec.FromCommandFrames60(
+                        playable?.outConstraintWindowFrames60 ?? 1,
+                        playable?.outConstraintSampleCount ?? 1,
+                        KimodoMotionModelProfiles.ResolveGenerationFrameRate(context.ModelName)),
                 AutoBeginAnchor = autoBeginAnchor,
                 DeferNormalization = deferNormalization,
+                DeferBeginConstraint = deferBeginConstraint,
+                DeferEndConstraint = deferEndConstraint,
                 TimelineContext = context,
+                BeginTimelineContext = beginSource,
+                EndTimelineContext = endSource,
+                HasExplicitBeginSource = playable?.inConstraintSourceAsset != null,
+                HasExplicitEndSource = playable?.outConstraintSourceAsset != null,
+                BeginSourceFrame = playable?.inConstraintSourceFrame ?? -1,
+                EndSourceFrame = playable?.outConstraintSourceFrame ?? -1,
                 ManualSamples = KimodoInOutConstraintTools.BuildLocalManualSamples(
                     manualSamples,
                     context.SourceClip != null ? context.SourceClip.start : 0.0,

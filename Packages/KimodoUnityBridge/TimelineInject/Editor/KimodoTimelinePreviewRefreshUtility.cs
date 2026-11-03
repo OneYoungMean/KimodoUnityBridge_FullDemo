@@ -1,12 +1,22 @@
 using UnityEditor;
 using UnityEditor.Timeline;
 using UnityEngine;
+using UnityEngine.Playables;
 using UnityEngine.Timeline;
 
 namespace TimelineInject
 {
     public static class KimodoTimelinePreviewRefreshUtility
     {
+        public static void InitializeSceneOffset(AnimationTrack track, Animator animator)
+        {
+            if (track == null || animator == null || track.trackOffset != TrackOffset.ApplySceneOffsets) return;
+            // Match AnimationTrack.GatherProperties when no Timeline window has
+            // initialized the editor preview cache yet. Runtime reads the binding.
+            track.sceneOffsetPosition = animator.transform.localPosition;
+            track.sceneOffsetRotation = animator.transform.localEulerAngles;
+        }
+
         private static readonly GUIContent TransformOffsetTitle = EditorGUIUtility.TrTextContent(
             "Clip Transform Offsets",
             "Use this to offset the root transform position and rotation relative to the track when playing this clip");
@@ -68,6 +78,23 @@ namespace TimelineInject
 
             state.previewMode = false;
             TimelineEditor.Refresh(RefreshReason.SceneNeedsUpdate | RefreshReason.WindowNeedsRedraw);
+        }
+
+        public static void DisablePreview(PlayableDirector director)
+        {
+            TryDisablePreview(director);
+        }
+
+        public static bool TryDisablePreview(PlayableDirector director)
+        {
+            var state = TimelineEditor.state;
+            if (director == null || TimelineEditor.inspectedDirector != director || state == null || !state.previewMode)
+            {
+                return false;
+            }
+
+            DisablePreview();
+            return true;
         }
 
         public static GameObject InstantiateForAnimatorPreview(Object original)
@@ -164,6 +191,58 @@ namespace TimelineInject
             {
                 EditorGUILayout.PropertyField(removeStartOffsetProperty, RemoveStartOffsetText);
             }
+        }
+
+        /// <summary>
+        /// Draws the six Kimodo loop lock booleans with the same two-row layout
+        /// and axis hit regions used by Timeline's MatchTargetsFieldGUI.
+        /// </summary>
+        public static void DrawLoopLockFields(
+            SerializedProperty matchTargetFieldsProxy,
+            SerializedProperty positionX,
+            SerializedProperty positionY,
+            SerializedProperty positionZ,
+            SerializedProperty rotationX,
+            SerializedProperty rotationY,
+            SerializedProperty rotationZ)
+        {
+            if (matchTargetFieldsProxy == null ||
+                positionX == null || positionY == null || positionZ == null ||
+                rotationX == null || rotationY == null || rotationZ == null)
+            {
+                return;
+            }
+
+            int flags = 0;
+            if (positionX.boolValue) flags |= (int)MatchTargetFields.PositionX;
+            if (positionY.boolValue) flags |= (int)MatchTargetFields.PositionY;
+            if (positionZ.boolValue) flags |= (int)MatchTargetFields.PositionZ;
+            if (rotationX.boolValue) flags |= (int)MatchTargetFields.RotationX;
+            if (rotationY.boolValue) flags |= (int)MatchTargetFields.RotationY;
+            if (rotationZ.boolValue) flags |= (int)MatchTargetFields.RotationZ;
+
+            int previousProxyValue = matchTargetFieldsProxy.intValue;
+            matchTargetFieldsProxy.intValue = flags;
+            bool previousShowMixedValue = EditorGUI.showMixedValue;
+            EditorGUI.showMixedValue =
+                positionX.hasMultipleDifferentValues || positionY.hasMultipleDifferentValues || positionZ.hasMultipleDifferentValues ||
+                rotationX.hasMultipleDifferentValues || rotationY.hasMultipleDifferentValues || rotationZ.hasMultipleDifferentValues;
+            AnimationTrackInspector.MatchTargetsFieldGUI(matchTargetFieldsProxy);
+            EditorGUI.showMixedValue = previousShowMixedValue;
+
+            int updatedFlags = matchTargetFieldsProxy.intValue;
+            if (updatedFlags == flags)
+            {
+                matchTargetFieldsProxy.intValue = previousProxyValue;
+                return;
+            }
+
+            positionX.boolValue = (updatedFlags & (int)MatchTargetFields.PositionX) != 0;
+            positionY.boolValue = (updatedFlags & (int)MatchTargetFields.PositionY) != 0;
+            positionZ.boolValue = (updatedFlags & (int)MatchTargetFields.PositionZ) != 0;
+            rotationX.boolValue = (updatedFlags & (int)MatchTargetFields.RotationX) != 0;
+            rotationY.boolValue = (updatedFlags & (int)MatchTargetFields.RotationY) != 0;
+            rotationZ.boolValue = (updatedFlags & (int)MatchTargetFields.RotationZ) != 0;
         }
 
         private static void DrawAnimationPlayableAssetMatchFields(

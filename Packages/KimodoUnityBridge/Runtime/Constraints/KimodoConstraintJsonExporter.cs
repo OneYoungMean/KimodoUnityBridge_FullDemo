@@ -8,7 +8,23 @@ namespace KimodoBridge
 {
     public static class KimodoFrameTimeUtility
     {
+        // Command protocol time is deliberately independent from a Timeline
+        // asset's editor frame rate and from a model's native KMB frame rate.
+        public const double CommandFrameRate = 60.0;
         public const double FrameTolerance = 1e-4;
+
+        /// <summary>Converts a command/UI frame count (always based on 60 FPS) to model frames.</summary>
+        public static int CommandFramesToModelFrameCount(int commandFrameCount, double modelFrameRate)
+        {
+            if (commandFrameCount <= 0 ||
+                double.IsNaN(modelFrameRate) || double.IsInfinity(modelFrameRate) ||
+                modelFrameRate <= 0.0)
+            {
+                return 0;
+            }
+
+            return SecondsToFrameCount(commandFrameCount / CommandFrameRate, modelFrameRate);
+        }
 
         public static int SecondsToFrameCount(double seconds, double frameRate)
         {
@@ -145,7 +161,7 @@ namespace KimodoBridge
             KimodoConstraintExportContext exportContext)
         {
             return BuildConstraints(
-                KimodoConstraintSampleComposer.ComposeCanonicalSamples(samples, DefaultExportFps),
+                samples,
                 exportContext ?? throw new ArgumentNullException(nameof(exportContext)),
                 0.0,
                 null,
@@ -183,6 +199,12 @@ namespace KimodoBridge
             return output;
         }
 
+        /// <summary>
+        /// Builds the single constraint emitted by a sample. Returns null when the sample emits none;
+        /// use <see cref="BuildConstraints(IReadOnlyList{KimodoMarkerSampleResult}, KimodoConstraintExportContext)"/>
+        /// when a sample may emit multiple constraints.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">The sample emits multiple constraints.</exception>
         public static KimodoConstraintJson BuildConstraint(
             KimodoMarkerSampleResult sample,
             KimodoConstraintExportContext exportContext,
@@ -199,9 +221,17 @@ namespace KimodoBridge
                 sample,
                 KimodoConstraintRigType.Unknown,
                 exportContext);
-            return internals.Length == 0
-                ? null
-                : internals[0].ToJsonObject(clipStartSeconds, clipDurationSeconds, exportFps);
+            if (internals.Length == 0)
+            {
+                return null;
+            }
+            if (internals.Length > 1)
+            {
+                throw new InvalidOperationException(
+                    $"Sample produces {internals.Length} constraints. Use BuildConstraints to export all of them.");
+            }
+
+            return internals[0].ToJsonObject(clipStartSeconds, clipDurationSeconds, exportFps);
         }
 
         public static List<KimodoConstraintJson> BuildConstraints(
@@ -213,7 +243,7 @@ namespace KimodoBridge
             double exportFps = DefaultExportFps)
         {
             List<KimodoConstraintJson> constraints = BuildConstraints(
-                KimodoConstraintSampleComposer.ComposeCanonicalSamples(samples, exportFps),
+                samples,
                 exportContext,
                 clipStartSeconds,
                 clipDurationSeconds,
@@ -228,7 +258,8 @@ namespace KimodoBridge
             double? clipDurationSeconds,
             double exportFps)
         {
-            if (KimodoConstraintMask.IsActive(sample, "rootposition") &&
+            if ((KimodoConstraintMask.IsActive(sample, "rootposition") ||
+                 KimodoConstraintMask.IsActive(sample, "rootheading")) &&
                 sample.rootOverride != null)
             {
                 KimodoConstraintProjectedPose projected = RequireProfileSkeletonPose(
@@ -242,8 +273,9 @@ namespace KimodoBridge
                 {
                     type = "root2d",
                     frame_indices = BuildFrameIndices(sample.sampleTime - clipStartSeconds, clipDurationSeconds, exportFps),
-                    smooth_root_2d = new List<float[]> { new[] { -root.x, root.z } }
                 };
+                if (KimodoConstraintMask.IsActive(sample, "rootposition"))
+                    canonical.smooth_root_2d = new List<float[]> { new[] { -root.x, root.z } };
                 if (KimodoConstraintMask.IsActive(sample, "rootheading"))
                 {
                     canonical.global_root_heading = new List<float[]> { new[] { forward.z, -forward.x } };
@@ -587,4 +619,5 @@ namespace KimodoBridge
             return merged;
         }
     }
+
 }

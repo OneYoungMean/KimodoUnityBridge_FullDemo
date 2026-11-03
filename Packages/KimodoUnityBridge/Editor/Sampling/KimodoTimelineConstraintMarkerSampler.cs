@@ -11,10 +11,8 @@ namespace KimodoBridge.Editor
 {
     internal static class KimodoTimelineTrackOffsetUtility
     {
-        // Capture the track's world-space origin before Timeline evaluation.
-        // Scene offsets are represented by the bound Animator's scene transform;
-        // AnimationTrack.sceneOffsetPosition is an editor preview cache and is
-        // not stable during generation (or before preview has been opened).
+        // Keep the world-space track offset independent of Timeline preview;
+        // projection later uses this snapshot for world-to-track conversion.
         internal static void CaptureWorldOffset(
             TrackAsset track,
             Animator animator,
@@ -30,33 +28,12 @@ namespace KimodoBridge.Editor
                 return;
             }
 
-            bool useTransformOffset = animationTrack.trackOffset == TrackOffset.ApplyTransformOffsets ||
-                (animationTrack.trackOffset == TrackOffset.Auto &&
-                 (animator == null || animator.runtimeAnimatorController == null));
-            isSceneOffset = !useTransformOffset;
-            if (useTransformOffset)
-            {
-                position = animationTrack.position;
-                rotation = animationTrack.rotation;
-                rotation.Normalize();
-
-                Transform parent = animator != null ? animator.transform.parent : null;
-                if (parent != null)
-                {
-                    position = parent.TransformPoint(position);
-                    rotation = (parent.rotation * rotation).normalized;
-                }
-                return;
-            }
-
-            if (animator != null)
-            {
-                // Animator transform is the actual scene-space origin used by
-                // Timeline's ApplySceneOffsets mode.
-                position = animator.transform.position;
-                rotation = animator.transform.rotation;
-                rotation.Normalize();
-            }
+            TimelineInject.KimodoTimelinePreviewRefreshUtility.ResolveAnimationTrackOffset(
+                animationTrack,
+                animator,
+                out position,
+                out rotation,
+                out isSceneOffset);
         }
 
         internal static void ResolveWorldOffset(
@@ -212,11 +189,8 @@ namespace KimodoBridge.Editor
             }
 
             targetRootRotation.Normalize();
-            sample.enableMask.rootPosition = true;
             sample.enableMask.rootHeading = true;
-            sample.validMask ??= new KimodoConstraintMask();
-            sample.validMask.rootPosition = true;
-            sample.validMask.rootHeading = true;
+            sample.sampleValid = true;
             sample.rootOverride = new KimodoRigidTransform { t = targetRootPosition, q = targetRootRotation };
             sample.constraintMode = "root2d";
             sample.sampleTime = exportedSampleTime;
@@ -531,6 +505,57 @@ namespace KimodoBridge.Editor
                 out samples,
                 out error,
                 writebackClip);
+        }
+
+        internal bool TryCaptureHipsWorldPositions(
+            IReadOnlyList<double> timelineTimes,
+            out Vector3[] positions,
+            out string error)
+        {
+            positions = null;
+            error = string.Empty;
+            if (timelineTimes == null || timelineTimes.Count == 0)
+            {
+                error = "Timeline sample times are empty.";
+                return false;
+            }
+            if (disposed || context?.Animator == null)
+            {
+                error = "Timeline pose sampler or source Animator is unavailable.";
+                return false;
+            }
+
+            Transform hips = context.Animator.GetBoneTransform(HumanBodyBones.Hips);
+            if (hips == null)
+            {
+                error = "The source Character Humanoid rig has no Hips bone.";
+                return false;
+            }
+
+            try
+            {
+                positions = new Vector3[timelineTimes.Count];
+                for (int i = 0; i < timelineTimes.Count; i++)
+                {
+                    double timelineTime = timelineTimes[i];
+                    if (double.IsNaN(timelineTime) || double.IsInfinity(timelineTime))
+                    {
+                        positions = null;
+                        error = $"Timeline sample time {i} is invalid.";
+                        return false;
+                    }
+
+                    evaluationScope.EvaluateAt(Math.Max(0.0, timelineTime));
+                    positions[i] = hips.position;
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                positions = null;
+                error = ex.Message;
+                return false;
+            }
         }
 
         internal bool TryCaptureTargetBoneSamplesAtFrames(
@@ -871,9 +896,7 @@ namespace KimodoBridge.Editor
             if (sampledMarkerIndices.Count > 0)
             {
                 if (!KimodoTimelineSamplingSession.TryCreate(context, context.ModelName, out KimodoTimelineSamplingSession sampler, out error))
-                {
                     return false;
-                }
 
                 try
                 {
@@ -918,7 +941,6 @@ namespace KimodoBridge.Editor
                         {
                             return false;
                         }
-
                     }
                 }
                 finally
@@ -946,7 +968,7 @@ namespace KimodoBridge.Editor
             }
             KimodoPlayableClipGenerationSettings.DebugLog(
                 $"[Kimodo][ConstraintExport] marker='{marker.ConstraintType}' time={marker.time:F3} mode={mode} " +
-                $"channels={KimodoConstraintMask.FromSample(sample).muscle}:{KimodoConstraintMask.FromSample(sample).rootPosition}:{KimodoConstraintMask.FromSample(sample).AnyEndEffector} hasHeading={KimodoConstraintMask.IsActive(sample, "rootheading")}");
+                $"sampleValid={sample.sampleValid} hasRoot={sample.rootOverride != null} hasEffector={sample.enableMask?.AnyEndEffector == true} hasHeading={KimodoConstraintMask.IsActive(sample, "rootheading")}");
             return true;
         }
 

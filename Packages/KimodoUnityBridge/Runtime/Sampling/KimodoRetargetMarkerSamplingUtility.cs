@@ -57,7 +57,6 @@ namespace KimodoBridge
             if (!KimodoRetargetSamplingUtility.TryCaptureSampleData(
                     targetCache,
                     out MuscleSample sampleData,
-                    out KimodoConstraintMask validMask,
                     out error))
             {
                 result = null;
@@ -65,7 +64,7 @@ namespace KimodoBridge
             }
 
             result.sampleData = sampleData;
-            result.validMask = validMask;
+            result.sampleValid = true;
             CaptureWorldTargets(targetCache, result);
             result.enabled = true;
             return true;
@@ -91,7 +90,6 @@ namespace KimodoBridge
             result.effectors.rightFoot ??= KimodoRigidTransform.Identity;
             result.rootOverride ??= KimodoRigidTransform.Identity;
             result.enableMask ??= new KimodoConstraintMask();
-            result.validMask ??= new KimodoConstraintMask();
 
             Vector3 position = Vector3.zero;
             Quaternion rotation = Quaternion.identity;
@@ -104,25 +102,16 @@ namespace KimodoBridge
             }
             result.rootOverride.t = position;
             result.rootOverride.q = rotation;
-            result.validMask.rootPosition = rootValid;
-            result.validMask.rootHeading = rootValid;
-
-            CaptureEffector(cache, HumanBodyBones.LeftHand, result.effectors.leftHand,
-                result.validMask, 0);
-            CaptureEffector(cache, HumanBodyBones.RightHand, result.effectors.rightHand,
-                result.validMask, 1);
-            CaptureEffector(cache, HumanBodyBones.LeftFoot, result.effectors.leftFoot,
-                result.validMask, 2);
-            CaptureEffector(cache, HumanBodyBones.RightFoot, result.effectors.rightFoot,
-                result.validMask, 3);
+            CaptureEffector(cache, HumanBodyBones.LeftHand, result.effectors.leftHand);
+            CaptureEffector(cache, HumanBodyBones.RightHand, result.effectors.rightHand);
+            CaptureEffector(cache, HumanBodyBones.LeftFoot, result.effectors.leftFoot);
+            CaptureEffector(cache, HumanBodyBones.RightFoot, result.effectors.rightFoot);
         }
 
         private static void CaptureEffector(
             RetargetSkeleton cache,
             HumanBodyBones bone,
-            KimodoRigidTransform target,
-            KimodoConstraintMask validMask,
-            int index)
+            KimodoRigidTransform target)
         {
             Vector3 position = Vector3.zero;
             Quaternion rotation = Quaternion.identity;
@@ -131,20 +120,18 @@ namespace KimodoBridge
             if (valid)
             {
                 target.t = position;
-                // Constraint effector rotations remain bind-relative world deltas.
+                target.space = KimodoConstraintSpace.World;
+                target.enableRotation = false;
+                // Hand goals use Unity's axis-corrected goal frame. Feet keep
+                // the legacy bind-relative transport below.
                 target.q = ResolveEffectorTransportRotation(cache, bone, rotation);
             }
             else
             {
                 target.t = Vector3.zero;
+                target.space = KimodoConstraintSpace.World;
                 target.q = Quaternion.identity;
-            }
-            switch (index)
-            {
-                case 0: validMask.leftHand = valid; break;
-                case 1: validMask.rightHand = valid; break;
-                case 2: validMask.leftFoot = valid; break;
-                case 3: validMask.rightFoot = valid; break;
+                target.enableRotation = false;
             }
         }
 
@@ -153,29 +140,42 @@ namespace KimodoBridge
             HumanBodyBones bone,
             Quaternion currentWorld)
         {
-            if (cache == null || !cache.GetBoneBindWorldRotation(bone, out Quaternion initialWorld))
+            if (cache == null)
             {
                 return currentWorld;
             }
 
-            // Store the world-space change relative to the bind pose. The
-            // solver restores the absolute world rotation before applying the
-            // Humanoid IK goal conversion.
-            return currentWorld * Quaternion.Inverse(initialWorld);
+            if (bone == HumanBodyBones.LeftHand || bone == HumanBodyBones.RightHand)
+            {
+                Quaternion post = AvatarRuntimeAccess.GetAvatarPostRotationOrIdentity(cache.avatar, (int)bone);
+                Quaternion goalOffset = bone == HumanBodyBones.LeftHand
+                    ? new Quaternion(0.707107f, 0f, 0.707107f, 0f)
+                    : new Quaternion(0f, 0.707107f, 0f, 0.707107f);
+                // Native Unity: goal rotation = bone rotation * PostQ * hand offset.
+                return (currentWorld * post * goalOffset).normalized;
+            }
+
+            if (!cache.GetBoneBindWorldRotation(bone, out Quaternion initialWorld))
+            {
+                return currentWorld;
+            }
+
+            // Feet retain the existing bind-relative transport protocol.
+            return (currentWorld * Quaternion.Inverse(initialWorld)).normalized;
         }
 
         private static KimodoMarkerSampleResult CreateSampleShell(
             string markerType,
             double sampleTime)
         {
+            string mode = (markerType ?? string.Empty).Trim().ToLowerInvariant().Replace('_', '-');
+            if (mode == "left-hand" || mode == "right-hand" || mode == "left-foot" || mode == "right-foot")
+                mode = "effector";
+            mode = KimodoConstraintInternal.NormalizeMode(mode);
             return new KimodoMarkerSampleResult
             {
                 sampleData = new MuscleSample(),
-                constraintMode = string.Equals(markerType, "fullbody", StringComparison.OrdinalIgnoreCase)
-                    ? "fullbody"
-                    : string.Equals(markerType, "root2d", StringComparison.OrdinalIgnoreCase)
-                        ? "root2d"
-                        : "effector",
+                constraintMode = mode,
                 sampleTime = sampleTime,
                 enableMask = new KimodoConstraintMask(),
                 effectors = new KimodoConstraintEffectors(),

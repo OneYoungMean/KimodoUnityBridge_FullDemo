@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using TimelineInject;
+using UnityEditor.Timeline;
 using UnityEngine;
 using UnityEngine.Timeline;
 
@@ -9,7 +10,6 @@ namespace KimodoBridge.Editor
     internal static class KimodoInOutConstraintComposer
     {
         private const double AutoBeginAnchorWindowSeconds = 1.0;
-        private const string Root2DConstraintType = "root2d";
 
         internal static bool TryBuild(
             KimodoInOutConstraintRequest request,
@@ -28,37 +28,50 @@ namespace KimodoBridge.Editor
             }
 
             var built = new KimodoInOutConstraintResult();
+            built.BeginWindow.ModelFrameCount =
+                KimodoInOutConstraintTools.ResolveWindowFrameCount(request, isBegin: true);
+            built.EndWindow.ModelFrameCount =
+                KimodoInOutConstraintTools.ResolveWindowFrameCount(request, isBegin: false);
 
-            if (!KimodoInOutConstraintTools.TrySampleBoundaryPair(
+            if (!KimodoInOutConstraintTools.TrySampleBoundaries(
                     request,
-                    out KimodoMarkerSampleResult beginSample,
-                    out KimodoMarkerSampleResult endSample,
+                    out List<KimodoMarkerSampleResult> beginSamples,
+                    out List<KimodoMarkerSampleResult> endSamples,
                     out warning,
                     out error))
             {
                 return false;
             }
 
-            if (beginSample != null)
+            if (beginSamples.Count > 0)
             {
                 // Keep the boundary first so the previous Timeline frame wins same-frame conflicts.
-                // Generation hosts may promote this sample to a one-frame ClipConstraint.
-                built.CombinedSamples.Add(beginSample);
-                built.BeginBoundarySample = beginSample;
+                // ARDY still promotes its single In sample to a ClipConstraint.
+                built.BeginBoundarySample = beginSamples[0];
+                built.BeginBoundarySamples.AddRange(beginSamples);
+                if (!request.DeferBeginConstraint)
+                {
+                    built.CombinedSamples.AddRange(beginSamples);
+                }
             }
 
             AppendSamples(request.ManualSamples, built.CombinedSamples);
 
-            if (endSample != null &&
+            if (endSamples.Count > 0 &&
+                !request.DeferEndConstraint &&
                 KimodoInOutConstraintTools.ClampFrameCount(request.GenerationFrames) > 1)
             {
-                built.CombinedSamples.Add(endSample);
+                built.CombinedSamples.AddRange(endSamples);
             }
+            built.EndBoundarySamples.AddRange(endSamples);
 
             double normalizationAnchorWindowSeconds = request.AutoBeginAnchor
                 ? AutoBeginAnchorWindowSeconds
                 : double.PositiveInfinity;
             KimodoMarkerSampleResult autoBegin = null;
+            // AutoBegin is a synthetic normalization anchor for the first pass.
+            // Deferring the authored In boundary must not suppress this anchor;
+            // the deferred boundary is appended separately after pass 1.
             if (request.AutoBeginAnchor &&
                 !KimodoConstraintNormalizationUtility.HasNormalizationAnchor(
                     built.CombinedSamples,
@@ -69,8 +82,23 @@ namespace KimodoBridge.Editor
             }
             else if (autoBegin != null)
             {
-                built.CombinedSamples.Insert(0, autoBegin);
-                built.HasSyntheticAutoBeginConstraint = true;
+                var withAutoBegin = new List<KimodoMarkerSampleResult>(built.CombinedSamples.Count + 1)
+                {
+                    autoBegin
+                };
+                withAutoBegin.AddRange(built.CombinedSamples);
+                bool autoBeginWithinRawMotionLimits = KimodoPostApplyOutConstraintUtility.TryValidateRawConstraintRootMotion(
+                        ExportSamples(request, withAutoBegin),
+                        KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName),
+                        out _);
+                if (autoBeginWithinRawMotionLimits)
+                {
+                    built.CombinedSamples.Insert(0, autoBegin);
+                    built.HasSyntheticAutoBeginConstraint = true;
+                }
+                // Auto Begin is a synthetic normalization anchor. A raw speed or
+                // acceleration violation removes this optional anchor; authored
+                // boundary constraints are validated below and still report errors.
             }
 
             float generationFrameRate = KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName);
@@ -86,16 +114,41 @@ namespace KimodoBridge.Editor
                 new KimodoConstraintExportContext
                 {
                     // Lightweight editor/tests can construct a track-only
-                    // Root2D request. Real Timeline generation always uses the
+                    // constraint request. Real Timeline generation uses the
                     // bound Character projector above.
                     projectedPoseProjector = projectedPoseProjector
                 },
                 clipStartSeconds: 0.0,
                 clipDurationSeconds: clipDurationSeconds,
                 exportFps: generationFrameRate);
+            if (!KimodoPostApplyOutConstraintUtility.TryValidateRawConstraintRootMotion(
+                    built.ConstraintsJson,
+                    generationFrameRate,
+                    out error))
+            {
+                error = $"Boundary constraints violate root motion limits: {error}";
+                return false;
+            }
 
             result = built;
             return true;
+        }
+
+        private static string ExportSamples(
+            KimodoInOutConstraintRequest request,
+            IReadOnlyList<KimodoMarkerSampleResult> samples)
+        {
+            float frameRate = KimodoMotionModelProfiles.ResolveGenerationFrameRate(request.ModelName);
+            Func<KimodoMarkerSampleResult, KimodoConstraintProjectedPose> projector =
+                request.TimelineContext?.Animator != null
+                    ? KimodoConstraintExportProjector.Create(request.TimelineContext)
+                    : KimodoConstraintExportProjector.CreateProfileNative(request.ModelName);
+            return KimodoConstraintJsonExporter.ToConstraintsJson(
+                samples,
+                new KimodoConstraintExportContext { projectedPoseProjector = projector },
+                0.0,
+                KimodoInOutConstraintTools.ResolveConstraintClipDurationSeconds(request.GenerationFrames, frameRate),
+                frameRate);
         }
 
         internal static void AppendSamples(
@@ -130,70 +183,41 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            TimelineClip sourceClip = request.TimelineContext.SourceClip;
-            bool hasTimelineSamplingContext = sourceClip != null &&
-                request.TimelineContext.Director != null &&
-                request.TimelineContext.Animator != null;
-            double timelineStart = sourceClip != null
-                ? Math.Max(0.0, sourceClip.start)
-                : 0.0;
-            if (hasTimelineSamplingContext)
+            KimodoTimelineInOutConstraintContext context = request.TimelineContext;
+            if (context.Animator == null)
             {
-                if (!KimodoTimelineConstraintSampler.TrySampleMarker(
-                        request.TimelineContext,
-                        timelineStart,
-                        0.0,
-                        Root2DConstraintType,
-                        request.ModelName,
-                        out sample,
-                        out error))
-                {
-                    return false;
-                }
-            }
-            else
-            {
-                // Keep the lightweight construction usable for editor/test
-                // callers that only provide an AnimationTrack. Real Timeline
-                // generation always has a complete sampling context above.
-                KimodoTimelineTrackOffsetUtility.ResolveWorldOffset(
-                    request.TimelineContext.Track,
-                    request.TimelineContext.Animator,
-                    out Vector3 worldPosition,
-                    out Quaternion worldRotation);
-                sample = new KimodoMarkerSampleResult
-                {
-                    rootOverride = new KimodoUnityBridge.KimodoRigidTransform
-                    {
-                        t = worldPosition,
-                        q = worldRotation
-                    },
-                    enableMask = new KimodoConstraintMask { rootPosition = true, rootHeading = true },
-                    validMask = new KimodoConstraintMask { rootPosition = true, rootHeading = true }
-                };
-            }
-
-            if (sample?.rootOverride == null)
-            {
-                error = "Auto Begin Root2D sampling returned no world root.";
+                error = "Auto Begin Root2D constraint requires the bound Character Animator.";
                 return false;
             }
 
-            // Root2D is an application mode, not a reduced payload format.
-            // AutoBegin therefore retains the sampled complete root transform.
-            sample.constraintMode = Root2DConstraintType;
+            if (!KimodoConstraintPoseUtility.TryCreateRestPoseSample(context, out sample, out error))
+                return false;
+
+            if (!context.HasOriginalRootSnapshot)
+            {
+                context.HasOriginalRootSnapshot = KimodoInOutConstraintTools.TryCaptureOriginalRoot2D(
+                    context.Animator,
+                    context.Director,
+                    out context.OriginalRootPosition,
+                    out context.OriginalRootRotation);
+                if (!context.HasOriginalRootSnapshot)
+                {
+                    error = "Auto Begin Root2D constraint could not resolve the scene character root.";
+                    return false;
+                }
+            }
+
+            // Keep the valid rest-pose payload as Root2D's support sample, but
+            // target the character's original scene root. Root2D only consumes
+            // the planar root position and heading, so a scene T-pose cannot
+            // become an accidental FullBody starting constraint.
+            sample.rootOverride.t = context.OriginalRootPosition;
+            sample.rootOverride.q = context.OriginalRootRotation.normalized;
+            sample.constraintMode = "root2d";
             sample.sampleTime = 0.0;
-            sample.enableMask = new KimodoConstraintMask
-            {
-                rootPosition = true,
-                rootHeading = true
-            };
-            sample.validMask = new KimodoConstraintMask
-            {
-                rootPosition = true,
-                rootHeading = true
-            };
-            sample.effectors = new KimodoConstraintEffectors();
+            sample.enableMask = KimodoConstraintMask.ForType("root2d");
+            sample.sampleValid = true;
+            sample.enabled = true;
             return true;
         }
 

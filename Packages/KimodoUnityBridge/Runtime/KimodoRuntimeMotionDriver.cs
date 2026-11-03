@@ -8,7 +8,6 @@ using Newtonsoft.Json.Linq;
 using KimodoUnityBridge;
 using TimelineInject;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 namespace KimodoBridge
 {
@@ -16,14 +15,11 @@ namespace KimodoBridge
     public sealed class KimodoRuntimeMotionDriver : MonoBehaviour
     {
         [Header("Scene References")]
-        [SerializeField, HideInInspector]
-        private Animator targetHumanoidAnimator;
         [SerializeField] private List<Animator> targetHumanoidAnimators = new List<Animator>();
 
         [Header("Bridge Runtime")]
         [SerializeField] private string modelsRoot = string.Empty;
         [SerializeField] private string modelName = "Kimodo-SOMA-RP-v1";
-        [FormerlySerializedAs("highVram")]
         [SerializeField] private KimodoTextEncoderMode textEncoderMode = KimodoTextEncoderMode.HighPerformance;
         [SerializeField] private bool forceCpu;
 
@@ -34,8 +30,6 @@ namespace KimodoBridge
         [SerializeField] private bool randomSeed = true;
         [SerializeField] private int fixedSeed = 42;
         [SerializeField][Min(0.1f)] private float segmentIntervalSeconds = 5f;
-        [FormerlySerializedAs("ardyPlaybackDelaySeconds")]
-        [FormerlySerializedAs("ardySafeIntervalSeconds")]
         [SerializeField][Min(0.2f), Tooltip("Request more ARDY motion when this much playable animation remains.")]
         private float ardyPlaybackReserveSeconds = 1f;
         [SerializeField, Tooltip("Adapt ARDY history from previous root speed: 0-1 m/s = 0.225; 1-10 m/s grows exponentially to 1; above 10 m/s = 1.")]
@@ -56,7 +50,7 @@ namespace KimodoBridge
 
         private const string IdlePrompt = "idle";
         private const string KimodoFolderName = "NvlabKimodoQuickServer~";
-        private const float MinGenerationDurationSeconds = 1f;
+        private const float MinGenerationDurationSeconds = 1.5f;
         private const float MaxGenerationDurationSeconds = 10f;
 
         private readonly KimodoRuntimeGenerationSession generationSession =
@@ -68,6 +62,8 @@ namespace KimodoBridge
         private KimodoBridgeService bridgeService;
         private KimodoRuntimeMotionPlayer motionPlayer;
         private KimodoRuntimeInterruptionPlan interruptionPlan;
+        private float nextGenerationAllowedTime;
+        private int generationFailureCount;
 
         private sealed class KimodoRuntimeInterruptionPlan
         {
@@ -243,52 +239,24 @@ namespace KimodoBridge
             return ResolveGenerationDurationSeconds();
         }
 
+        /// <summary>Compatibility API; intentionally no-op while runtime end-effector constraints are unsupported.</summary>
         public void SetLeftHandConstraint(float worldX, float worldY, float worldZ, float duration = 1f)
         {
-            StageEndEffectorConstraintInternal(
-                "LeftHand constraint",
-                KimodoRuntimeConstraints.LeftHandType,
-                "LeftHand",
-                worldX,
-                worldY,
-                worldZ,
-                duration);
         }
 
+        /// <summary>Compatibility API; intentionally no-op while runtime end-effector constraints are unsupported.</summary>
         public void SetRightHandConstraint(float worldX, float worldY, float worldZ, float duration = 1f)
         {
-            StageEndEffectorConstraintInternal(
-                "RightHand constraint",
-                KimodoRuntimeConstraints.RightHandType,
-                "RightHand",
-                worldX,
-                worldY,
-                worldZ,
-                duration);
         }
 
+        /// <summary>Compatibility API; intentionally no-op while runtime end-effector constraints are unsupported.</summary>
         public void SetLeftFootConstraint(float worldX, float worldY, float worldZ, float duration = 1f)
         {
-            StageEndEffectorConstraintInternal(
-                "LeftFoot constraint",
-                KimodoRuntimeConstraints.LeftFootType,
-                "LeftFoot",
-                worldX,
-                worldY,
-                worldZ,
-                duration);
         }
 
+        /// <summary>Compatibility API; intentionally no-op while runtime end-effector constraints are unsupported.</summary>
         public void SetRightFootConstraint(float worldX, float worldY, float worldZ, float duration = 1f)
         {
-            StageEndEffectorConstraintInternal(
-                "RightFoot constraint",
-                KimodoRuntimeConstraints.RightFootType,
-                "RightFoot",
-                worldX,
-                worldY,
-                worldZ,
-                duration);
         }
 
         /// <summary>Stages an absolute Unity world-space Root2D target.</summary>
@@ -357,7 +325,7 @@ namespace KimodoBridge
                 return;
             }
 
-            float distance = Vector2.Distance(new Vector2(current.x, current.z), targetPosition);
+            float distance = (KimodoMotionMath.ToPlanar(current) - targetPosition).magnitude;
             float duration = KimodoRoot2DPlanner.EstimateDuration(
                 distance,
                 maxSpeed,
@@ -451,36 +419,42 @@ namespace KimodoBridge
             promptDraft = ResolveInitialPrompt();
             constraints.Clear();
             generationSession.BeginMotionReset();
+            generationFailureCount = 0;
+            nextGenerationAllowedTime = 0f;
+            try
+            {
+                if (!generationSession.IsActive)
+                {
+                    UpdateStatus("Prompt reset.");
+                    return;
+                }
 
-            if (!generationSession.IsActive)
+                if (generationSession.GenerationInFlight)
+                {
+                    UpdateStatus("Prompt reset. Waiting for current generation to finish.");
+                    generationSession.CancelGeneration();
+                    await WaitForGenerationSlotAsync(generationSession.LifetimeToken);
+                }
+
+                motionPlayer.Stop();
+                motionPlayer.ResetCompletionState();
+                motionPlayer.ClearNextSegment();
+                interruptionPlan = null;
+                if (bridgeService != null && !bridgeService.IsDisposed)
+                {
+                    await bridgeService.StopAsync(CancellationToken.None);
+                    bridgeService.Dispose();
+                }
+                bridgeService = KimodoBridgeService.CreateOwned();
+                ResetArdySessionState();
+                CaptureAppliedRuntimeSettings();
+                UpdateStatus("Prompt reset. Generating fresh segment.");
+                await GenerateNextSegmentAsync(generationSession.LifetimeToken);
+            }
+            finally
             {
                 generationSession.EndMotionReset();
-                UpdateStatus("Prompt reset.");
-                return;
             }
-
-            if (generationSession.GenerationInFlight)
-            {
-                UpdateStatus("Prompt reset. Waiting for current generation to finish.");
-                generationSession.CancelGeneration();
-                await WaitForGenerationSlotAsync(generationSession.LifetimeToken);
-            }
-
-            motionPlayer.Stop();
-            motionPlayer.ResetCompletionState();
-            motionPlayer.ClearNextSegment();
-            interruptionPlan = null;
-            if (bridgeService != null && !bridgeService.IsDisposed)
-            {
-                await bridgeService.StopAsync(CancellationToken.None);
-                bridgeService.Dispose();
-            }
-            bridgeService = KimodoBridgeService.CreateOwned();
-            ResetArdySessionState();
-            CaptureAppliedRuntimeSettings();
-            generationSession.EndMotionReset();
-            UpdateStatus("Prompt reset. Generating fresh segment.");
-            await GenerateNextSegmentAsync(generationSession.LifetimeToken);
         }
 
         private async Task StartRuntimeAsync()
@@ -492,6 +466,8 @@ namespace KimodoBridge
 
             try
             {
+                generationFailureCount = 0;
+                nextGenerationAllowedTime = 0f;
                 if (!ValidateConfiguration(out string error))
                 {
                     UpdateStatus(error);
@@ -547,7 +523,8 @@ namespace KimodoBridge
 
         private void MaybeStartNextGeneration(CancellationToken token)
         {
-            if (!generationSession.Running || generationSession.GenerationInFlight || generationSession.GenerationBlocked)
+            if (!generationSession.Running || generationSession.GenerationInFlight || generationSession.GenerationBlocked ||
+                Time.realtimeSinceStartup < nextGenerationAllowedTime)
             {
                 return;
             }
@@ -561,7 +538,13 @@ namespace KimodoBridge
                 return;
             }
 
-            if (generationSession.RefreshPending || (!isArdy && motionPlayer.HasNextSegment))
+            if (generationSession.RefreshPending)
+            {
+                _ = GenerateNextSegmentAsync(token);
+                return;
+            }
+
+            if (!isArdy && motionPlayer.HasNextSegment)
             {
                 return;
             }
@@ -571,6 +554,11 @@ namespace KimodoBridge
 
         private async Task GenerateNextSegmentAsync(CancellationToken token)
         {
+            if (Time.realtimeSinceStartup < nextGenerationAllowedTime)
+            {
+                return;
+            }
+
             if (!generationSession.TryBeginGeneration(
                     token,
                     out CancellationTokenSource generationCts,
@@ -641,8 +629,11 @@ namespace KimodoBridge
                 }
 
                 OnProgress($"Generating segment {requestSegmentIndex}...");
-                KimodoBridgeGenerationResult bridgeResult =
-                    await bridgeService.GenerateAsync(request, OnProgress, generationToken);
+                KimodoGenerationResultDto bridgeResult =
+                    await new KimodoBridgeCommand(bridgeService).ExecuteAsync(
+                        request,
+                        (_, message) => OnProgress(message),
+                        generationToken);
                 bool staleRequest = requestVersion != generationSession.RequestVersion || generationToken.IsCancellationRequested;
                 if (KimodoRuntimeGenerationSession.ShouldDiscardResult(
                         isArdy,
@@ -668,12 +659,12 @@ namespace KimodoBridge
                         bridgeResult,
                         ardyProfile,
                         resolvedRequestSeed);
-                    if (bridgeResult.ArdyPlaybackReserveSeconds.HasValue)
+                    if (bridgeResult.ardyPlaybackReserveSeconds.HasValue)
                     {
                         generationSession.SetArdyPlaybackReserve(
-                            (float)bridgeResult.ArdyPlaybackReserveSeconds.Value);
+                            (float)bridgeResult.ardyPlaybackReserveSeconds.Value);
                     }
-                    if (bridgeResult.MotionData == null)
+                    if (bridgeResult.motionData == null)
                     {
                         generationSession.CompleteArdyRequest(
                             sendPrompt,
@@ -712,7 +703,7 @@ namespace KimodoBridge
                 {
                     if (!motionPlayer.ReplaceArdy(
                             generatedSegment,
-                            bridgeResult.StartFrame,
+                            bridgeResult.startFrame,
                             verboseLogging,
                             out string appendError))
                     {
@@ -745,11 +736,19 @@ namespace KimodoBridge
                     generationSession.RecordKimodoGenerationDuration(
                         Mathf.Max(0f, Time.realtimeSinceStartup - generationStartedAt));
                 }
-                SegmentReady?.Invoke(CreateSegmentReport(generatedSegment));
-
                 constraints.CompleteGeneration(isArdy, consumedPendingRevision);
                 generationSession.AdvanceSegment(requestSegmentIndex);
+                generationFailureCount = 0;
+                nextGenerationAllowedTime = 0f;
                 UpdateStatus($"Segment {requestSegmentIndex} ready.");
+                try
+                {
+                    SegmentReady?.Invoke(CreateSegmentReport(generatedSegment));
+                }
+                catch (Exception subscriberException)
+                {
+                    Debug.LogException(subscriberException, this);
+                }
             }
             catch (OperationCanceledException)
             {
@@ -758,6 +757,8 @@ namespace KimodoBridge
             {
                 Debug.LogException(ex, this);
                 UpdateStatus($"Generate failed: {ex.Message}");
+                generationFailureCount = Mathf.Min(generationFailureCount + 1, 6);
+                nextGenerationAllowedTime = Time.realtimeSinceStartup + Mathf.Min(30f, Mathf.Pow(2f, generationFailureCount));
             }
             finally
             {
@@ -1072,20 +1073,6 @@ namespace KimodoBridge
             return promptDraft;
         }
 
-        private string StageEndEffectorConstraintInternal(
-            string label,
-            string constraintType,
-            string jointName,
-            float x,
-            float y,
-            float z,
-            float durationSeconds)
-        {
-            string result = "Runtime hand/feet effectors are disabled; use KMB FullBody sampling.";
-            UpdateStatus(result);
-            return result;
-        }
-
         private string StageRoot2DWorldConstraintInternal(
             float worldX,
             float worldZ,
@@ -1157,32 +1144,25 @@ namespace KimodoBridge
             }
 
             Vector3 currentWorldPosition = GetCurrentPositionInternal();
-            Quaternion modelToWorldRotation = ResolveModelToWorldRotation();
-            float scale = Mathf.Max(1e-6f, sourceSkeleton.humanScale) /
-                Mathf.Max(1e-6f, ResolveTargetHumanScale());
-            Vector2 localDelta = KimodoRoot2DPlanner.ToModelOffset(
+            ResolveRuntimeRoot2DProjection(
+                targetWorldPosition,
+                worldHeading,
                 currentWorldPosition,
-                modelToWorldRotation,
-                new Vector3(targetWorldPosition.x, currentWorldPosition.y, targetWorldPosition.y));
-            Vector3 neutralRoot = sourceRoot + new Vector3(localDelta.x * scale, 0f, localDelta.y * scale);
+                sourceSkeleton,
+                sourceRoot,
+                sourceRotation,
+                out Vector2 protocolRoot,
+                out Vector2 protocolHeading);
             constraint = new KimodoRuntimeRoot2DConstraint
             {
                 sampleTime = sampleTime,
-                protocolRoot = new Vector2(-neutralRoot.x, neutralRoot.z),
+                protocolRoot = protocolRoot,
                 hasHeading = worldHeading.HasValue
             };
 
             if (worldHeading.HasValue)
             {
-                Vector2 modelHeading = KimodoRoot2DPlanner.ToModelHeading(
-                    modelToWorldRotation,
-                    worldHeading.Value);
-                Quaternion desiredYaw = Quaternion.LookRotation(
-                    new Vector3(modelHeading.x, 0f, modelHeading.y),
-                    Vector3.up);
-                Vector3 forward = KimodoMotionMath.ResolvePlanarHeading(
-                    KimodoMotionMath.ApplyPlanarHeading(sourceRotation, desiredYaw)) * Vector3.forward;
-                constraint.protocolHeading = new Vector2(forward.z, -forward.x);
+                constraint.protocolHeading = protocolHeading;
             }
 
             return true;
@@ -1215,17 +1195,18 @@ namespace KimodoBridge
             }
 
             Vector3 currentWorldPosition = GetCurrentPositionInternal();
-            Quaternion modelToWorldRotation = ResolveModelToWorldRotation();
-            float scale = Mathf.Max(1e-6f, sourceSkeleton.humanScale) /
-                Mathf.Max(1e-6f, ResolveTargetHumanScale());
-            Vector2 localDelta = KimodoRoot2DPlanner.ToModelOffset(
+            ResolveRuntimeRoot2DProjection(
+                targetWorldPosition,
+                worldHeading,
                 currentWorldPosition,
-                modelToWorldRotation,
-                new Vector3(targetWorldPosition.x, currentWorldPosition.y, targetWorldPosition.y));
-            Vector3 neutralRoot = sourceRoot + new Vector3(localDelta.x * scale, 0f, localDelta.y * scale);
+                sourceSkeleton,
+                sourceRoot,
+                sourceRotation,
+                out Vector2 protocolRoot,
+                out Vector2 protocolHeading);
             target = new KimodoRuntimeRoot2DTarget
             {
-                protocolRoot = new Vector2(-neutralRoot.x, neutralRoot.z),
+                protocolRoot = protocolRoot,
                 maxSpeed = maxSpeed,
                 maxAcceleration = maxAcceleration,
                 arrivalThreshold = arrivalThreshold,
@@ -1235,13 +1216,44 @@ namespace KimodoBridge
 
             if (worldHeading.HasValue)
             {
-                Vector2 modelHeading = KimodoRoot2DPlanner.ToModelHeading(modelToWorldRotation, worldHeading.Value);
-                Quaternion desiredYaw = Quaternion.LookRotation(new Vector3(modelHeading.x, 0f, modelHeading.y), Vector3.up);
-                Vector3 forward = KimodoMotionMath.ResolvePlanarHeading(
-                    KimodoMotionMath.ApplyPlanarHeading(sourceRotation, desiredYaw)) * Vector3.forward;
-                target.protocolHeading = new Vector2(forward.z, -forward.x);
+                target.protocolHeading = protocolHeading;
             }
             return true;
+        }
+
+        private void ResolveRuntimeRoot2DProjection(
+            Vector2 targetWorldPosition,
+            Vector2? worldHeading,
+            Vector3 currentWorldPosition,
+            RetargetSkeleton sourceSkeleton,
+            Vector3 sourceRoot,
+            Quaternion sourceRotation,
+            out Vector2 protocolRoot,
+            out Vector2 protocolHeading)
+        {
+            Quaternion modelToWorldRotation = ResolveModelToWorldRotation();
+            float scale = Mathf.Max(1e-6f, sourceSkeleton.humanScale) /
+                Mathf.Max(1e-6f, ResolveTargetHumanScale());
+            Vector2 localDelta = KimodoRoot2DPlanner.ToModelOffset(
+                currentWorldPosition,
+                modelToWorldRotation,
+                new Vector3(targetWorldPosition.x, currentWorldPosition.y, targetWorldPosition.y));
+            Vector3 neutralRoot = sourceRoot + new Vector3(localDelta.x * scale, 0f, localDelta.y * scale);
+            protocolRoot = new Vector2(-neutralRoot.x, neutralRoot.z);
+            protocolHeading = Vector2.zero;
+
+            if (worldHeading.HasValue)
+            {
+                Vector2 modelHeading = KimodoRoot2DPlanner.ToModelHeading(
+                    modelToWorldRotation,
+                    worldHeading.Value);
+                Quaternion desiredYaw = Quaternion.LookRotation(
+                    new Vector3(modelHeading.x, 0f, modelHeading.y),
+                    Vector3.up);
+                Vector3 forward = KimodoMotionMath.ResolvePlanarHeading(
+                    KimodoMotionMath.ApplyPlanarHeading(sourceRotation, desiredYaw)) * Vector3.forward;
+                protocolHeading = new Vector2(forward.z, -forward.x);
+            }
         }
 
         private string GetCurrentPromptInternal(out bool isIdle)
@@ -1420,10 +1432,6 @@ namespace KimodoBridge
             }
 
             // Preserve scenes serialized before multi-target support.
-            if (resolvedTargetAnimatorBuffer.Count == 0 && targetHumanoidAnimator != null)
-            {
-                resolvedTargetAnimatorBuffer.Add(targetHumanoidAnimator);
-            }
             return resolvedTargetAnimatorBuffer;
         }
 
@@ -1464,10 +1472,6 @@ namespace KimodoBridge
             return KimodoRuntimeBootstrapUtility.EnsureRuntimeRootForCurrentMode(ResolveRuntimeRoot());
         }
 
-        private static string FormatVector3(Vector3 value)
-        {
-            return $"({value.x:0.###}, {value.y:0.###}, {value.z:0.###})";
-        }
 
         private static KimodoRuntimeSegmentReport CreateSegmentReport(KimodoRuntimeGeneratedSegment segment)
         {

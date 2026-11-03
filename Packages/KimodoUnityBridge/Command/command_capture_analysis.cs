@@ -12,203 +12,299 @@ using KimodoBridge;
 using TimelineInject;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace KimodoUnityBridge.Command
 
 {
     internal static partial class command_context
     {
+        private const string PhaseTrackVersion = "1-temporal-cluster-v2-command-60";
+
+        private static KimodoMarkerSampleResult[] CaptureCachedSampleResults(
+            TimelineSessionRecord session,
+            AnalysisCacheRecord record,
+            TimelineCharacterRecord character,
+            int startFrame,
+            int frameCount)
+        {
+            string key = record?.Id ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(key) && AnalysisPoseSamples.TryGetValue(key, out KimodoMarkerSampleResult[] cached) &&
+                cached != null && cached.Length >= frameCount)
+            {
+                return cached;
+            }
+            KimodoMarkerSampleResult[] samples = CaptureSampleResults(session, character, startFrame, frameCount);
+            if (!string.IsNullOrWhiteSpace(key)) AnalysisPoseSamples[key] = samples;
+            return samples;
+        }
+
+        // The analysis picture is the fixed 16:9 composite: four
+        // overview tiles plus eight key poses and eight step poses.
         private static JObject RenderAnalysisPictures(
             TimelineSessionRecord session,
             IReadOnlyList<AnalysisSubject> subjects,
-            string level,
-            int requestedResolution)
+            int requestedResolution,
+            JObject cameraOptions)
         {
-            string signature = BuildPictureSignature(subjects, level, requestedResolution);
-            string imagePath = Path.Combine(EvidenceFolder(session), $"analysis_picture_{signature}.png");
-            string projectPath = ToProjectRelativePath(imagePath);
-            JObject persisted = subjects[0].Record.Pictures;
-            if (persisted != null &&
-                string.Equals(persisted.Value<string>("level"), level, StringComparison.Ordinal) &&
-                string.Equals(persisted.Value<string>("image_path"), projectPath, StringComparison.OrdinalIgnoreCase) &&
-                File.Exists(imagePath))
+            if (subjects == null || subjects.Count != 1)
             {
-                var cachedResult = (JObject)persisted.DeepClone();
-                cachedResult["cached"] = true;
-                return cachedResult;
+                throw new InvalidOperationException("Analysis picture rendering accepts exactly one clip.");
             }
+            JObject capture = RenderSceneAnalysisCapture(session, subjects[0], requestedResolution, cameraOptions);
+            return (capture["pictures"] as JObject)?.DeepClone() as JObject ?? new JObject();
+        }
 
-            var data = subjects.Select(subject => BuildSubjectPictureData(session, subject)).ToList();
-            TrajectoryScale trajectoryScale = BuildTrajectoryScale(data, true);
-            var tiles = new List<PictureTile>();
-            foreach (SubjectPictureData subject in data)
+        private static List<PictureTile> BuildAnalysisTiles(SubjectPictureData subject)
+        {
+            List<int> allKeyframes = GetAllAnalysisKeyframes(subject);
+            List<int> allFootEvents = GetAllFootEventFrames(subject);
+            IReadOnlyList<int?> keyframes = SelectUniformlySpacedKeyframes(subject, allKeyframes, 8);
+            IReadOnlyList<int?> steps = SelectFirstNonOverlappingFrames(subject, allFootEvents, 8);
+            var result = new List<PictureTile>
             {
-                tiles.AddRange(BuildPictureTiles(subject, level));
-            }
-
-            int maxTileCount = Math.Max(
-                1,
-                data.Select(subject => tiles.Count(tile => ReferenceEquals(tile.Subject, subject))).DefaultIfEmpty(1).Max());
-            PictureLayout layout = PictureLayout.ForLevel(maxTileCount, level == "high", requestedResolution);
-
-            int tileWidth = layout.TileSize;
-            int tileHeight = ResolvePictureTileHeight(layout, tiles, tileWidth);
-            int panelHeight = layout.TileRows * tileHeight;
-
-            List<RectInt> imageRects;
-            int imageWidth;
-            int imageHeight;
-            bool cached = false;
-            Directory.CreateDirectory(EvidenceFolder(session));
-            GameObject previousCaptureRoot = captureSessionRoot;
-            bool previousFogEnabled = RenderSettings.fog;
-            var hiddenCharacterRenderers = new List<(Renderer Renderer, bool Enabled)>();
-            Texture2D canvas;
-            try
-            {
-                captureSessionRoot = session?.SessionRoot;
-                foreach (GameObject characterRoot in subjects
-                    .Select(subject => subject.Character?.Root)
-                    .Where(root => root != null)
-                    .Distinct())
-                {
-                    foreach (Renderer renderer in characterRoot.GetComponentsInChildren<Renderer>(true))
-                    {
-                        hiddenCharacterRenderers.Add((renderer, renderer.enabled));
-                        renderer.enabled = false;
-                    }
-                }
-                // Analysis evidence must not inherit distance-based project fog.
-                RenderSettings.fog = false;
-                canvas = RenderPictureCanvas(
-                    data,
-                    tiles,
-                    layout,
-                    trajectoryScale,
-                    tileWidth,
-                    tileHeight,
-                    PictureSupersample,
-                    out imageRects);
-            }
-            finally
-            {
-                foreach ((Renderer renderer, bool enabled) in hiddenCharacterRenderers)
-                {
-                    if (renderer != null) renderer.enabled = enabled;
-                }
-                RenderSettings.fog = previousFogEnabled;
-                captureSessionRoot = previousCaptureRoot;
-            }
-            try
-            {
-                imageWidth = canvas.width;
-                imageHeight = canvas.height;
-                File.WriteAllBytes(imagePath, canvas.EncodeToPNG());
-            }
-            finally
-            {
-                UnityEngine.Object.DestroyImmediate(canvas);
-            }
-
-            var descriptions = new JArray();
-            for (int index = 0; index < tiles.Count; index++)
-            {
-                PictureTile tile = tiles[index];
-                RectInt rect = imageRects[index];
-                int panel = data.FindIndex(item => ReferenceEquals(item, tile.Subject));
-                int localIndex = tiles.Take(index).Count(item => ReferenceEquals(item.Subject, tile.Subject));
-                JObject description = (JObject)tile.Description.DeepClone();
-                description["subject"] = tile.Subject.Subject.Role;
-                descriptions.Add(new JObject
-                {
-                    ["id"] = (panel + 1).ToString(CultureInfo.InvariantCulture) + "." +
-                        (localIndex + 1).ToString(CultureInfo.InvariantCulture),
-                    ["rect"] = new JObject { ["x"] = rect.x, ["y"] = rect.y, ["width"] = rect.width, ["height"] = rect.height },
-                    ["description"] = description
-                });
-            }
-
-            var result = new JObject
-            {
-                ["level"] = level,
-                ["image_path"] = projectPath,
-                ["width"] = imageWidth,
-                ["height"] = imageHeight,
-                ["resolution"] = requestedResolution,
-                ["supersample"] = PictureSupersample,
-                ["images"] = descriptions,
-                ["cached"] = cached
+                PictureTile.Overview(subject, "3d_track", Vector3.up),
+                PictureTile.Overview(subject, "height_time_track", Vector3.up),
+                PictureTile.SelectedOverview(subject, "3d_ghost", allKeyframes, new Vector3(1f, .75f, -1f)),
+                PictureTile.SelectedOverview(subject, "3d_ghost_track", allFootEvents, new Vector3(1f, .75f, -1f))
             };
-            PersistPictureSummary(session, subjects[0].Record, result);
+            for (int index = 0; index < 8; index++) result.Add(PictureTile.PoseSlot(subject, keyframes[index], "key_pose", index + 1));
+            for (int index = 0; index < 8; index++) result.Add(PictureTile.PoseSlot(subject, steps[index], "step_pose", index + 1));
+            // SelectedOverview records the frames that survive spatial
+            // de-duplication in "frames" and preserves the complete source
+            // set separately in "candidate_frames". Keep that distinction:
+            // these tiles describe what was drawn, not every analysis event.
+            result[2].Description["selected_frames"] = new JArray(keyframes.Where(value => value.HasValue).Select(value => value.Value));
+            result[3].Description["selected_frames"] = new JArray(steps.Where(value => value.HasValue).Select(value => value.Value));
+            result[2].Description["shared_with"] = "key_pose";
+            result[3].Description["shared_with"] = "step_pose";
             return result;
         }
 
-        private static int ResolvePictureTileHeight(
-            PictureLayout layout,
-            IReadOnlyList<PictureTile> tiles,
-            int tileWidth)
+        private static List<int> BuildHeightTimePoseFrames(SubjectPictureData subject)
         {
-            if (layout.TileSize != tileWidth || tiles == null ||
-                !tiles.Any(tile => tile.Presentation == "test_foot_transitions" || tile.Presentation == "test_keyframes"))
-            {
-                return layout.TileSize;
-            }
+            int lastFrame = Math.Max(0, subject?.Pelvis?.Length - 1 ?? 0);
+            var frames = (subject?.KeyFrameSet ?? new HashSet<int>())
+                .Append(0)
+                .Append(lastFrame)
+                .Select(frame => Mathf.Clamp(frame, 0, lastFrame))
+                .Distinct()
+                .OrderBy(frame => frame)
+                .ToList();
+            if (subject == null || frames.Count <= 2) return frames;
 
-            float widestAspect = 1f;
-            foreach (PictureTile tile in tiles)
+            const float maximumWidthToHeight = 5f;
+            const float layoutAspect = 4f / 3f;
+            while (frames.Count > 2)
             {
-                if (tile.Presentation != "test_foot_transitions" && tile.Presentation != "test_keyframes") continue;
-                CalculateTestViewExtents(tile.Subject, tile.Direction, out _, out float horizontal, out float vertical, out _);
-                widestAspect = Mathf.Max(
-                    widestAspect,
-                    (horizontal + TestCameraMarginMeters) / Mathf.Max(.01f, vertical + TestCameraMarginMeters));
-            }
+                float poseHeight = CalculateHeightTimePoseHeight(subject, frames);
+                float length = CalculateHeightTimeLength(subject, frames, layoutAspect);
+                if (length / Mathf.Max(.001f, poseHeight) <= maximumWidthToHeight) break;
 
-            int minimumHeight = Mathf.Max(1, Mathf.Min(160, tileWidth / 3));
-            return Mathf.Clamp(Mathf.RoundToInt(tileWidth / widestAspect), minimumHeight, tileWidth);
+                int removeIndex = -1;
+                int closestGap = int.MaxValue;
+                for (int index = 0; index < frames.Count - 1; index++)
+                {
+                    if (frames[index + 1] == lastFrame) continue;
+                    int gap = frames[index + 1] - frames[index];
+                    if (gap <= closestGap)
+                    {
+                        closestGap = gap;
+                        removeIndex = index + 1;
+                    }
+                }
+                if (removeIndex < 0) break;
+                frames.RemoveAt(removeIndex);
+            }
+            return frames;
         }
 
-        private static Bounds CalculateTestContentBounds(SubjectPictureData subject)
-        {
-            if (subject == null || subject.Pelvis == null || subject.Pelvis.Length == 0)
-            {
-                return new Bounds(Vector3.up, Vector3.one);
-            }
-
-            Bounds bounds = new Bounds(subject.Pelvis[0], Vector3.zero);
-            // The viewport follows the sampled trajectory markers directly.
-            // Do not extrapolate a body envelope from first/last mesh bounds;
-            // that mixes a world-space mesh box with every Hips sample.
-            foreach (Vector3 point in subject.Pelvis) bounds.Encapsulate(point);
-            foreach (Vector3 point in subject.LeftHand) bounds.Encapsulate(point);
-            foreach (Vector3 point in subject.RightHand) bounds.Encapsulate(point);
-            foreach (Vector3 point in subject.LeftFoot) bounds.Encapsulate(point);
-            foreach (Vector3 point in subject.RightFoot) bounds.Encapsulate(point);
-            foreach (Vector3 point in subject.Head) bounds.Encapsulate(point);
-
-            return bounds;
-        }
-
-        private static void CalculateTestViewExtents(
+        private static float CalculateHeightTimePoseHeight(
             SubjectPictureData subject,
-            Vector3 direction,
-            out Vector3 viewCenter,
-            out float maxHorizontal,
-            out float maxVertical,
-            out float maxDepth)
+            IReadOnlyList<int> poseFrames)
         {
-            CalculateTestViewExtents(
-                subject.Pelvis.Concat(subject.LeftHand)
-                    .Concat(subject.RightHand).Concat(subject.LeftFoot).Concat(subject.RightFoot)
-                    .Concat(subject.Head),
-                direction,
-                out viewCenter,
-                out maxHorizontal,
-                out maxVertical,
-                out maxDepth);
+            float minY = float.PositiveInfinity;
+            float maxY = float.NegativeInfinity;
+            for (int index = 0; index < poseFrames.Count; index++)
+            {
+                int frame = Mathf.Clamp(poseFrames[index], 0, Math.Max(0, subject.Pelvis.Length - 1));
+                Bounds pose = CalculateRawPreviewPoseBounds(subject, frame);
+                minY = Mathf.Min(minY, pose.min.y);
+                maxY = Mathf.Max(maxY, pose.max.y);
+            }
+            if (float.IsInfinity(minY) || float.IsInfinity(maxY)) return 1f;
+            return Mathf.Max(.001f, maxY - minY);
         }
 
-        private static void CalculateTestViewExtents(
+        private static float CalculateHeightTimeLength(
+            SubjectPictureData subject,
+            IReadOnlyList<int> poseFrames,
+            float aspect)
+        {
+            if (subject == null || poseFrames == null || poseFrames.Count == 0) return 1f;
+            var poses = new List<Bounds>(poseFrames.Count);
+            float minY = float.PositiveInfinity;
+            float maxY = float.NegativeInfinity;
+            for (int index = 0; index < poseFrames.Count; index++)
+            {
+                int frame = Mathf.Clamp(poseFrames[index], 0, Math.Max(0, subject.Pelvis.Length - 1));
+                Bounds pose = CalculateRawPreviewPoseBounds(subject, frame);
+                Vector3 hips = subject.Pelvis[frame];
+                pose.center += new Vector3(-hips.x, 0f, -hips.z);
+                poses.Add(pose);
+                minY = Mathf.Min(minY, pose.min.y);
+                maxY = Mathf.Max(maxY, pose.max.y);
+            }
+
+            if (float.IsNaN(minY) || float.IsInfinity(minY) || float.IsNaN(maxY) || float.IsInfinity(maxY)) return 1f;
+            float targetWidth = Mathf.Max(.001f, maxY - minY) * Mathf.Max(.001f, aspect);
+            float minimumLength = 0f;
+            const float poseGap = .06f;
+            int lastFrame = Math.Max(1, subject.Pelvis.Length - 1);
+            for (int right = 1; right < poses.Count; right++)
+            for (int left = 0; left < right; left++)
+            {
+                int frameGap = poseFrames[right] - poseFrames[left];
+                if (frameGap <= 0) continue;
+                minimumLength = Mathf.Max(minimumLength,
+                    (poses[left].max.z - poses[right].min.z + poseGap) * lastFrame / frameGap);
+            }
+
+            float WidthAtLength(float length)
+            {
+                float minZ = float.PositiveInfinity;
+                float maxZ = float.NegativeInfinity;
+                for (int index = 0; index < poses.Count; index++)
+                {
+                    float time = subject.Pelvis.Length <= 1 ? 0f :
+                        Mathf.Clamp(poseFrames[index], 0, subject.Pelvis.Length - 1) / (float)(subject.Pelvis.Length - 1);
+                    minZ = Mathf.Min(minZ, time * length + poses[index].min.z);
+                    maxZ = Mathf.Max(maxZ, time * length + poses[index].max.z);
+                }
+                return maxZ - minZ;
+            }
+
+            float upper = Mathf.Max(1f, targetWidth - poses[0].min.z);
+            while (WidthAtLength(upper) < targetWidth && upper < 100000f) upper *= 2f;
+            if (WidthAtLength(0f) >= targetWidth) return Mathf.Max(.001f, minimumLength);
+            float lower = 0f;
+            for (int iteration = 0; iteration < 32; iteration++)
+            {
+                float middle = (lower + upper) * .5f;
+                if (WidthAtLength(middle) < targetWidth) lower = middle;
+                else upper = middle;
+            }
+            return Mathf.Max(.001f, upper, minimumLength);
+        }
+
+        private static List<int> GetAllAnalysisKeyframes(SubjectPictureData subject)
+        {
+            return subject.KeyFrameSet.OrderBy(frame => frame).ToList();
+        }
+
+        private static List<int> GetAllFootEventFrames(SubjectPictureData subject)
+        {
+            int last = Math.Max(0, subject.Pelvis.Length - 1);
+            return (subject.Subject.Record.Analysis?["foot_contacts"] as JArray ?? new JArray())
+                .OfType<JObject>()
+                .Where(IsFootLandingEvent)
+                .Select(item => Mathf.Clamp(item.Value<int?>("frame") ?? 0, 0, last))
+                .Distinct()
+                .OrderBy(frame => frame)
+                .ToList();
+        }
+
+        private static bool IsFootLandingEvent(JObject item)
+        {
+            return item?.Value<bool?>("contact") == true;
+        }
+
+        private static IReadOnlyList<int?> SelectFirstNonOverlappingFrames(
+            SubjectPictureData subject,
+            IEnumerable<int> candidates,
+            int count)
+        {
+            List<int> validFrames = GetNonOverlappingFrames(subject, candidates);
+            int targetCount = Math.Max(0, count);
+            return validFrames.Take(targetCount).Select(frame => (int?)frame)
+                .Concat(Enumerable.Repeat<int?>(null, Math.Max(0, targetCount - validFrames.Count)))
+                .ToArray();
+        }
+
+        private static List<int> GetNonOverlappingFrames(
+            SubjectPictureData subject,
+            IEnumerable<int> candidates)
+        {
+            int last = Math.Max(0, subject.Pelvis.Length - 1);
+            var selected = new List<int>();
+            foreach (int frame in (candidates ?? Enumerable.Empty<int>())
+                .Select(item => Mathf.Clamp(item, 0, last))
+                .Distinct()
+                .OrderBy(item => item))
+            {
+                Vector3 candidate = subject.Pelvis[frame];
+                candidate.y = 0f;
+                if (selected.Any(previousFrame =>
+                {
+                    Vector3 previous = subject.Pelvis[previousFrame];
+                    previous.y = 0f;
+                    return Vector3.Distance(previous, candidate) < MinimumGhostGroundSpacing;
+                }))
+                {
+                    continue;
+                }
+
+                selected.Add(frame);
+            }
+            return selected;
+        }
+
+        private static IReadOnlyList<int?> SelectUniformlySpacedKeyframes(
+            SubjectPictureData subject,
+            IEnumerable<int> candidates,
+            int count)
+        {
+            int lastFrame = Math.Max(0, subject.Pelvis.Length - 1);
+            int targetCount = Math.Max(0, count);
+            if (targetCount == 0) return Array.Empty<int?>();
+
+            // Keep the same spatial de-duplication used by ghost views as the
+            // validity filter, but evaluate every candidate before selecting
+            // evenly across the resulting ordered set. Always make both clip
+            // endpoints eligible.
+            List<int> validFrames = GetNonOverlappingFrames(
+                subject,
+                (candidates ?? Enumerable.Empty<int>()).Concat(new[] { 0, lastFrame }));
+            if (!validFrames.Contains(0)) validFrames.Insert(0, 0);
+            if (!validFrames.Contains(lastFrame)) validFrames.Add(lastFrame);
+            validFrames = validFrames.Distinct().OrderBy(frame => frame).ToList();
+
+            if (targetCount == 1) return new int?[] { 0 };
+
+            int selectedCount = Math.Min(targetCount, validFrames.Count);
+            var selected = new int?[selectedCount];
+            for (int index = 0; index < selectedCount; index++)
+            {
+                if (index == 0)
+                {
+                    selected[index] = 0;
+                    continue;
+                }
+                if (index == selectedCount - 1)
+                {
+                    selected[index] = lastFrame;
+                    continue;
+                }
+
+                int candidateIndex = Mathf.RoundToInt(
+                    index * (validFrames.Count - 1f) / (selectedCount - 1f));
+                selected[index] = validFrames[Mathf.Clamp(candidateIndex, 0, validFrames.Count - 1)];
+            }
+            return selected.Concat(Enumerable.Repeat<int?>(null, targetCount - selectedCount)).ToArray();
+        }
+
+
+        private static void CalculateSceneViewExtents(
             Bounds bounds,
             Vector3 direction,
             out Vector3 viewCenter,
@@ -216,7 +312,7 @@ namespace KimodoUnityBridge.Command
             out float maxVertical,
             out float maxDepth)
         {
-            CalculateTestViewExtents(
+            CalculateSceneViewExtents(
                 new[]
                 {
                     new Vector3(bounds.min.x, bounds.min.y, bounds.min.z),
@@ -235,7 +331,7 @@ namespace KimodoUnityBridge.Command
                 out maxDepth);
         }
 
-        private static void CalculateTestViewExtents(
+        private static void CalculateSceneViewExtents(
             IEnumerable<Vector3> points,
             Vector3 direction,
             out Vector3 viewCenter,
@@ -284,65 +380,6 @@ namespace KimodoUnityBridge.Command
             maxDepth = (maxDepthValue - minDepth) * .5f;
         }
 
-        private static Vector3[] ExpandPosePointsAwayFromHipsInCameraSpace(
-            IReadOnlyList<Vector3> points,
-            Vector3 direction,
-            Vector3 characterForward)
-        {
-            if (points == null || points.Count == 0) return Array.Empty<Vector3>();
-            Vector3 normalizedDirection = direction.sqrMagnitude > .0001f
-                ? direction.normalized
-                : new Vector3(1f, .75f, -1f).normalized;
-            Vector3 up = Mathf.Abs(Vector3.Dot(normalizedDirection, Vector3.up)) > .95f
-                ? Vector3.forward
-                : Vector3.up;
-            Quaternion toCameraSpace = Quaternion.Inverse(Quaternion.LookRotation(-normalizedDirection, up));
-            Quaternion toWorldSpace = Quaternion.Inverse(toCameraSpace);
-            Vector3 hips = toCameraSpace * points[0];
-            Vector3 forward = toCameraSpace * characterForward;
-            var expanded = new List<Vector3>(points.Count * 2 + 2);
-            expanded.AddRange(points);
-            for (int index = 1; index < points.Count; index++)
-            {
-                Vector3 joint = toCameraSpace * points[index];
-                Vector3 fromHips = joint - hips;
-                if (fromHips.sqrMagnitude > .0001f)
-                {
-                    float offset = index == points.Count - 1 ? TestPoseHeadCameraOffsetMeters : TestPoseJointCameraOffsetMeters;
-                    joint += fromHips.normalized * offset;
-                }
-                expanded.Add(toWorldSpace * joint);
-                if ((index == 5 || index == 6) && forward.sqrMagnitude > .0001f)
-                {
-                    expanded.Add(toWorldSpace * (joint + forward.normalized * TestPoseFootForwardCameraOffsetMeters));
-                }
-            }
-            return expanded.ToArray();
-        }
-
-        private static void PersistPictureSummary(TimelineSessionRecord session, AnalysisCacheRecord record, JObject pictures)
-        {
-            if (record == null || session == null) return;
-            record.Pictures = pictures != null ? (JObject)pictures.DeepClone() : new JObject();
-            AnalysisCache[record.Id] = record;
-            WriteJsonAtomically(AnalysisCachePath(session, record.Id), record.ToJson());
-        }
-
-        private static string BuildPictureSignature(
-            IReadOnlyList<AnalysisSubject> subjects,
-            string level,
-            int requestedResolution)
-        {
-            // All humanoid picture levels now use the depth-tested test renderer.
-            string renderVersion = TestAnalysisPictureRenderVersion;
-            string source = renderVersion + "|" + level + "|" + requestedResolution + "|" + PictureSupersample + "|" +
-                string.Join("|", subjects.Select(item => item.Role + ":" + item.Record.Id));
-            using (SHA256 hash = SHA256.Create())
-            {
-                return BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(source))).Replace("-", string.Empty).Substring(0, 16).ToLowerInvariant();
-            }
-        }
-
         private static SubjectPictureData BuildSubjectPictureData(TimelineSessionRecord session, AnalysisSubject subject)
         {
             if (!IsHumanoidCharacter(subject.Character))
@@ -358,19 +395,18 @@ namespace KimodoUnityBridge.Command
             var rightFoot = new Vector3[frameCount];
             var leftElbow = new Vector3[frameCount];
             var rightElbow = new Vector3[frameCount];
-            var leftKnee = new Vector3[frameCount];
-            var rightKnee = new Vector3[frameCount];
             var head = new Vector3[frameCount];
+            var leftArmSwingAngles = Enumerable.Repeat(float.NaN, frameCount).ToArray();
+            var rightArmSwingAngles = Enumerable.Repeat(float.NaN, frameCount).ToArray();
+            var poseBounds = new Bounds[frameCount];
             Bounds firstBounds = default;
             Bounds lastBounds = default;
-            Bounds allPoseBounds = default;
-            bool hasPoseBounds = false;
             double originalTime = session.Director.time;
             EvaluatedPosePreview posePreview = null;
             KimodoMarkerSampleResult[] samples;
             try
             {
-                samples = CaptureSampleResults(subject.Character, subject.StartFrame, frameCount);
+                samples = CaptureCachedSampleResults(session, subject.Record, subject.Character, subject.StartFrame, frameCount);
                 posePreview = CreatePipelinePosePreview(subject.Character, samples[0]);
                 Animator poseAnimator = posePreview.Animator
                     ?? throw new InvalidOperationException($"Character '{subject.Character.Name}' pose preview has no Animator.");
@@ -391,21 +427,23 @@ namespace KimodoUnityBridge.Command
                     rightFoot[localFrame] = ReadHumanoidBonePosition(poseAnimator, HumanBodyBones.RightFoot, subject.Character.Name);
                     leftElbow[localFrame] = ReadHumanoidBonePosition(poseAnimator, HumanBodyBones.LeftLowerArm, subject.Character.Name);
                     rightElbow[localFrame] = ReadHumanoidBonePosition(poseAnimator, HumanBodyBones.RightLowerArm, subject.Character.Name);
-                    leftKnee[localFrame] = ReadHumanoidBonePosition(poseAnimator, HumanBodyBones.LeftLowerLeg, subject.Character.Name);
-                    rightKnee[localFrame] = ReadHumanoidBonePosition(poseAnimator, HumanBodyBones.RightLowerLeg, subject.Character.Name);
                     head[localFrame] = ReadHumanoidBonePosition(poseAnimator, HumanBodyBones.Head, subject.Character.Name);
+                    TryReadArmSwingAngle(
+                        poseAnimator,
+                        HumanBodyBones.LeftShoulder,
+                        HumanBodyBones.LeftUpperArm,
+                        HumanBodyBones.LeftHand,
+                        out leftArmSwingAngles[localFrame]);
+                    TryReadArmSwingAngle(
+                        poseAnimator,
+                        HumanBodyBones.RightShoulder,
+                        HumanBodyBones.RightUpperArm,
+                        HumanBodyBones.RightHand,
+                        out rightArmSwingAngles[localFrame]);
                     Bounds currentBounds = CalculateSkinnedBounds(posePreview.Root);
+                    poseBounds[localFrame] = currentBounds;
                     if (localFrame == 0) firstBounds = currentBounds;
                     if (localFrame == frameCount - 1) lastBounds = currentBounds;
-                    if (!hasPoseBounds)
-                    {
-                        allPoseBounds = currentBounds;
-                        hasPoseBounds = true;
-                    }
-                    else
-                    {
-                        allPoseBounds.Encapsulate(currentBounds);
-                    }
                 }
             }
             finally
@@ -432,16 +470,12 @@ namespace KimodoUnityBridge.Command
                 }
             }
 
-            // Keep the legacy bounds for non-test mesh evidence. The complete
-            // pose bounds are exposed separately for the test renderer.
             Bounds bounds = firstBounds;
             foreach (Vector3 point in pelvis) bounds.Encapsulate(point);
             bounds.Encapsulate(lastBounds);
             bounds.Expand(new Vector3(6f, 1f, 6f));
             if (bounds.size.x < 6f) bounds.Expand(new Vector3(6f - bounds.size.x, 0f, 0f));
             if (bounds.size.z < 6f) bounds.Expand(new Vector3(0f, 0f, 6f - bounds.size.z));
-            Bounds testBounds = hasPoseBounds ? allPoseBounds : bounds;
-            foreach (Vector3 point in pelvis) testBounds.Encapsulate(point);
             return new SubjectPictureData(
                 subject,
                 samples,
@@ -452,23 +486,20 @@ namespace KimodoUnityBridge.Command
                 rightFoot,
                 leftElbow,
                 rightElbow,
-                leftKnee,
-                rightKnee,
                 head,
+                leftArmSwingAngles,
+                rightArmSwingAngles,
                 leftContacts,
                 rightContacts,
-                firstBounds,
-                lastBounds,
-                bounds,
-                testBounds);
+                poseBounds,
+                bounds);
         }
 
         private static SubjectPictureData BuildMeshSubjectPictureData(AnalysisSubject subject)
         {
             int frameCount = Math.Max(1, subject.EndFrameExclusive - subject.StartFrame);
             var positions = new Vector3[frameCount];
-            Bounds firstBounds = default;
-            Bounds lastBounds = default;
+            var poseBounds = new Bounds[frameCount];
             Bounds allBounds = default;
             bool hasBounds = false;
             for (int localFrame = 0; localFrame < frameCount; localFrame++)
@@ -478,8 +509,7 @@ namespace KimodoUnityBridge.Command
                 {
                     positions[localFrame] = preview.transform.position;
                     Bounds current = CalculateSkinnedBounds(preview);
-                    if (localFrame == 0) firstBounds = current;
-                    if (localFrame == frameCount - 1) lastBounds = current;
+                    poseBounds[localFrame] = current;
                     if (!hasBounds)
                     {
                         allBounds = current;
@@ -509,13 +539,11 @@ namespace KimodoUnityBridge.Command
                 positions,
                 positions,
                 positions,
-                positions,
-                positions,
+                null,
+                null,
                 new bool[frameCount],
                 new bool[frameCount],
-                firstBounds,
-                lastBounds,
-                bounds,
+                poseBounds,
                 bounds);
         }
 
@@ -533,6 +561,25 @@ namespace KimodoUnityBridge.Command
             return transform.position;
         }
 
+        private static bool TryReadArmSwingAngle(
+            Animator animator,
+            HumanBodyBones shoulderBone,
+            HumanBodyBones upperArmBone,
+            HumanBodyBones handBone,
+            out float angleDegrees)
+        {
+            angleDegrees = 0f;
+            if (animator == null) return false;
+            Transform shoulder = animator.GetBoneTransform(shoulderBone) ?? animator.GetBoneTransform(upperArmBone);
+            Transform hand = animator.GetBoneTransform(handBone);
+            if (shoulder == null || hand == null) return false;
+
+            return KimodoForceLineAnalysis.TryCalculateBodyLocalSwingAngle(
+                hand.position - shoulder.position,
+                animator.transform.rotation,
+                out angleDegrees);
+        }
+
         private static Bounds CalculateSkinnedBounds(GameObject root)
         {
             SkinnedMeshRenderer[] renderers = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
@@ -542,99 +589,348 @@ namespace KimodoUnityBridge.Command
             return result;
         }
 
-        private static List<PictureTile> BuildPictureTiles(SubjectPictureData subject, string level)
+        private sealed class PhaseSegment
         {
-            if (!IsHumanoidCharacter(subject.Subject.Character))
-            {
-                return SelectKeyFrames(subject, subject.KeyframeCount)
-                    .Select(frame => PictureTile.MeshPose(subject, frame, "mesh_pose"))
-                    .ToList();
-            }
-
-            if (level == "low" || level == "middle" || level == "high")
-            {
-                var result = new List<PictureTile>
-                {
-                    PictureTile.TestFootTransitions(subject, new Vector3(1f, .75f, -1f)),
-                    PictureTile.TestKeyframes(subject, new Vector3(1f, .75f, -1f))
-                };
-
-                if (level == "middle" || level == "high")
-                {
-                    result.Insert(0, PictureTile.TestRoot2D(subject, new Vector3(0f, 1f, 0f)));
-                    foreach (int frame in SelectKeyFrames(subject, subject.KeyframeCount).OrderBy(frame => frame))
-                    {
-                        result.Add(PictureTile.TestPose(subject, frame, "keyframe", new Vector3(1f, .75f, -1f)));
-                    }
-                }
-
-                if (level == "high")
-                {
-                    foreach (int frame in FootTransitionFrames(subject).OrderBy(frame => frame))
-                    {
-                        result.Add(PictureTile.TestPose(subject, frame, "foot_transition", new Vector3(1f, .75f, -1f)));
-                    }
-                }
-
-                if (level == "middle" || level == "high")
-                {
-                    int lastFrame = Math.Max(0, subject.Pelvis.Length - 1);
-                    result.Add(PictureTile.TestPose(subject, 0, "start", new Vector3(1f, .75f, -1f)));
-                    result.Add(PictureTile.TestPose(subject, lastFrame, "end", new Vector3(1f, .75f, -1f)));
-                }
-
-                return result;
-            }
-
-            throw new InvalidOperationException($"Unsupported analysis picture level '{level}'.");
+            public int StartFrame;
+            public int EndFrame;
+            public int AnchorFrame;
+            public float MeanChange;
+            public float UpperBodyActivity;
+            public float RootSpeed;
+            public int FootEventCount;
+            public bool Transition;
         }
 
-        private static List<int> SelectKeyFrames(SubjectPictureData subject, int count)
+        private sealed class PhaseFeature
         {
-            int lastFrame = Math.Max(0, subject.Pelvis.Length - 1);
-            int targetCount = Mathf.Clamp(count, 1, lastFrame + 1);
-            var candidates = (subject.Subject.Record.Analysis?["keyframes"] as JArray ?? new JArray())
-                .OfType<JObject>()
-                .Select((item, order) => new
-                {
-                    Frame = Mathf.Clamp(item.Value<int?>("frame") ?? 0, 0, lastFrame),
-                    Score = item.Value<float?>("saliency") ?? item.Value<float?>("score") ?? 0f,
-                    Order = order
-                })
-                .GroupBy(item => item.Frame)
-                .Select(group => group.OrderByDescending(item => item.Score).ThenBy(item => item.Order).First())
-                .ToList();
-
-            var frames = new HashSet<int>();
-            for (int segment = 0; segment < targetCount; segment++)
-            {
-                int start = Mathf.FloorToInt(segment * (lastFrame + 1f) / targetCount);
-                int end = Mathf.Min(lastFrame,
-                    Mathf.FloorToInt((segment + 1) * (lastFrame + 1f) / targetCount) - 1);
-                var inSegment = candidates
-                    .Where(item => item.Frame >= start && item.Frame <= end)
-                    .OrderByDescending(item => item.Score)
-                    .ThenBy(item => Mathf.Abs(item.Frame - Mathf.RoundToInt((start + end) * .5f)))
-                    .ThenBy(item => item.Order)
-                    .FirstOrDefault();
-                frames.Add(inSegment != null
-                    ? inSegment.Frame
-                    : Mathf.Clamp(Mathf.RoundToInt(Mathf.Lerp(start, end, .5f)), 0, lastFrame));
-            }
-            if (targetCount > 1)
-            {
-                frames.Add(0);
-                frames.Add(lastFrame);
-            }
-            var ordered = frames.OrderBy(frame => frame).ToList();
-            while (ordered.Count > targetCount)
-            {
-                int removeIndex = ordered.Count - 2;
-                if (removeIndex <= 0) break;
-                ordered.RemoveAt(removeIndex);
-            }
-            return ordered;
+            public Vector3[] Points;
+            public float Speed;
+            public float UpperBodySpeed;
+            public bool LeftContact;
+            public bool RightContact;
         }
 
+        private static void EnsurePhaseTrack(SubjectPictureData subject)
+        {
+            if (subject == null || subject.Pelvis == null || subject.Pelvis.Length == 0 ||
+                !IsHumanoidCharacter(subject.Subject.Character)) return;
+
+            JArray phases = BuildPhaseTrack(subject);
+            JObject analysis = subject.Subject.Record.Analysis ?? new JObject();
+            analysis["phase_track_version"] = PhaseTrackVersion;
+            analysis["phase_track"] = phases;
+            if (analysis["motion_profile"] is not JObject profile)
+            {
+                profile = new JObject();
+                analysis["motion_profile"] = profile;
+            }
+            profile["force_line"] = KimodoForceLineAnalysis.Build(
+                subject.LeftArmSwingAngles,
+                subject.RightArmSwingAngles,
+                phases,
+                subject.Subject.StartFrame);
+            if (subject.Subject.Record.RootTrajectory?["samples"] is JArray trajectorySamples)
+            {
+                var headings = phases.OfType<JObject>()
+                    .Select(phase => phase.Value<int?>("anchor_frame") ?? 0)
+                    .Select(frame => trajectorySamples.OfType<JObject>().FirstOrDefault(sample =>
+                        sample.Value<int?>("frame") == frame)?["heading_xz"] as JArray)
+                    .Where(value => value != null && value.Count >= 2)
+                    .Select(value => Mathf.Atan2(value[0].Value<float>(), value[1].Value<float>()) * Mathf.Rad2Deg)
+                    .ToArray();
+                float firstHeading = headings.Length > 0 ? headings[0] : 0f;
+                bool consistent = headings.Length > 0 && headings.All(value => Mathf.Abs(Mathf.DeltaAngle(firstHeading, value)) <= 8f);
+                profile["phase_anchor_heading_consistent"] = consistent;
+                profile["phase_anchor_heading_sample_count"] = headings.Length;
+            }
+            analysis["keyframes"] = new JArray(phases.OfType<JObject>().Select(item => new JObject
+            {
+                ["timeline_frame_60"] = subject.Subject.StartFrame + item.Value<int>("anchor_frame"),
+                ["phase_index"] = item.Value<int>("phase_index"),
+                ["kind"] = item.Value<string>("kind")
+            }));
+            subject.Subject.Record.Analysis = analysis;
+            subject.RefreshKeyframes();
+        }
+
+        private static JArray BuildPhaseTrack(SubjectPictureData subject)
+        {
+            int frameCount = subject.Pelvis.Length;
+            PhaseFeature[] features = Enumerable.Range(0, frameCount)
+                .Select(frame => BuildPhaseFeature(subject, frame)).ToArray();
+            var changes = new float[Math.Max(0, frameCount - 1)];
+            for (int frame = 1; frame < frameCount; frame++) changes[frame - 1] =
+                PhaseFeatureDistance(features[frame - 1], features[frame]);
+            float threshold = Mathf.Clamp(Mathf.Max(.06f, Median(changes) * 3f), .08f, .8f);
+            int minimumFrames = Mathf.Clamp(Mathf.RoundToInt((float)SessionFrameRate * .2f), 6, 18);
+            var segments = new List<PhaseSegment>();
+            int start = 0;
+            for (int frame = 1; frame < frameCount; frame++)
+            {
+                bool contactChanged = features[frame].LeftContact != features[frame - 1].LeftContact ||
+                    features[frame].RightContact != features[frame - 1].RightContact;
+                bool boundary = frame - start >= minimumFrames &&
+                    (changes[frame - 1] > threshold || (contactChanged && changes[frame - 1] > threshold * .65f));
+                if (!boundary) continue;
+                segments.Add(CreatePhaseSegment(features, changes, start, frame - 1, threshold));
+                start = frame;
+            }
+            segments.Add(CreatePhaseSegment(features, changes, start, frameCount - 1, threshold));
+            MergeShortPhaseSegments(features, changes, segments, minimumFrames, threshold);
+            for (int index = 0; index < segments.Count; index++)
+            {
+                if (segments[index].StartFrame != (index == 0 ? 0 : segments[index - 1].EndFrame + 1) ||
+                    segments[index].EndFrame < segments[index].StartFrame ||
+                    segments[index].AnchorFrame < segments[index].StartFrame ||
+                    segments[index].AnchorFrame > segments[index].EndFrame)
+                {
+                    throw new InvalidOperationException("Phase-track clustering produced non-contiguous intervals.");
+                }
+            }
+            if (segments[segments.Count - 1].EndFrame != frameCount - 1)
+            {
+                throw new InvalidOperationException("Phase-track clustering did not cover the complete clip.");
+            }
+
+            var result = new JArray();
+            for (int index = 0; index < segments.Count; index++)
+            {
+                PhaseSegment segment = segments[index];
+                int duration = segment.EndFrame - segment.StartFrame + 1;
+                result.Add(new JObject
+                {
+                    ["phase_index"] = index,
+                    ["start_frame"] = segment.StartFrame,
+                    ["end_frame"] = segment.EndFrame,
+                    ["start_frame_60"] = subject.Subject.StartFrame + segment.StartFrame,
+                    ["end_frame_60"] = subject.Subject.StartFrame + segment.EndFrame,
+                    ["duration_frames"] = duration,
+                    ["duration_seconds"] = duration / SessionFrameRate,
+                    ["anchor_frame"] = segment.AnchorFrame,
+                    ["anchor_frame_60"] = subject.Subject.StartFrame + segment.AnchorFrame,
+                    ["anchor_time_seconds"] = (subject.Subject.StartFrame + segment.AnchorFrame) / SessionFrameRate,
+                    ["kind"] = segment.Transition ? "transition" : "phase",
+                    ["confidence"] = segment.MeanChange <= threshold ? "high" : "medium",
+                    ["mean_feature_change"] = segment.MeanChange,
+                    ["mean_root_speed"] = segment.RootSpeed,
+                    ["upper_body_activity"] = segment.UpperBodyActivity,
+                    ["foot_event_count"] = segment.FootEventCount
+                });
+            }
+            return result;
+        }
+
+        private static PhaseFeature BuildPhaseFeature(SubjectPictureData subject, int frame)
+        {
+            int previous = Mathf.Max(0, frame - 1);
+            Vector3 pelvis = subject.Pelvis[frame];
+            return new PhaseFeature
+            {
+                Points = new[]
+                {
+                    subject.LeftHand[frame] - pelvis,
+                    subject.RightHand[frame] - pelvis,
+                    subject.LeftElbow[frame] - pelvis,
+                    subject.RightElbow[frame] - pelvis,
+                    subject.LeftFoot[frame] - pelvis,
+                    subject.RightFoot[frame] - pelvis,
+                    subject.Head[frame] - pelvis
+                },
+                Speed = Vector3.Distance(subject.Pelvis[frame], subject.Pelvis[previous]) * (float)SessionFrameRate,
+                UpperBodySpeed = (
+                    Vector3.Distance(subject.LeftHand[frame], subject.LeftHand[previous]) +
+                    Vector3.Distance(subject.RightHand[frame], subject.RightHand[previous]) +
+                    Vector3.Distance(subject.LeftElbow[frame], subject.LeftElbow[previous]) +
+                    Vector3.Distance(subject.RightElbow[frame], subject.RightElbow[previous])) *
+                    (float)SessionFrameRate,
+                LeftContact = subject.LeftContacts[frame],
+                RightContact = subject.RightContacts[frame]
+            };
+        }
+
+        private static float PhaseFeatureDistance(PhaseFeature first, PhaseFeature second)
+        {
+            float distance = 0f;
+            for (int index = 0; index < first.Points.Length; index++)
+                distance += Vector3.Distance(first.Points[index], second.Points[index]);
+            distance += Mathf.Abs(first.Speed - second.Speed) * .05f;
+            if (first.LeftContact != second.LeftContact) distance += .6f;
+            if (first.RightContact != second.RightContact) distance += .6f;
+            return distance / (first.Points.Length + 1f);
+        }
+
+        private static PhaseSegment CreatePhaseSegment(
+            PhaseFeature[] features,
+            float[] changes,
+            int start,
+            int end,
+            float threshold)
+        {
+            int anchor = start;
+            float best = float.PositiveInfinity;
+            float meanChange = 0f;
+            float rootSpeed = 0f;
+            float upperBodyActivity = 0f;
+            int footEvents = 0;
+            int changeCount = 0;
+            for (int frame = start; frame <= end; frame++)
+            {
+                rootSpeed += features[frame].Speed;
+                upperBodyActivity += features[frame].UpperBodySpeed;
+                if (frame > start &&
+                    (features[frame].LeftContact != features[frame - 1].LeftContact ||
+                     features[frame].RightContact != features[frame - 1].RightContact)) footEvents++;
+                float distance = 0f;
+                if (frame > start) { distance += changes[frame - 1]; meanChange += changes[frame - 1]; changeCount++; }
+                if (frame < end) distance += changes[frame];
+                if (distance < best) { best = distance; anchor = frame; }
+            }
+            meanChange /= Mathf.Max(1, changeCount);
+            return new PhaseSegment
+            {
+                StartFrame = start,
+                EndFrame = end,
+                AnchorFrame = anchor,
+                MeanChange = meanChange,
+                RootSpeed = rootSpeed / Mathf.Max(1, end - start + 1),
+                UpperBodyActivity = upperBodyActivity / Mathf.Max(1, end - start + 1),
+                FootEventCount = footEvents,
+                Transition = meanChange > threshold * 1.25f
+            };
+        }
+
+        private static void MergeShortPhaseSegments(
+            PhaseFeature[] features,
+            float[] changes,
+            List<PhaseSegment> segments,
+            int minimumFrames,
+            float threshold)
+        {
+            for (int index = 0; index < segments.Count && segments.Count > 1; index++)
+            {
+                PhaseSegment segment = segments[index];
+                if (segment.EndFrame - segment.StartFrame + 1 >= minimumFrames) continue;
+                int neighbor = index == 0 ? 1 : index - 1;
+                int mergedStart = Mathf.Min(segments[neighbor].StartFrame, segment.StartFrame);
+                int mergedEnd = Mathf.Max(segments[neighbor].EndFrame, segment.EndFrame);
+                PhaseSegment merged = CreatePhaseSegment(features, changes, mergedStart, mergedEnd, threshold);
+                int insertAt = Mathf.Min(index, neighbor);
+                segments.RemoveAt(Mathf.Max(index, neighbor));
+                segments.RemoveAt(Mathf.Min(index, neighbor));
+                segments.Insert(insertAt, merged);
+                index = Mathf.Max(-1, index - 2);
+            }
+        }
+
+        private static float Median(float[] values)
+        {
+            if (values == null || values.Length == 0) return 0f;
+            float[] ordered = values.OrderBy(value => value).ToArray();
+            int middle = ordered.Length / 2;
+            return ordered.Length % 2 == 0 ? (ordered[middle - 1] + ordered[middle]) * .5f : ordered[middle];
+        }
+
+    }
+
+    internal static class KimodoForceLineAnalysis
+    {
+        internal const float BalanceThresholdRatio = 0.15f;
+        private const float MinimumMeasuredSwingDegrees = 0.01f;
+
+        internal static bool TryCalculateBodyLocalSwingAngle(
+            Vector3 shoulderToHandWorld,
+            Quaternion characterRootRotation,
+            out float angleDegrees)
+        {
+            Vector3 local = Quaternion.Inverse(characterRootRotation) * shoulderToHandWorld;
+            if (float.IsNaN(local.y) || float.IsInfinity(local.y) ||
+                float.IsNaN(local.z) || float.IsInfinity(local.z) ||
+                local.y * local.y + local.z * local.z <= 1e-8f)
+            {
+                angleDegrees = 0f;
+                return false;
+            }
+
+            angleDegrees = Mathf.Atan2(local.z, -local.y) * Mathf.Rad2Deg;
+            return !float.IsNaN(angleDegrees) && !float.IsInfinity(angleDegrees);
+        }
+
+        internal static JObject Build(
+            float[] leftAngles,
+            float[] rightAngles,
+            JArray phases,
+            int startTimelineFrame)
+        {
+            int frameCount = Math.Max(leftAngles?.Length ?? 0, rightAngles?.Length ?? 0);
+            foreach (JObject phase in (phases ?? new JArray()).OfType<JObject>())
+            {
+                frameCount = Math.Max(frameCount, (phase.Value<int?>("end_frame") ?? -1) + 1);
+            }
+            JObject result = BuildInterval(leftAngles, rightAngles, 0, frameCount - 1);
+            result["method"] = "body_local_shoulder_to_hand_sagittal_angle_delta_sum_v1";
+            result["coordinate_space"] = "character_root_local";
+            result["angle_unit"] = "degrees";
+            result["balance_threshold_ratio"] = BalanceThresholdRatio;
+            result["start_timeline_frame_60"] = startTimelineFrame;
+            result["end_timeline_frame_60_exclusive"] = startTimelineFrame + frameCount;
+            result["phases"] = new JArray((phases ?? new JArray()).OfType<JObject>().Select(phase =>
+            {
+                int startFrame = Mathf.Clamp(phase.Value<int?>("start_frame") ?? 0, 0, Math.Max(0, frameCount - 1));
+                int endFrame = Mathf.Clamp(phase.Value<int?>("end_frame") ?? startFrame, startFrame, Math.Max(startFrame, frameCount - 1));
+                JObject metric = BuildInterval(leftAngles, rightAngles, startFrame, endFrame);
+                metric["phase_index"] = phase.Value<int?>("phase_index") ?? 0;
+                metric["kind"] = phase.Value<string>("kind") ?? "phase";
+                metric["start_timeline_frame_60"] = startTimelineFrame + startFrame;
+                metric["end_timeline_frame_60_exclusive"] = startTimelineFrame + endFrame + 1;
+                return metric;
+            }));
+            return result;
+        }
+
+        private static JObject BuildInterval(float[] leftAngles, float[] rightAngles, int startFrame, int endFrame)
+        {
+            float leftDeltaSum = 0f;
+            float rightDeltaSum = 0f;
+            int deltaSampleCount = 0;
+            int expectedDeltaSampleCount = Math.Max(0, endFrame - startFrame);
+            if (leftAngles != null && rightAngles != null && leftAngles.Length == rightAngles.Length &&
+                startFrame >= 0 && endFrame < leftAngles.Length)
+            {
+                for (int frame = Math.Max(startFrame + 1, 1); frame <= endFrame; frame++)
+                {
+                    if (!IsFinite(leftAngles[frame - 1]) || !IsFinite(leftAngles[frame]) ||
+                        !IsFinite(rightAngles[frame - 1]) || !IsFinite(rightAngles[frame]))
+                    {
+                        continue;
+                    }
+
+                    leftDeltaSum += Mathf.Abs(Mathf.DeltaAngle(leftAngles[frame - 1], leftAngles[frame]));
+                    rightDeltaSum += Mathf.Abs(Mathf.DeltaAngle(rightAngles[frame - 1], rightAngles[frame]));
+                    deltaSampleCount++;
+                }
+            }
+
+            float maximumDeltaSum = Mathf.Max(leftDeltaSum, rightDeltaSum);
+            bool completeSamples = deltaSampleCount == expectedDeltaSampleCount && deltaSampleCount > 0;
+            bool hasEvidence = completeSamples && maximumDeltaSum >= MinimumMeasuredSwingDegrees;
+            float difference = Mathf.Abs(leftDeltaSum - rightDeltaSum);
+            float imbalanceRatio = hasEvidence ? difference / maximumDeltaSum : 0f;
+            return new JObject
+            {
+                ["status"] = hasEvidence ? "ok" : "insufficient_evidence",
+                ["reason"] = hasEvidence ? string.Empty : !completeSamples
+                    ? deltaSampleCount == 0 ? "no_shared_valid_angle_pairs" : "incomplete_angle_samples"
+                    : "no_measurable_arm_swing",
+                ["left_delta_angle_sum_degrees"] = leftDeltaSum,
+                ["right_delta_angle_sum_degrees"] = rightDeltaSum,
+                ["absolute_difference_degrees"] = difference,
+                ["imbalance_ratio"] = hasEvidence ? new JValue(imbalanceRatio) : JValue.CreateNull(),
+                ["symmetry_score"] = hasEvidence ? new JValue(1f - imbalanceRatio) : JValue.CreateNull(),
+                ["balanced"] = hasEvidence ? new JValue(imbalanceRatio <= BalanceThresholdRatio) : JValue.CreateNull(),
+                ["delta_sample_count"] = deltaSampleCount
+            };
+        }
+
+        private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
     }
 }

@@ -38,9 +38,13 @@ For a manifest dependency, use the same Git URL:
 
 Runtime diagnostics are written to `NvlabKimodoQuickServer~/log/setup.log` and `NvlabKimodoQuickServer~/log/bridge_server.log` in the Unity project.
 
+The QuickServer TCP `generate` command accepts `output_mp4: true` to save an MP4 render in the QuickServer directory while preserving the selected motion output format. The JSON response includes the absolute `mp4_path`; the binary payload remains only the selected motion format. The launcher discovers `C:\nvlab\UniMate` beside the repositories by default; set `KIMODO_UNIMATE_ROOT` to override it.
+
 ## AI Agent Manual
 
-Read [SKILL.md](SKILL.md) as the installation and task entry point; it coordinates the capability tools in `tools/`. `kimodo_install_server` and `kimodo_generate_animation` are asynchronous and return a `request_id`; poll either with `kimodo_get_generation`. Command definitions are kept in [Command/help.json](Command/help.json).
+Read [SKILL.md](SKILL.md) for purpose, installation, and documentation navigation; the animation workflow, task routing, tool coordination, and shared evidence rules are in [`tools/common.md`](tools/common.md). `server.install` and `animation.generate` are asynchronous and return a `request_id`; poll either with `generation.get`. Command definitions are kept in [Command/help.json](Command/help.json).
+
+The asynchronous `pose.fromvideo` and `pose.frompicture` commands return SMPL-X pose arrays through `generation.get`. QuickServer bundles the Mixamo LLM Mocap pipeline and its 3.54 MB `SMPLX_NEUTRAL_LITE_V437.npz` asset for pose-only analysis; the full SMPL-X model is not required for these commands. Override the bundled source with `KIMODO_MOCAP_ROOT`, or set `KIMODO_MOCAP_PYTHON` to the GVHMR Python executable. Picture analysis estimates one pose from a short repeated still-image sequence.
 
 ## Developers and maintenance records
 
@@ -49,7 +53,7 @@ Repository maintenance rules and development notes are in [`development/`](devel
 The documentation ownership is:
 
 - `README.md` / [`README.zh-CN.md`](README.zh-CN.md): user-facing package documentation.
-- `SKILL.md`: installation and task entry point.
+- `SKILL.md`: purpose, installation, and documentation navigation.
 - `tools/*.md`: cooperating capability tools and their task procedures.
 - `Command/help.json`: command definitions and parameter schema.
 - [`development/`](development/README.md): developer maintenance, compatibility, plans, and handoff notes.

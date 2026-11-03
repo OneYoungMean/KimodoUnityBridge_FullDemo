@@ -23,6 +23,7 @@ from typing import Any
 from . import kimodo_runtime as runtime_helpers
 from . import ardy_backend
 from . import animation_analysis
+from . import mocap_analysis
 from . import quickserver_assets as assets
 from core.protocol.kmb_motion import (
     MAX_KMB_BYTES,
@@ -64,12 +65,23 @@ def _build_protocol_help(kimodo_root: str = "") -> dict[str, Any]:
             },
             {
                 "cmd": "generate",
-                "description": "Queue motion generation, or analyze KMB ClipConstraints when analysis_option.analysis_only is true. Choose model and text_encoder_mode from runtime.list_models for motion generation.",
+                "description": "Queue motion generation, or analyze KMB ClipConstraints when analysis_option.analysis_only is true. Set output_mp4 to true to save an MP4 in the QuickServer directory and return mp4_path. Choose model and text_encoder_mode from runtime.list_models for motion generation.",
                 "fields": [
                     "prompt", "model", "text_encoder_mode", "duration", "constraints_json",
                     "kmb_attachments", "attachment_byte_length", "analysis_option",
                     "timeline_segments", "ardy_history_weight", "ardy_playback_reserve_seconds",
+                    "output_format (json_compact, bvh, or kmb_v1)", "output_mp4 (boolean)",
                 ],
+            },
+            {
+                "cmd": "pose.fromvideo",
+                "description": "Estimate SMPL-X pose arrays from a local video using the configured Mixamo LLM Mocap checkout.",
+                "fields": ["media_path", "person"],
+            },
+            {
+                "cmd": "pose.frompicture",
+                "description": "Estimate one SMPL-X pose from a local picture using the configured Mixamo LLM Mocap checkout.",
+                "fields": ["media_path"],
             },
             {
                 "cmd": "cancel",
@@ -873,15 +885,45 @@ def _ensure_runtime(
         )
         runtime_config = dict(config)
         runtime_config["models_root"] = str(models_root)
-        model = ardy_backend.load_runtime(
-            motion_profile,
-            runtime_config,
-            kimodo_root,
-            runtime_decision.motion_device,
-            text_encoder=text_encoder,
-            cancel_event=cancel_event,
-            logger=logger,
-        )
+        try:
+            model = ardy_backend.load_runtime(
+                motion_profile,
+                runtime_config,
+                kimodo_root,
+                runtime_decision.motion_device,
+                text_encoder=text_encoder,
+                cancel_event=cancel_event,
+                logger=logger,
+            )
+        except Exception as exc:
+            if runtime_decision.motion_device == "cpu" or not _is_accelerator_oom(exc):
+                raise
+            logger.log(
+                "[WARN] Motion runtime accelerator OOM; retrying the motion model and "
+                "text encoder on CPU."
+            )
+            _release_accelerator_cache()
+            runtime_profile = runtime_helpers._runtime_self_check("cpu")
+            runtime_decision = _resolve_cpu_text_encoder_decision(config)
+            os.environ["KIMODO_RUNTIME_BACKEND_PROFILE"] = runtime_profile.backend_profile
+            os.environ["KIMODO_RUNTIME_DEVICE"] = "cpu"
+            model = ardy_backend.load_runtime(
+                motion_profile,
+                runtime_config,
+                kimodo_root,
+                "cpu",
+                text_encoder=False,
+                cancel_event=cancel_event,
+                logger=logger,
+            )
+            _replace_text_encoder(
+                model,
+                config,
+                runtime_decision,
+                kimodo_root,
+                logger,
+                cancel_event,
+            )
         runtime_decision = _refresh_encoder_route_after_motion_load(
             model,
             config,
@@ -1129,6 +1171,18 @@ def _is_encoder_oom(error: Exception) -> bool:
         return not bool(torch.cuda.is_available())
     except Exception:
         return False
+
+
+def _resolve_cpu_text_encoder_decision(config: dict[str, Any]) -> assets.TextEncoderRuntimeDecision:
+    decision = assets.resolve_text_encoder_runtime(
+        config["text_encoder_mode"],
+        "cpu",
+        0.0,
+        nf4_available=False,
+        int8_accelerator_available=False,
+        fp16_accelerator_available=False,
+    )
+    return assets.force_text_encoder_cpu(decision)
 
 
 def _write_protocol_message(file, writer_lock: threading.Lock, payload: dict[str, Any], binary_payload: bytes | None = None) -> None:
@@ -1777,11 +1831,6 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                             raise runtime_helpers.GenerateCancelledError(str(exc)) from exc
                         if task["cancel_event"].is_set():
                             raise runtime_helpers.GenerateCancelledError("Generation canceled.")
-                        logger.log(
-                            f"[PHASE] runtime complete task_id={task_id} model={runtime['model']} "
-                            f"device={runtime.get('device', runtime.get('runtime_device', 'unknown'))} "
-                            f"reused={runtime.get('reused', False)}"
-                        )
                         _update_task_progress(task, "Generating motion...")
                         task["phase"] = "generating"
                         task["eta_seconds"] = None
@@ -2059,6 +2108,14 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                                     close_session_locked(session, "Session closed.")
                                 reply({"status": "done", "session_id": bound_session_id})
                             return
+                        elif cmd in ("pose.fromvideo", "pose.frompicture"):
+                            kind = "video" if cmd == "pose.fromvideo" else "picture"
+                            result = mocap_analysis.analyze_media(
+                                kind,
+                                request.get("media_path"),
+                                request.get("person"),
+                            )
+                            reply(result)
                         elif cmd == "generate":
                             attachments = _read_kmb_attachments(file, request)
                             task_id = resolve_request_task_id(request)
@@ -2160,7 +2217,10 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                         reply({"status": "error", "error_code": exc.code, "message": str(exc)})
                     except Exception as exc:
                         logger.log(f"[ERROR] Command '{cmd}' failed: {exc}")
-                        reply({"status": "error", "message": str(exc)})
+                        error = {"status": "error", "message": str(exc)}
+                        if cmd in ("pose.fromvideo", "pose.frompicture"):
+                            error["error_code"] = mocap_analysis.error_code_for_exception(exc)
+                        reply(error)
             finally:
                 with queue_changed:
                     session = state["sessions"].get(bound_session_id)

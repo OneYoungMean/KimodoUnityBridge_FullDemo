@@ -38,17 +38,20 @@ namespace KimodoBridge.Editor
                 return false;
             }
 
-            PlayableDirector director = TimelineEditor.inspectedDirector;
-            if (director == null)
+            TimelineAsset timelineAsset = track.timelineAsset ?? TimelineEditor.inspectedAsset;
+            if (!KimodoDirectorResolver.TryResolve(timelineAsset, out PlayableDirector director, out string directorError))
             {
-                error = "Timeline inspected director is null.";
+                error = string.IsNullOrWhiteSpace(directorError) ? "Unable to resolve a usable scene Director." : directorError;
                 return false;
             }
 
-            Animator animator = director.GetGenericBinding(track) as Animator;
-            if (animator == null || animator.transform == null)
+            if (!KimodoConstraintMarkerEditorUtility.TryGetTrackAnimatorBinding(
+                    director,
+                    track,
+                    out Animator animator) ||
+                animator.transform == null)
             {
-                error = "Animation track has no Animator binding.";
+                error = "Animation track and its parent tracks have no Animator binding.";
                 return false;
             }
 
@@ -82,12 +85,7 @@ namespace KimodoBridge.Editor
                 $"exactFrame={(sampleTime * sessionFrameRate):R}");
 
             sample.sampleTime = sampleTime;
-            if (marker is KimodoConstraintMarker)
-            {
-                sample.constraintMode = marker.ConstraintMode == KimodoConstraintMode.Root2D
-                    ? "root2d"
-                    : marker.ConstraintMode == KimodoConstraintMode.Effector ? "effector" : "fullbody";
-            }
+            sample.constraintMode = marker.SampleData.constraintMode;
             KimodoMarkerSampleResult preview = MergeAutoSampledChannels(marker, sample);
             if (preview == null)
             {

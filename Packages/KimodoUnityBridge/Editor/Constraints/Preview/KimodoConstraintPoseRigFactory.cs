@@ -72,7 +72,7 @@ namespace KimodoBridge.Editor
                         sourceAnimator,
                         resolvedSourceAvatar,
                         0,
-                        sourceAnimator.GetInstanceID(),
+                        KimodoUnityObjectIdUtility.IdHash(sourceAnimator),
                         out GameObject targetRoot,
                         out Animator targetAnimator,
                         out generatedMaterials,
@@ -128,13 +128,14 @@ namespace KimodoBridge.Editor
 
             try
             {
-                return KimodoConstraintPosePipeline.TryApply(
+                return KimodoConstraintPosePipeline.TryApplyCanonical(
                     sample,
                     KimodoMotionModelProfiles.ResolveGenerationFrameRate(modelName),
                     instance.TargetCache,
                     out _,
                     out _,
-                    out error);
+                    out error,
+                    fullBodyRootSemantics: true);
             }
             catch (Exception ex)
             {
@@ -143,21 +144,18 @@ namespace KimodoBridge.Editor
             }
         }
 
-        // FullBody samples capture a complete Hips world rotation. Root2D and
-        // Mix samples intentionally supply only a planar heading.
+        // All constraint previews use the captured complete Hips rotation.
         internal static Quaternion ResolvePreviewHipsRotation(
             KimodoMarkerSampleResult sample,
             Quaternion evaluatedHipsRotation)
         {
-            if (sample?.validMask?.rootHeading != true || sample.rootOverride == null)
+            if (sample == null || !sample.sampleValid ||
+                sample.enableMask?.rootHeading != true || sample.rootOverride == null)
             {
                 return evaluatedHipsRotation;
             }
 
-            string mode = KimodoConstraintInternal.NormalizeMode(sample.constraintMode);
-            return mode == "root2d" || mode == "mix"
-                ? KimodoMotionMath.ApplyPlanarHeading(evaluatedHipsRotation, sample.rootOverride.q)
-                : sample.rootOverride.q.normalized;
+            return sample.rootOverride.q.normalized;
         }
 
         internal static void DisposePoseRig(PoseRigInstance instance)
@@ -235,7 +233,8 @@ namespace KimodoBridge.Editor
             Transform parent,
             Dictionary<Transform, Transform> transformMap)
         {
-            var cloneObject = new GameObject(source.name);
+            GameObject cloneObject = EditorUtility.CreateGameObjectWithHideFlags(
+                source.name, HideFlags.HideAndDontSave);
             Transform clone = cloneObject.transform;
             if (parent != null)
             {
