@@ -10,9 +10,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260807_094842_836
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20261007_173323_382
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: a5a1a347208836d4c95fef30b73a0654, type: 2}
+  m_Clip: {fileID: 7400000, guid: e3ad4100725e2a3439eb508c2670764d, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -27,13 +27,34 @@ MonoBehaviour:
   motionPrompt: Walk And Say Hello
   generationFrames: 150
   diffusionSteps: 100
-  textWeight: 1
   randomSeed: 0
   seed: 42
+  generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
+  overridePathAngle: 0
+  pathBeginAngleDegrees: 0
+  pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
+  overrideHeading: 0
+  headingDegrees: 0
+  analysisOptionsJson: 
+  generatedAssetName: 
+  generatedOutputFolder: 
+  generationOutputMode: 0
   customRetargetAvatar: {fileID: 0}
   inOutConstraintMode: 0
   enableInConstraint: 1
   enableOutConstraint: 1
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -42,9 +63,6 @@ MonoBehaviour:
   autoBeginAnchor: 1
   isGenerated: 1
   lastGeneratedPrompt: Walk And Say Hello
-  ardyMotionCachePath: 
-  ardyMotionRepFingerprint: 
-  ardyResolvedSeeds: 
   autoRetargetOnBinding: 1
   curveFilterOptions:
     enabled: 1
@@ -70,9 +88,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260807_094846_158
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20261007_172948_660
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: b5f5c80c9bb913049a140cc40e1fe300, type: 2}
+  m_Clip: {fileID: 7400000, guid: 3d38d8a97932bcf4783d6cf7c57ed9f3, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -87,13 +105,34 @@ MonoBehaviour:
   motionPrompt: Walk And Say Hello
   generationFrames: 152
   diffusionSteps: 100
-  textWeight: 1
   randomSeed: 0
   seed: 42
+  generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
+  overridePathAngle: 0
+  pathBeginAngleDegrees: 0
+  pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
+  overrideHeading: 0
+  headingDegrees: 0
+  analysisOptionsJson: 
+  generatedAssetName: 
+  generatedOutputFolder: 
+  generationOutputMode: 0
   customRetargetAvatar: {fileID: 0}
   inOutConstraintMode: 0
   enableInConstraint: 1
   enableOutConstraint: 1
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -102,9 +141,6 @@ MonoBehaviour:
   autoBeginAnchor: 1
   isGenerated: 1
   lastGeneratedPrompt: Walk And Say Hello
-  ardyMotionCachePath: 
-  ardyMotionRepFingerprint: 
-  ardyResolvedSeeds: 
   autoRetargetOnBinding: 1
   curveFilterOptions:
     enabled: 1

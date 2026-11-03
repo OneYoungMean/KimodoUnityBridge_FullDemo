@@ -103,7 +103,25 @@ MonoBehaviour:
     m_BlendOutDuration: -1
     m_MixInCurve:
       serializedVersion: 2
-      m_Curve: []
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
@@ -554,9 +572,17 @@ MonoBehaviour:
   randomSeed: 0
   seed: 1085546961
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 1
   pathBeginAngleDegrees: -135
   pathEndAngleDegrees: -135
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 1
   headingDegrees: 0
   analysisOptionsJson: 
@@ -567,6 +593,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -620,9 +650,17 @@ MonoBehaviour:
   randomSeed: 0
   seed: 1085546961
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 1
   pathBeginAngleDegrees: -90
   pathEndAngleDegrees: -90
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 1
   headingDegrees: 0
   analysisOptionsJson: 
@@ -633,6 +671,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -801,9 +843,17 @@ MonoBehaviour:
   randomSeed: 1
   seed: 2071981055
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 1
   pathBeginAngleDegrees: 0
   pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 1
   headingDegrees: 0
   analysisOptionsJson: 
@@ -814,6 +864,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -868,9 +922,17 @@ MonoBehaviour:
   randomSeed: 1
   seed: 327697662
   generateLoop: 1
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 0
   pathBeginAngleDegrees: 0
   pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 0
   headingDegrees: 0
   analysisOptionsJson: 
@@ -881,6 +943,10 @@ MonoBehaviour:
   inOutConstraintMode: 0
   enableInConstraint: 1
   enableOutConstraint: 1
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -1011,6 +1077,7 @@ MonoBehaviour:
       rightFoot: 0
       leftHand: 0
       rightHand: 0
+    sampleValid: 1
     validMask:
       muscle: 1
       rootTQ: 1
@@ -1028,19 +1095,28 @@ MonoBehaviour:
       leftHand:
         position: {x: -0.23441137, y: 0.8975776, z: -0.028965779}
         rotation: {x: -0.0998442, y: 0.09261821, z: 0.54670614, w: 0.8261757}
+        enableRotation: 0
+        space: 1
       rightHand:
         position: {x: 0.21837936, y: 0.913829, z: -0.0075955354}
         rotation: {x: -0.10423779, y: -0.14614554, z: -0.6227216, w: 0.76157385}
+        enableRotation: 0
+        space: 1
       leftFoot:
         position: {x: -0.17038378, y: 0.09127921, z: -0.072289795}
         rotation: {x: 0.0074604307, y: -0.16349934, z: -0.009890883, w: 0.9864659}
+        enableRotation: 0
+        space: 1
       rightFoot:
         position: {x: 0.19008584, y: 0.09010607, z: -0.03915336}
         rotation: {x: -0.0012860008, y: 0.028199753, z: 0.0018166509, w: 0.9996001}
+        enableRotation: 0
+        space: 1
     rootOverride:
       position: {x: -0.0045359996, y: 0.88084656, z: -0.028731085}
       rotation: {x: 0.06469349, y: -0.027172724, z: 0.0021542634, w: 0.9975329}
-    carryEffectorsWithRoot: 0
+      enableRotation: 0
+      space: 1
     constraintMode: fullbody
     sampleTime: 0
   pathData:
@@ -1079,9 +1155,17 @@ MonoBehaviour:
   randomSeed: 0
   seed: 1085546961
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 1
   pathBeginAngleDegrees: 0
   pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 1
   headingDegrees: 0
   analysisOptionsJson: 
@@ -1092,6 +1176,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -1145,9 +1233,17 @@ MonoBehaviour:
   randomSeed: 0
   seed: 1085546961
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 1
   pathBeginAngleDegrees: 90
   pathEndAngleDegrees: 90
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 1
   headingDegrees: 0
   analysisOptionsJson: 
@@ -1158,6 +1254,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -1284,7 +1384,25 @@ MonoBehaviour:
     m_BlendOutDuration: -1
     m_MixInCurve:
       serializedVersion: 2
-      m_Curve: []
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
@@ -1432,6 +1550,7 @@ MonoBehaviour:
       rightFoot: 0
       leftHand: 0
       rightHand: 0
+    sampleValid: 1
     validMask:
       muscle: 1
       rootTQ: 1
@@ -1449,19 +1568,28 @@ MonoBehaviour:
       leftHand:
         position: {x: -0.23441137, y: 0.8975776, z: -0.028965779}
         rotation: {x: -0.0998442, y: 0.09261821, z: 0.54670614, w: 0.8261757}
+        enableRotation: 0
+        space: 1
       rightHand:
         position: {x: 0.21837936, y: 0.913829, z: -0.0075955354}
         rotation: {x: -0.10423779, y: -0.14614554, z: -0.6227216, w: 0.76157385}
+        enableRotation: 0
+        space: 1
       leftFoot:
         position: {x: -0.17038378, y: 0.09127921, z: -0.072289795}
         rotation: {x: 0.0074604307, y: -0.16349934, z: -0.009890883, w: 0.9864659}
+        enableRotation: 0
+        space: 1
       rightFoot:
         position: {x: 0.19008584, y: 0.09010607, z: -0.03915336}
         rotation: {x: -0.0012860008, y: 0.028199753, z: 0.0018166509, w: 0.9996001}
+        enableRotation: 0
+        space: 1
     rootOverride:
       position: {x: -0.0045359996, y: 0.88084656, z: -0.028731085}
       rotation: {x: 0.06469349, y: -0.027172724, z: 0.0021542634, w: 0.9975329}
-    carryEffectorsWithRoot: 0
+      enableRotation: 0
+      space: 1
     constraintMode: fullbody
     sampleTime: 0
   pathData:
@@ -1577,6 +1705,7 @@ MonoBehaviour:
       rightFoot: 0
       leftHand: 0
       rightHand: 0
+    sampleValid: 1
     validMask:
       muscle: 1
       rootTQ: 1
@@ -1594,19 +1723,28 @@ MonoBehaviour:
       leftHand:
         position: {x: -0.23441137, y: 0.8975776, z: -0.028965779}
         rotation: {x: -0.0998442, y: 0.09261821, z: 0.54670614, w: 0.8261757}
+        enableRotation: 0
+        space: 1
       rightHand:
         position: {x: 0.21837936, y: 0.913829, z: -0.0075955354}
         rotation: {x: -0.10423779, y: -0.14614554, z: -0.6227216, w: 0.76157385}
+        enableRotation: 0
+        space: 1
       leftFoot:
         position: {x: -0.17038378, y: 0.09127921, z: -0.072289795}
         rotation: {x: 0.0074604307, y: -0.16349934, z: -0.009890883, w: 0.9864659}
+        enableRotation: 0
+        space: 1
       rightFoot:
         position: {x: 0.19008584, y: 0.09010607, z: -0.03915336}
         rotation: {x: -0.0012860008, y: 0.028199753, z: 0.0018166509, w: 0.9996001}
+        enableRotation: 0
+        space: 1
     rootOverride:
       position: {x: -0.0045359996, y: 0.88084656, z: -0.028731085}
       rotation: {x: 0.06469349, y: -0.027172724, z: 0.0021542634, w: 0.9975329}
-    carryEffectorsWithRoot: 0
+      enableRotation: 0
+      space: 1
     constraintMode: fullbody
     sampleTime: 0
   pathData:
@@ -1645,9 +1783,17 @@ MonoBehaviour:
   randomSeed: 0
   seed: 1085546961
   generateLoop: 1
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 0
   pathBeginAngleDegrees: 0
   pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 0
   headingDegrees: 0
   analysisOptionsJson: 
@@ -1658,6 +1804,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -1788,6 +1938,7 @@ MonoBehaviour:
       rightFoot: 0
       leftHand: 0
       rightHand: 0
+    sampleValid: 1
     validMask:
       muscle: 1
       rootTQ: 1
@@ -1805,19 +1956,28 @@ MonoBehaviour:
       leftHand:
         position: {x: -0.23441137, y: 0.8975776, z: -0.028965779}
         rotation: {x: -0.0998442, y: 0.09261821, z: 0.54670614, w: 0.8261757}
+        enableRotation: 0
+        space: 1
       rightHand:
         position: {x: 0.21837936, y: 0.913829, z: -0.0075955354}
         rotation: {x: -0.10423779, y: -0.14614554, z: -0.6227216, w: 0.76157385}
+        enableRotation: 0
+        space: 1
       leftFoot:
         position: {x: -0.17038378, y: 0.09127921, z: -0.072289795}
         rotation: {x: 0.0074604307, y: -0.16349934, z: -0.009890883, w: 0.9864659}
+        enableRotation: 0
+        space: 1
       rightFoot:
         position: {x: 0.19008584, y: 0.09010607, z: -0.03915336}
         rotation: {x: -0.0012860008, y: 0.028199753, z: 0.0018166509, w: 0.9996001}
+        enableRotation: 0
+        space: 1
     rootOverride:
       position: {x: -0.0045359996, y: 0.88084656, z: -0.028731085}
       rotation: {x: 0.06469349, y: -0.027172724, z: 0.0021542634, w: 0.9975329}
-    carryEffectorsWithRoot: 0
+      enableRotation: 0
+      space: 1
     constraintMode: fullbody
     sampleTime: 0
   pathData:
@@ -2049,9 +2209,17 @@ MonoBehaviour:
   randomSeed: 0
   seed: 42
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 1
   pathBeginAngleDegrees: 135
   pathEndAngleDegrees: 135
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 1
   headingDegrees: 0
   analysisOptionsJson: 
@@ -2062,6 +2230,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -2194,6 +2366,7 @@ MonoBehaviour:
       rightFoot: 0
       leftHand: 0
       rightHand: 0
+    sampleValid: 1
     validMask:
       muscle: 1
       rootTQ: 1
@@ -2211,19 +2384,28 @@ MonoBehaviour:
       leftHand:
         position: {x: -0.23441137, y: 0.8975776, z: -0.028965779}
         rotation: {x: -0.0998442, y: 0.09261821, z: 0.54670614, w: 0.8261757}
+        enableRotation: 0
+        space: 1
       rightHand:
         position: {x: 0.21837936, y: 0.913829, z: -0.0075955354}
         rotation: {x: -0.10423779, y: -0.14614554, z: -0.6227216, w: 0.76157385}
+        enableRotation: 0
+        space: 1
       leftFoot:
         position: {x: -0.17038378, y: 0.09127921, z: -0.072289795}
         rotation: {x: 0.0074604307, y: -0.16349934, z: -0.009890883, w: 0.9864659}
+        enableRotation: 0
+        space: 1
       rightFoot:
         position: {x: 0.19008584, y: 0.09010607, z: -0.03915336}
         rotation: {x: -0.0012860008, y: 0.028199753, z: 0.0018166509, w: 0.9996001}
+        enableRotation: 0
+        space: 1
     rootOverride:
       position: {x: -0.0045359996, y: 0.88084656, z: -0.028731085}
       rotation: {x: 0.06469349, y: -0.027172724, z: 0.0021542634, w: 0.9975329}
-    carryEffectorsWithRoot: 0
+      enableRotation: 0
+      space: 1
     constraintMode: fullbody
     sampleTime: 0
   pathData:
@@ -2453,9 +2635,17 @@ MonoBehaviour:
   randomSeed: 0
   seed: 42
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 1
   pathBeginAngleDegrees: -45
   pathEndAngleDegrees: -45
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 1
   headingDegrees: 0
   analysisOptionsJson: 
@@ -2466,6 +2656,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -2784,7 +2978,25 @@ MonoBehaviour:
     m_BlendOutDuration: -1
     m_MixInCurve:
       serializedVersion: 2
-      m_Curve: []
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
@@ -2983,9 +3195,17 @@ MonoBehaviour:
   randomSeed: 0
   seed: 1085546961
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 1
   pathBeginAngleDegrees: 135
   pathEndAngleDegrees: 135
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 1
   headingDegrees: 0
   analysisOptionsJson: 
@@ -2996,6 +3216,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -3126,6 +3350,7 @@ MonoBehaviour:
       rightFoot: 1
       leftHand: 1
       rightHand: 1
+    sampleValid: 1
     validMask:
       muscle: 1
       rootTQ: 1
@@ -3143,19 +3368,28 @@ MonoBehaviour:
       leftHand:
         position: {x: -0.17899041, y: 0.8725934, z: -0.064027354}
         rotation: {x: 0.025055334, y: 0.25979275, z: 0.6254355, w: 0.7353308}
+        enableRotation: 0
+        space: 1
       rightHand:
         position: {x: 0.13629724, y: 0.8629855, z: -0.021459546}
         rotation: {x: 0.03370412, y: -0.36032003, z: -0.6349234, w: 0.6825739}
+        enableRotation: 0
+        space: 1
       leftFoot:
         position: {x: -0.10030468, y: 0.09022486, z: -0.14386374}
         rotation: {x: 0.004034315, y: -0.2253245, z: -0.0015572427, w: 0.9742743}
+        enableRotation: 0
+        space: 1
       rightFoot:
         position: {x: 0.08399394, y: 0.092341125, z: -0.14685509}
         rotation: {x: 0.00059404375, y: 0.14324145, z: -0.003646093, w: 0.98968095}
+        enableRotation: 0
+        space: 1
     rootOverride:
       position: {x: -0.0039952695, y: 0.87148184, z: -0.038191944}
       rotation: {x: 0.06985153, y: -0.012693187, z: -0.03038531, w: 0.9970138}
-    carryEffectorsWithRoot: 0
+      enableRotation: 0
+      space: 1
     constraintMode: fullbody
     sampleTime: 0.3833000063896179
   pathData:
@@ -3386,9 +3620,17 @@ MonoBehaviour:
   randomSeed: 0
   seed: 42
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 1
   pathBeginAngleDegrees: -135
   pathEndAngleDegrees: -135
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 1
   headingDegrees: 0
   analysisOptionsJson: 
@@ -3399,6 +3641,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -3454,9 +3700,17 @@ MonoBehaviour:
   randomSeed: 0
   seed: 1085546961
   generateLoop: 1
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 0
   pathBeginAngleDegrees: 0
   pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 0
   headingDegrees: 0
   analysisOptionsJson: 
@@ -3467,6 +3721,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 0
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -3597,6 +3855,7 @@ MonoBehaviour:
       rightFoot: 0
       leftHand: 0
       rightHand: 0
+    sampleValid: 1
     validMask:
       muscle: 1
       rootTQ: 1
@@ -3614,19 +3873,28 @@ MonoBehaviour:
       leftHand:
         position: {x: -0.23441137, y: 0.8975776, z: -0.028965779}
         rotation: {x: -0.0998442, y: 0.09261821, z: 0.54670614, w: 0.8261757}
+        enableRotation: 0
+        space: 1
       rightHand:
         position: {x: 0.21837936, y: 0.913829, z: -0.0075955354}
         rotation: {x: -0.10423779, y: -0.14614554, z: -0.6227216, w: 0.76157385}
+        enableRotation: 0
+        space: 1
       leftFoot:
         position: {x: -0.17038378, y: 0.09127921, z: -0.072289795}
         rotation: {x: 0.0074604307, y: -0.16349934, z: -0.009890883, w: 0.9864659}
+        enableRotation: 0
+        space: 1
       rightFoot:
         position: {x: 0.19008584, y: 0.09010607, z: -0.03915336}
         rotation: {x: -0.0012860008, y: 0.028199753, z: 0.0018166509, w: 0.9996001}
+        enableRotation: 0
+        space: 1
     rootOverride:
       position: {x: -0.0045359996, y: 0.88084656, z: -0.028731085}
       rotation: {x: 0.06469349, y: -0.027172724, z: 0.0021542634, w: 0.9975329}
-    carryEffectorsWithRoot: 0
+      enableRotation: 0
+      space: 1
     constraintMode: fullbody
     sampleTime: 0
   pathData:
@@ -3738,7 +4006,25 @@ MonoBehaviour:
     m_BlendOutDuration: -1
     m_MixInCurve:
       serializedVersion: 2
-      m_Curve: []
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
@@ -3809,9 +4095,17 @@ MonoBehaviour:
   randomSeed: 0
   seed: 1085546961
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 1
   pathBeginAngleDegrees: -45
   pathEndAngleDegrees: -45
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 1
   headingDegrees: 0
   analysisOptionsJson: 
@@ -3822,6 +4116,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -3948,7 +4246,25 @@ MonoBehaviour:
     m_BlendOutDuration: -1
     m_MixInCurve:
       serializedVersion: 2
-      m_Curve: []
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
@@ -4092,7 +4408,25 @@ MonoBehaviour:
     m_BlendOutDuration: -1
     m_MixInCurve:
       serializedVersion: 2
-      m_Curve: []
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
@@ -4236,7 +4570,25 @@ MonoBehaviour:
     m_BlendOutDuration: -1
     m_MixInCurve:
       serializedVersion: 2
-      m_Curve: []
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
@@ -4384,6 +4736,7 @@ MonoBehaviour:
       rightFoot: 0
       leftHand: 0
       rightHand: 0
+    sampleValid: 1
     validMask:
       muscle: 1
       rootTQ: 1
@@ -4401,19 +4754,28 @@ MonoBehaviour:
       leftHand:
         position: {x: -0.23441137, y: 0.8975776, z: -0.028965779}
         rotation: {x: -0.0998442, y: 0.09261821, z: 0.54670614, w: 0.8261757}
+        enableRotation: 0
+        space: 1
       rightHand:
         position: {x: 0.21837936, y: 0.913829, z: -0.0075955354}
         rotation: {x: -0.10423779, y: -0.14614554, z: -0.6227216, w: 0.76157385}
+        enableRotation: 0
+        space: 1
       leftFoot:
         position: {x: -0.17038378, y: 0.09127921, z: -0.072289795}
         rotation: {x: 0.0074604307, y: -0.16349934, z: -0.009890883, w: 0.9864659}
+        enableRotation: 0
+        space: 1
       rightFoot:
         position: {x: 0.19008584, y: 0.09010607, z: -0.03915336}
         rotation: {x: -0.0012860008, y: 0.028199753, z: 0.0018166509, w: 0.9996001}
+        enableRotation: 0
+        space: 1
     rootOverride:
       position: {x: -0.0045359996, y: 0.88084656, z: -0.028731085}
       rotation: {x: 0.06469349, y: -0.027172724, z: 0.0021542634, w: 0.9975329}
-    carryEffectorsWithRoot: 0
+      enableRotation: 0
+      space: 1
     constraintMode: fullbody
     sampleTime: 0
   pathData:
@@ -4529,6 +4891,7 @@ MonoBehaviour:
       rightFoot: 0
       leftHand: 0
       rightHand: 0
+    sampleValid: 1
     validMask:
       muscle: 1
       rootTQ: 1
@@ -4546,19 +4909,28 @@ MonoBehaviour:
       leftHand:
         position: {x: -0.23441137, y: 0.8975776, z: -0.028965779}
         rotation: {x: -0.0998442, y: 0.09261821, z: 0.54670614, w: 0.8261757}
+        enableRotation: 0
+        space: 1
       rightHand:
         position: {x: 0.21837936, y: 0.913829, z: -0.0075955354}
         rotation: {x: -0.10423779, y: -0.14614554, z: -0.6227216, w: 0.76157385}
+        enableRotation: 0
+        space: 1
       leftFoot:
         position: {x: -0.17038378, y: 0.09127921, z: -0.072289795}
         rotation: {x: 0.0074604307, y: -0.16349934, z: -0.009890883, w: 0.9864659}
+        enableRotation: 0
+        space: 1
       rightFoot:
         position: {x: 0.19008584, y: 0.09010607, z: -0.03915336}
         rotation: {x: -0.0012860008, y: 0.028199753, z: 0.0018166509, w: 0.9996001}
+        enableRotation: 0
+        space: 1
     rootOverride:
       position: {x: -0.0045359996, y: 0.88084656, z: -0.028731085}
       rotation: {x: 0.06469349, y: -0.027172724, z: 0.0021542634, w: 0.9975329}
-    carryEffectorsWithRoot: 0
+      enableRotation: 0
+      space: 1
     constraintMode: fullbody
     sampleTime: 0
   pathData:
@@ -4597,9 +4969,17 @@ MonoBehaviour:
   randomSeed: 0
   seed: 1085546961
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 1
   pathBeginAngleDegrees: 180
   pathEndAngleDegrees: 180
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 1
   headingDegrees: 0
   analysisOptionsJson: 
@@ -4610,6 +4990,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -4664,9 +5048,17 @@ MonoBehaviour:
   randomSeed: 0
   seed: 42
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 1
   pathBeginAngleDegrees: 45
   pathEndAngleDegrees: 45
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 1
   headingDegrees: 0
   analysisOptionsJson: 
@@ -4677,6 +5069,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -4712,9 +5108,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_160053_842
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20261009_140850_695
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: f69285ef802098b4c8a9a400cbd8fc0e, type: 2}
+  m_Clip: {fileID: 7400000, guid: 7cddb0c7e67aa624b9941f2fd0655dbc, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -4726,15 +5122,23 @@ MonoBehaviour:
   m_Rotation: {x: 0, y: 0, z: 0, w: 1}
   bridgeModelName: Kimodo-SOMA-RP-v1
   textEncoderMode: 1
-  motionPrompt: a man stand idle
+  motionPrompt: "\u8DF3\u821E"
   generationFrames: 150
   diffusionSteps: 100
   randomSeed: 1
-  seed: 327697662
+  seed: 865591240
   generateLoop: 1
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 0
   pathBeginAngleDegrees: 0
   pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 0
   headingDegrees: 0
   analysisOptionsJson: 
@@ -4745,6 +5149,10 @@ MonoBehaviour:
   inOutConstraintMode: 0
   enableInConstraint: 1
   enableOutConstraint: 1
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -4752,7 +5160,7 @@ MonoBehaviour:
   showConstraint: 1
   autoBeginAnchor: 1
   isGenerated: 1
-  lastGeneratedPrompt: a man stand idle
+  lastGeneratedPrompt: "\u8DF3\u821E"
   autoRetargetOnBinding: 1
   curveFilterOptions:
     enabled: 1
@@ -4853,7 +5261,25 @@ MonoBehaviour:
     m_BlendOutDuration: -1
     m_MixInCurve:
       serializedVersion: 2
-      m_Curve: []
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
@@ -5132,9 +5558,17 @@ MonoBehaviour:
   randomSeed: 0
   seed: 1085546961
   generateLoop: 1
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 0
   pathBeginAngleDegrees: 0
   pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 0
   headingDegrees: 0
   analysisOptionsJson: 
@@ -5145,6 +5579,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -5199,9 +5637,17 @@ MonoBehaviour:
   randomSeed: 0
   seed: 42
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 1
   pathBeginAngleDegrees: 90
   pathEndAngleDegrees: 90
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 1
   headingDegrees: 0
   analysisOptionsJson: 
@@ -5212,6 +5658,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -5453,7 +5903,25 @@ MonoBehaviour:
     m_BlendOutDuration: -1
     m_MixInCurve:
       serializedVersion: 2
-      m_Curve: []
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
@@ -5601,6 +6069,7 @@ MonoBehaviour:
       rightFoot: 0
       leftHand: 0
       rightHand: 0
+    sampleValid: 1
     validMask:
       muscle: 1
       rootTQ: 1
@@ -5618,19 +6087,28 @@ MonoBehaviour:
       leftHand:
         position: {x: -0.23441137, y: 0.8975776, z: -0.028965779}
         rotation: {x: -0.0998442, y: 0.09261821, z: 0.54670614, w: 0.8261757}
+        enableRotation: 0
+        space: 1
       rightHand:
         position: {x: 0.21837936, y: 0.913829, z: -0.0075955354}
         rotation: {x: -0.10423779, y: -0.14614554, z: -0.6227216, w: 0.76157385}
+        enableRotation: 0
+        space: 1
       leftFoot:
         position: {x: -0.17038378, y: 0.09127921, z: -0.072289795}
         rotation: {x: 0.0074604307, y: -0.16349934, z: -0.009890883, w: 0.9864659}
+        enableRotation: 0
+        space: 1
       rightFoot:
         position: {x: 0.19008584, y: 0.09010607, z: -0.03915336}
         rotation: {x: -0.0012860008, y: 0.028199753, z: 0.0018166509, w: 0.9996001}
+        enableRotation: 0
+        space: 1
     rootOverride:
       position: {x: -0.0045359996, y: 0.88084656, z: -0.028731085}
       rotation: {x: 0.06469349, y: -0.027172724, z: 0.0021542634, w: 0.9975329}
-    carryEffectorsWithRoot: 0
+      enableRotation: 0
+      space: 1
     constraintMode: fullbody
     sampleTime: 0
   pathData:
@@ -5669,9 +6147,17 @@ MonoBehaviour:
   randomSeed: 0
   seed: 1085546961
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 1
   pathBeginAngleDegrees: 45
   pathEndAngleDegrees: 45
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 1
   headingDegrees: 0
   analysisOptionsJson: 
@@ -5682,6 +6168,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -5736,9 +6226,17 @@ MonoBehaviour:
   randomSeed: 0
   seed: 42
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 1
   pathBeginAngleDegrees: -90
   pathEndAngleDegrees: -90
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 1
   headingDegrees: 0
   analysisOptionsJson: 
@@ -5749,6 +6247,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -5804,9 +6306,17 @@ MonoBehaviour:
   randomSeed: 0
   seed: 42
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
   overridePathAngle: 1
   pathBeginAngleDegrees: 180
   pathEndAngleDegrees: 180
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 1
   headingDegrees: 0
   analysisOptionsJson: 
@@ -5817,6 +6327,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25

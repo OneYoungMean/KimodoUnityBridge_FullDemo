@@ -220,6 +220,19 @@ MonoBehaviour:
   randomSeed: 0
   seed: 42
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
+  overridePathAngle: 0
+  pathBeginAngleDegrees: 0
+  pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
+  overrideHeading: 0
+  headingDegrees: 0
   analysisOptionsJson: 
   generatedAssetName: 
   generatedOutputFolder: 
@@ -228,6 +241,10 @@ MonoBehaviour:
   inOutConstraintMode: 1
   enableInConstraint: 1
   enableOutConstraint: 1
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -281,6 +298,19 @@ MonoBehaviour:
   randomSeed: 0
   seed: 42
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
+  overridePathAngle: 0
+  pathBeginAngleDegrees: 0
+  pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
+  overrideHeading: 0
+  headingDegrees: 0
   analysisOptionsJson: 
   generatedAssetName: 
   generatedOutputFolder: 
@@ -289,6 +319,10 @@ MonoBehaviour:
   inOutConstraintMode: 0
   enableInConstraint: 1
   enableOutConstraint: 1
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -342,6 +376,19 @@ MonoBehaviour:
   randomSeed: 0
   seed: 42
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
+  overridePathAngle: 0
+  pathBeginAngleDegrees: 0
+  pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
+  overrideHeading: 0
+  headingDegrees: 0
   analysisOptionsJson: 
   generatedAssetName: 
   generatedOutputFolder: 
@@ -350,6 +397,10 @@ MonoBehaviour:
   inOutConstraintMode: 0
   enableInConstraint: 1
   enableOutConstraint: 1
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -405,9 +456,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260825_132314_745
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20261009_110029_801
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: f3d2ddb01d708fd4f9c4f5ab67d7e77e, type: 2}
+  m_Clip: {fileID: 7400000, guid: 118c33c110dc9df478a9b2133059b686, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -425,6 +476,19 @@ MonoBehaviour:
   randomSeed: 0
   seed: 42
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
+  overridePathAngle: 0
+  pathBeginAngleDegrees: 0
+  pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
+  overrideHeading: 0
+  headingDegrees: 0
   analysisOptionsJson: 
   generatedAssetName: 
   generatedOutputFolder: 
@@ -433,6 +497,10 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 1
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25
@@ -846,6 +914,19 @@ MonoBehaviour:
   randomSeed: 0
   seed: 42
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
+  overridePathAngle: 0
+  pathBeginAngleDegrees: 0
+  pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
+  overrideHeading: 0
+  headingDegrees: 0
   analysisOptionsJson: 
   generatedAssetName: 
   generatedOutputFolder: 
@@ -854,6 +935,10 @@ MonoBehaviour:
   inOutConstraintMode: 0
   enableInConstraint: 1
   enableOutConstraint: 1
+  inConstraintWindowFrames: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames: 1
+  outConstraintSampleCount: 1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
   ardyTargetMaxSpeed: 1.25

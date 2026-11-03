@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 87e740c332e138f438368ba13793dbb7, type: 3}
   m_Name: Kimodo Constraint Marker
   m_EditorClassIdentifier: 
-  m_Time: 10.966699600219727
+  m_Time: 10.98330020904541
   frame: 0
   eventKind: 
   message: 
@@ -26,119 +26,113 @@ MonoBehaviour:
   sampleData:
     sampleData:
       data:
-      - 0.04210104
-      - -0.04958718
-      - -0.012019139
-      - 0.13671042
-      - -0.0108409915
-      - -0.086255684
-      - -0.6199197
-      - -0.29571748
-      - -0.017544946
-      - -0.027844097
-      - 0.24997537
-      - -0.05653381
-      - 0.20994015
-      - -0.08554694
-      - 0.253247
-      - 0.45263115
-      - -0.005437502
-      - -0.21157499
-      - 0.7578691
-      - -0.0359385
-      - -0.25075614
-      - -0.09915096
-      - 0.0016658485
-      - 0.51456136
-      - 0.063699275
-      - 0.047028843
-      - 0.77407414
-      - 0.19998898
-      - -0.28972268
-      - -0.26929012
-      - -0.005981953
-      - -0.7037701
-      - -0.23510174
-      - -0.5231834
-      - 0.30656886
-      - 0.03438155
-      - 0.6652815
-      - -0.12645823
-      - -0.07486893
-      - -0.010825004
-      - -0.17092463
-      - -0.8748436
-      - -0.19058287
-      - -0.17759609
-      - 0.29652107
-      - 0.20902145
-      - -0.7678974
-      - 0.4381336
-      - 0.13045539
-      - 1.0669141
-      - 0.9798448
-      - 0.07212022
-      - 0.038832806
-      - -0.16614689
-      - 0.019525345
-      - 0.98514265
-      - -0.16574685
-      - -0.96533513
-      - -0.033799935
-      - -0.5762134
-      - 0.5836121
-      - -0.42383665
-      - 0.38436657
-      - 0.042704288
-      - -0.9799129
-      - -0.09128177
-      - -0.60365874
-      - 0.5941308
-      - -0.3977933
-      - 0.35265467
+      - 0.05385541
+      - -0.09098714
+      - -0.020082762
+      - 0.13971987
+      - -0.014474296
+      - -0.11776473
+      - -0.5302191
+      - -0.43944436
+      - -0.097323634
+      - 0.058417015
+      - 0.33044857
+      - -0.05203335
+      - 0.17557888
+      - -0.08844917
+      - 0.40643013
+      - 0.403647
+      - -0.046117272
+      - -0.123430334
+      - 0.7578783
+      - -0.075051405
+      - -0.24410777
+      - 0.0783651
+      - -0.0015350676
+      - 0.51117116
+      - 0.13386333
+      - 0.046180975
+      - 0.78903687
+      - 0.18739425
+      - -0.2163163
+      - -0.43672946
+      - -0.017950183
+      - -0.55475664
+      - -0.19580978
+      - -0.5401609
+      - 0.33275604
+      - 0.10880749
+      - 0.5988547
+      - -0.15911558
+      - -0.089751385
+      - -0.02159767
+      - 0.22458531
+      - -0.8617901
+      - 0.038550064
+      - -0.30925238
+      - 0.4049956
+      - 0.39253706
+      - -0.7162384
+      - 0.20760247
+      - 0.42551705
+      - 1.0670745
+      - 0.9838148
+      - 0.08203744
+      - 0.065406956
+      - -0.18892415
+      - 0.05050328
+      - 0.9785086
+      - -0.16681173
+      - -0.9657844
+      - -0.015284458
+      - -0.56722516
+      - 0.597686
+      - -0.4429845
+      - 0.35325885
+      - 0.042351928
+      - -0.98994446
+      - -0.10357977
+      - -0.5808168
+      - 0.6307052
+      - -0.3966147
+      - 0.32796288
     enableMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
       rootHeading: 1
       leftFoot: 0
-      rightFoot: 0
+      rightFoot: 1
       leftHand: 0
       rightHand: 1
-    validMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
-      rootHeading: 1
-      leftFoot: 1
-      rightFoot: 1
-      leftHand: 1
-      rightHand: 1
+    sampleValid: 1
     enabled: 1
     creationOrder: 0
     effectors:
       leftHand:
-        position: {x: 0.8540585, y: 0.85826445, z: 0.002005525}
-        rotation: {x: 0.0069116717, y: 0.11742865, z: 0.70279354, w: 0.7016019}
+        position: {x: 0.8492979, y: 0.8563478, z: 0.00033140182}
+        rotation: {x: -0.4485227, y: 0.41422778, z: -0.55673474, w: -0.5632844}
+        enableRotation: 0
+        space: 1
       rightHand:
-        position: {x: 0.81168115, y: 1.2117801, z: 0.8066119}
-        rotation: {x: -0.3220591, y: -0.7803406, z: 0.21854153, w: 0.4894753}
+        position: {x: 0.92945856, y: 1.2700031, z: 0.50584763}
+        rotation: {x: -0.59146786, y: -0.48706356, z: -0.08619131, w: 0.63679355}
+        enableRotation: 0
+        space: 1
       leftFoot:
-        position: {x: 0.901073, y: 0.09831309, z: -0.072131075}
-        rotation: {x: 0.022875339, y: 0.010305135, z: 0.00028994476, w: 0.9996854}
+        position: {x: 0.96356046, y: 0.10223299, z: -0.08662959}
+        rotation: {x: 0.03718454, y: -0.002448395, z: -0.0028209342, w: 0.9993015}
+        enableRotation: 0
+        space: 1
       rightFoot:
-        position: {x: 1.1009234, y: 0.094275475, z: -0.061864145}
-        rotation: {x: 0.00949163, y: 0.05865856, z: 0.0056236233, w: 0.99821734}
+        position: {x: 1.1541127, y: 0.41619876, z: -0.21959567}
+        rotation: {x: 0.40417054, y: 0.05736661, z: -0.1918051, w: 0.8925055}
+        enableRotation: 0
+        space: 1
     rootOverride:
-      position: {x: 0.9950316, y: 0.8834463, z: 0.071975216}
-      rotation: {x: 0.08695626, y: -0.12781133, z: -0.010543689, w: 0.9879231}
-    carryEffectorsWithRoot: 0
+      position: {x: 0.9961626, y: 0.88374853, z: 0.07758787}
+      rotation: {x: 0.12492164, y: -0.13277704, z: 0.00015496835, w: 0.98324203}
+      enableRotation: 0
+      space: 1
     constraintMode: effector
-    sampleTime: 10.966699600219727
+    sampleTime: 10.98330020904541
   pathData:
     type: forward
     length: 1
@@ -345,9 +339,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_162354_996
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20261009_111327_667
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: d8ab0501be317c24aa04d0fc6302866f, type: 2}
+  m_Clip: {fileID: 7400000, guid: 048fded5770a70842a94cfefa9699c4d, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -365,12 +359,25 @@ MonoBehaviour:
   randomSeed: 0
   seed: 572103253
   generateLoop: 1
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
+  loopLockTargetFieldsEditorProxy: 0
+  loopWindowFrames60: 30
+  loopWindowSampleCount: 2
   overridePathAngle: 0
   pathBeginAngleDegrees: 0
   pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 0
   headingDegrees: 0
-  analysisOptionsJson: 
+  useRelativeOffset: 0
+  relativeOffset: {x: 0, y: 0, z: 0}
+  analyzeAfterGeneration: 1
   generatedAssetName: 
   generatedOutputFolder: 
   generationOutputMode: 0
@@ -378,14 +385,32 @@ MonoBehaviour:
   inOutConstraintMode: 0
   enableInConstraint: 1
   enableOutConstraint: 1
+  postApplyInConstraint: 0
+  postApplyOutConstraint: 0
+  inConstraintWindowFrames60: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames60: 1
+  outConstraintSampleCount: 1
+  longClipWindowFrames60: 60
+  longClipWindowSampleCount: 2
+  inConstraintSourceTrack: {fileID: 0}
+  inConstraintSourceAsset: {fileID: 0}
+  inConstraintSourceClipStart: -1
+  inConstraintSourceFrame: -1
+  outConstraintSourceTrack: {fileID: 0}
+  outConstraintSourceAsset: {fileID: 0}
+  outConstraintSourceClipStart: -1
+  outConstraintSourceFrame: -1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
-  ardyTargetMaxSpeed: 1.25
-  ardyTargetMaxAcceleration: 1.5
   showConstraint: 1
   autoBeginAnchor: 1
   isGenerated: 1
+  isDebugRawClip: 0
+  debugPassName: 
   lastGeneratedPrompt: walk forward loop
+  commandGenerationStatus: 
+  commandGenerationError: 
   autoRetargetOnBinding: 1
   curveFilterOptions:
     enabled: 1
@@ -601,9 +626,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_162826_124
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20261009_111238_696
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: 1d64548fa7985564680e070bb9d6f5d4, type: 2}
+  m_Clip: {fileID: 7400000, guid: 35d58ea4e2d8fc14f8fced3de0063f2a, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -621,12 +646,25 @@ MonoBehaviour:
   randomSeed: 0
   seed: 121655362
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
+  loopLockTargetFieldsEditorProxy: 0
+  loopWindowFrames60: 30
+  loopWindowSampleCount: 2
   overridePathAngle: 0
   pathBeginAngleDegrees: 0
   pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 0
   headingDegrees: 0
-  analysisOptionsJson: 
+  useRelativeOffset: 0
+  relativeOffset: {x: 0, y: 0, z: 0}
+  analyzeAfterGeneration: 1
   generatedAssetName: 
   generatedOutputFolder: 
   generationOutputMode: 0
@@ -634,14 +672,32 @@ MonoBehaviour:
   inOutConstraintMode: 0
   enableInConstraint: 1
   enableOutConstraint: 1
+  postApplyInConstraint: 0
+  postApplyOutConstraint: 0
+  inConstraintWindowFrames60: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames60: 1
+  outConstraintSampleCount: 1
+  longClipWindowFrames60: 60
+  longClipWindowSampleCount: 2
+  inConstraintSourceTrack: {fileID: 0}
+  inConstraintSourceAsset: {fileID: 0}
+  inConstraintSourceClipStart: -1
+  inConstraintSourceFrame: -1
+  outConstraintSourceTrack: {fileID: 0}
+  outConstraintSourceAsset: {fileID: 0}
+  outConstraintSourceClipStart: -1
+  outConstraintSourceFrame: -1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
-  ardyTargetMaxSpeed: 1.25
-  ardyTargetMaxAcceleration: 1.5
   showConstraint: 1
   autoBeginAnchor: 1
   isGenerated: 1
+  isDebugRawClip: 0
+  debugPassName: 
   lastGeneratedPrompt: right hand push button
+  commandGenerationStatus: 
+  commandGenerationError: 
   autoRetargetOnBinding: 1
   curveFilterOptions:
     enabled: 1
@@ -828,9 +884,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_162034_060
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20261009_111201_472
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: d071bb32809aea8469dca5e9e9d61214, type: 2}
+  m_Clip: {fileID: 7400000, guid: 0e24bd06072388b40b769fb3a698324d, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -848,12 +904,25 @@ MonoBehaviour:
   randomSeed: 0
   seed: 1400152582
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
+  loopLockTargetFieldsEditorProxy: 0
+  loopWindowFrames60: 30
+  loopWindowSampleCount: 2
   overridePathAngle: 0
   pathBeginAngleDegrees: 0
   pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 0
   headingDegrees: 0
-  analysisOptionsJson: 
+  useRelativeOffset: 0
+  relativeOffset: {x: 0, y: 0, z: 0}
+  analyzeAfterGeneration: 1
   generatedAssetName: 
   generatedOutputFolder: 
   generationOutputMode: 0
@@ -861,14 +930,32 @@ MonoBehaviour:
   inOutConstraintMode: 0
   enableInConstraint: 1
   enableOutConstraint: 1
+  postApplyInConstraint: 0
+  postApplyOutConstraint: 0
+  inConstraintWindowFrames60: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames60: 1
+  outConstraintSampleCount: 1
+  longClipWindowFrames60: 60
+  longClipWindowSampleCount: 2
+  inConstraintSourceTrack: {fileID: 0}
+  inConstraintSourceAsset: {fileID: 0}
+  inConstraintSourceClipStart: -1
+  inConstraintSourceFrame: -1
+  outConstraintSourceTrack: {fileID: 0}
+  outConstraintSourceAsset: {fileID: 0}
+  outConstraintSourceClipStart: -1
+  outConstraintSourceFrame: -1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
-  ardyTargetMaxSpeed: 1.25
-  ardyTargetMaxAcceleration: 1.5
   showConstraint: 1
   autoBeginAnchor: 1
   isGenerated: 1
+  isDebugRawClip: 0
+  debugPassName: 
   lastGeneratedPrompt: a woman sit on the desk
+  commandGenerationStatus: 
+  commandGenerationError: 
   autoRetargetOnBinding: 1
   curveFilterOptions:
     enabled: 1
@@ -1008,9 +1095,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_162902_145
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20261009_111243_120
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: fcef8c60ccdd23e4ea2d9adc574ca884, type: 2}
+  m_Clip: {fileID: 7400000, guid: 2a25cb43522aac045aed73ca6be04b52, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -1028,12 +1115,25 @@ MonoBehaviour:
   randomSeed: 0
   seed: 231033105
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
+  loopLockTargetFieldsEditorProxy: 0
+  loopWindowFrames60: 30
+  loopWindowSampleCount: 2
   overridePathAngle: 0
   pathBeginAngleDegrees: 0
   pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 0
   headingDegrees: 0
-  analysisOptionsJson: 
+  useRelativeOffset: 0
+  relativeOffset: {x: 0, y: 0, z: 0}
+  analyzeAfterGeneration: 1
   generatedAssetName: 
   generatedOutputFolder: 
   generationOutputMode: 0
@@ -1041,14 +1141,32 @@ MonoBehaviour:
   inOutConstraintMode: 0
   enableInConstraint: 1
   enableOutConstraint: 1
+  postApplyInConstraint: 0
+  postApplyOutConstraint: 0
+  inConstraintWindowFrames60: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames60: 1
+  outConstraintSampleCount: 1
+  longClipWindowFrames60: 60
+  longClipWindowSampleCount: 2
+  inConstraintSourceTrack: {fileID: 0}
+  inConstraintSourceAsset: {fileID: 0}
+  inConstraintSourceClipStart: -1
+  inConstraintSourceFrame: -1
+  outConstraintSourceTrack: {fileID: 0}
+  outConstraintSourceAsset: {fileID: 0}
+  outConstraintSourceClipStart: -1
+  outConstraintSourceFrame: -1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
-  ardyTargetMaxSpeed: 1.25
-  ardyTargetMaxAcceleration: 1.5
   showConstraint: 1
   autoBeginAnchor: 1
   isGenerated: 1
+  isDebugRawClip: 0
+  debugPassName: 
   lastGeneratedPrompt: a man run and  kick right foot
+  commandGenerationStatus: 
+  commandGenerationError: 
   autoRetargetOnBinding: 1
   curveFilterOptions:
     enabled: 1
@@ -1161,46 +1279,40 @@ MonoBehaviour:
       - -0.07143895
       - 0.62037826
     enableMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
       rootHeading: 1
       leftFoot: 1
       rightFoot: 1
       leftHand: 1
       rightHand: 1
-    validMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
-      rootHeading: 1
-      leftFoot: 1
-      rightFoot: 1
-      leftHand: 1
-      rightHand: 1
+    sampleValid: 1
     enabled: 1
     creationOrder: 0
     effectors:
       leftHand:
         position: {x: 1.8954961, y: 0.8585551, z: 1.0394306}
         rotation: {x: 0.07146008, y: 0.20558895, z: 0.65654224, w: 0.72220486}
+        enableRotation: 0
+        space: 1
       rightHand:
         position: {x: 2.1952584, y: 0.8690717, z: 1.0211638}
         rotation: {x: 0.08222911, y: -0.21696244, z: -0.6633296, w: 0.7114496}
+        enableRotation: 0
+        space: 1
       leftFoot:
         position: {x: 1.9751254, y: 0.09636861, z: 1.0844312}
         rotation: {x: 0.0028190028, y: 0.0046600075, z: 0.056036726, w: 0.9984141}
+        enableRotation: 0
+        space: 1
       rightFoot:
         position: {x: 2.1080155, y: 0.23807669, z: 0.77789915}
         rotation: {x: 0.5404144, y: 0.14492859, z: 0.005257705, w: 0.8288068}
+        enableRotation: 0
+        space: 1
     rootOverride:
       position: {x: 2.0404508, y: 0.8790941, z: 1.0408504}
       rotation: {x: 0.07197899, y: -0.0025152322, z: -0.03843368, w: 0.99666226}
-    carryEffectorsWithRoot: 0
+      enableRotation: 0
+      space: 1
     constraintMode: fullbody
     sampleTime: 21.700000762939453
   pathData:
@@ -1219,9 +1331,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_162100_239
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20261103_094544_341
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: d06c0929a8716a744ae04e6a3e6639be, type: 2}
+  m_Clip: {fileID: 7400000, guid: acaa9ebf18c0d094cb02d034dcfab740, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -1239,12 +1351,25 @@ MonoBehaviour:
   randomSeed: 0
   seed: 961133262
   generateLoop: 0
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
+  loopLockTargetFieldsEditorProxy: 0
+  loopWindowFrames60: 30
+  loopWindowSampleCount: 2
   overridePathAngle: 0
   pathBeginAngleDegrees: 0
   pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 0
   headingDegrees: 0
-  analysisOptionsJson: 
+  useRelativeOffset: 0
+  relativeOffset: {x: 0, y: 0, z: 0}
+  analyzeAfterGeneration: 1
   generatedAssetName: 
   generatedOutputFolder: 
   generationOutputMode: 0
@@ -1252,14 +1377,32 @@ MonoBehaviour:
   inOutConstraintMode: 2
   enableInConstraint: 1
   enableOutConstraint: 0
+  postApplyInConstraint: 0
+  postApplyOutConstraint: 0
+  inConstraintWindowFrames60: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames60: 1
+  outConstraintSampleCount: 1
+  longClipWindowFrames60: 60
+  longClipWindowSampleCount: 2
+  inConstraintSourceTrack: {fileID: 0}
+  inConstraintSourceAsset: {fileID: 0}
+  inConstraintSourceClipStart: -1
+  inConstraintSourceFrame: -1
+  outConstraintSourceTrack: {fileID: 0}
+  outConstraintSourceAsset: {fileID: 0}
+  outConstraintSourceClipStart: -1
+  outConstraintSourceFrame: -1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
-  ardyTargetMaxSpeed: 1.25
-  ardyTargetMaxAcceleration: 1.5
   showConstraint: 1
   autoBeginAnchor: 1
   isGenerated: 1
+  isDebugRawClip: 0
+  debugPassName: 
   lastGeneratedPrompt: stand up
+  commandGenerationStatus: 
+  commandGenerationError: 
   autoRetargetOnBinding: 1
   curveFilterOptions:
     enabled: 1
@@ -1372,46 +1515,40 @@ MonoBehaviour:
       - -0.07143895
       - 0.62037826
     enableMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
       rootHeading: 1
       leftFoot: 1
       rightFoot: 1
       leftHand: 1
       rightHand: 1
-    validMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
-      rootHeading: 1
-      leftFoot: 1
-      rightFoot: 1
-      leftHand: 1
-      rightHand: 1
+    sampleValid: 1
     enabled: 1
     creationOrder: 0
     effectors:
       leftHand:
         position: {x: 1.8954961, y: 0.8585551, z: 1.0394306}
         rotation: {x: 0.07146008, y: 0.20558895, z: 0.65654224, w: 0.72220486}
+        enableRotation: 0
+        space: 1
       rightHand:
         position: {x: 2.1952584, y: 0.8690717, z: 1.0211638}
         rotation: {x: 0.08222911, y: -0.21696244, z: -0.6633296, w: 0.7114496}
+        enableRotation: 0
+        space: 1
       leftFoot:
         position: {x: 1.9751254, y: 0.09636861, z: 1.0844312}
         rotation: {x: 0.0028190028, y: 0.0046600075, z: 0.056036726, w: 0.9984141}
+        enableRotation: 0
+        space: 1
       rightFoot:
         position: {x: 2.1080155, y: 0.23807669, z: 0.77789915}
         rotation: {x: 0.5404144, y: 0.14492859, z: 0.005257705, w: 0.8288068}
+        enableRotation: 0
+        space: 1
     rootOverride:
       position: {x: 2.0404508, y: 0.8790941, z: 1.0408504}
       rotation: {x: 0.07197899, y: -0.0025152322, z: -0.03843368, w: 0.99666226}
-    carryEffectorsWithRoot: 0
+      enableRotation: 0
+      space: 1
     constraintMode: fullbody
     sampleTime: 23.36669921875
   pathData:
@@ -1708,46 +1845,40 @@ MonoBehaviour:
       - 0.08158303
       - 0.6736919
     enableMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
       rootHeading: 1
       leftFoot: 0
       rightFoot: 0
       leftHand: 1
       rightHand: 1
-    validMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
-      rootHeading: 1
-      leftFoot: 1
-      rightFoot: 1
-      leftHand: 1
-      rightHand: 1
+    sampleValid: 1
     enabled: 1
     creationOrder: 0
     effectors:
       leftHand:
         position: {x: -0.52395207, y: 0.9242358, z: -0.08874297}
         rotation: {x: -0.18726456, y: 0.7763722, z: 0.14345624, w: 0.5844643}
+        enableRotation: 0
+        space: 1
       rightHand:
         position: {x: -0.22492763, y: 0.9496157, z: -0.10503445}
         rotation: {x: -0.12984885, y: -0.77061653, z: -0.24356812, w: 0.574425}
+        enableRotation: 0
+        space: 1
       leftFoot:
         position: {x: -0.49968377, y: 0.21264893, z: -0.05151406}
         rotation: {x: 0.32655406, y: -0.3139334, z: 0.13456352, w: 0.8813064}
+        enableRotation: 0
+        space: 1
       rightFoot:
         position: {x: -0.30000544, y: 0.21297255, z: -0.041638494}
         rotation: {x: 0.470143, y: 0.12094314, z: 0.028921142, w: 0.87378603}
+        enableRotation: 0
+        space: 1
     rootOverride:
       position: {x: -0.4070757, y: 0.6573924, z: -0.23942116}
       rotation: {x: -0.30452916, y: -0.024480253, z: -0.0058167432, w: 0.95217055}
-    carryEffectorsWithRoot: 0
+      enableRotation: 0
+      space: 1
     constraintMode: fullbody
     sampleTime: 4.48330020904541
   pathData:
@@ -2043,46 +2174,40 @@ MonoBehaviour:
       - -0.07143895
       - 0.62037826
     enableMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
       rootHeading: 1
       leftFoot: 1
       rightFoot: 1
       leftHand: 1
       rightHand: 1
-    validMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
-      rootHeading: 1
-      leftFoot: 1
-      rightFoot: 1
-      leftHand: 1
-      rightHand: 1
+    sampleValid: 1
     enabled: 1
     creationOrder: 0
     effectors:
       leftHand:
         position: {x: 1.8954961, y: 0.8585551, z: 1.0394306}
         rotation: {x: 0.07146008, y: 0.20558895, z: 0.65654224, w: 0.72220486}
+        enableRotation: 0
+        space: 1
       rightHand:
         position: {x: 2.1952584, y: 0.8690717, z: 1.0211638}
         rotation: {x: 0.08222911, y: -0.21696244, z: -0.6633296, w: 0.7114496}
+        enableRotation: 0
+        space: 1
       leftFoot:
         position: {x: 1.9751254, y: 0.09636861, z: 1.0844312}
         rotation: {x: 0.0028190028, y: 0.0046600075, z: 0.056036726, w: 0.9984141}
+        enableRotation: 0
+        space: 1
       rightFoot:
         position: {x: 2.1080155, y: 0.23807669, z: 0.77789915}
         rotation: {x: 0.5404144, y: 0.14492859, z: 0.005257705, w: 0.8288068}
+        enableRotation: 0
+        space: 1
     rootOverride:
       position: {x: 2.0404508, y: 0.8790941, z: 1.0408504}
       rotation: {x: 0.07197899, y: -0.0025152322, z: -0.03843368, w: 0.99666226}
-    carryEffectorsWithRoot: 0
+      enableRotation: 0
+      space: 1
     constraintMode: fullbody
     sampleTime: 19.983299255371094
   pathData:
@@ -2711,46 +2836,40 @@ MonoBehaviour:
       - -0.42792046
       - 0.4216144
     enableMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
       rootHeading: 1
       leftFoot: 1
       rightFoot: 1
       leftHand: 1
       rightHand: 1
-    validMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
-      rootHeading: 1
-      leftFoot: 1
-      rightFoot: 1
-      leftHand: 1
-      rightHand: 1
+    sampleValid: 1
     enabled: 1
     creationOrder: 0
     effectors:
       leftHand:
         position: {x: -0.17899041, y: 0.8725934, z: -0.064027354}
         rotation: {x: 0.025055334, y: 0.25979275, z: 0.6254355, w: 0.7353308}
+        enableRotation: 0
+        space: 1
       rightHand:
         position: {x: 0.13629724, y: 0.8629855, z: -0.021459546}
         rotation: {x: 0.03370412, y: -0.36032003, z: -0.6349234, w: 0.6825739}
+        enableRotation: 0
+        space: 1
       leftFoot:
         position: {x: -0.10030468, y: 0.09022486, z: -0.14386374}
         rotation: {x: 0.004034315, y: -0.2253245, z: -0.0015572427, w: 0.9742743}
+        enableRotation: 0
+        space: 1
       rightFoot:
         position: {x: 0.08399394, y: 0.092341125, z: -0.14685509}
         rotation: {x: 0.00059404375, y: 0.14324145, z: -0.003646093, w: 0.98968095}
+        enableRotation: 0
+        space: 1
     rootOverride:
       position: {x: -0.0039952695, y: 0.87148184, z: -0.038191944}
       rotation: {x: 0.06985153, y: -0.012693187, z: -0.03038531, w: 0.9970138}
-    carryEffectorsWithRoot: 0
+      enableRotation: 0
+      space: 1
     constraintMode: fullbody
     sampleTime: 0.3833
   pathData:
@@ -2769,9 +2888,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_162526_376
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20261009_111349_420
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: a646ac8c06eba7848aae1effdb2b0b7a, type: 2}
+  m_Clip: {fileID: 7400000, guid: 37272c2db91a1a3499f799a5fa701d8e, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -2789,12 +2908,25 @@ MonoBehaviour:
   randomSeed: 0
   seed: 1297364042
   generateLoop: 1
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
+  loopLockTargetFieldsEditorProxy: 0
+  loopWindowFrames60: 30
+  loopWindowSampleCount: 2
   overridePathAngle: 0
   pathBeginAngleDegrees: 0
   pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 0
   headingDegrees: 0
-  analysisOptionsJson: 
+  useRelativeOffset: 0
+  relativeOffset: {x: 0, y: 0, z: 0}
+  analyzeAfterGeneration: 1
   generatedAssetName: 
   generatedOutputFolder: 
   generationOutputMode: 0
@@ -2802,14 +2934,32 @@ MonoBehaviour:
   inOutConstraintMode: 0
   enableInConstraint: 1
   enableOutConstraint: 1
+  postApplyInConstraint: 0
+  postApplyOutConstraint: 0
+  inConstraintWindowFrames60: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames60: 1
+  outConstraintSampleCount: 1
+  longClipWindowFrames60: 60
+  longClipWindowSampleCount: 2
+  inConstraintSourceTrack: {fileID: 0}
+  inConstraintSourceAsset: {fileID: 0}
+  inConstraintSourceClipStart: -1
+  inConstraintSourceFrame: -1
+  outConstraintSourceTrack: {fileID: 0}
+  outConstraintSourceAsset: {fileID: 0}
+  outConstraintSourceClipStart: -1
+  outConstraintSourceFrame: -1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
-  ardyTargetMaxSpeed: 1.25
-  ardyTargetMaxAcceleration: 1.5
   showConstraint: 1
   autoBeginAnchor: 0
   isGenerated: 1
+  isDebugRawClip: 0
+  debugPassName: 
   lastGeneratedPrompt: turn left 90 walk loop
+  commandGenerationStatus: 
+  commandGenerationError: 
   autoRetargetOnBinding: 1
   curveFilterOptions:
     enabled: 1
@@ -3334,46 +3484,40 @@ MonoBehaviour:
       - -0.8857237
       - -0.0071592247
     enableMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
       rootHeading: 1
       leftFoot: 0
       rightFoot: 1
       leftHand: 0
       rightHand: 0
-    validMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
-      rootHeading: 1
-      leftFoot: 1
-      rightFoot: 1
-      leftHand: 1
-      rightHand: 1
+    sampleValid: 1
     enabled: 1
     creationOrder: 0
     effectors:
       leftHand:
         position: {x: -1.3392184, y: 1.3080751, z: 7.269241}
         rotation: {x: -0.016308937, y: 0.9928076, z: 0.11698661, w: 0.019555753}
+        enableRotation: 0
+        space: 1
       rightHand:
         position: {x: -1.0619061, y: 1.0332791, z: 6.849281}
         rotation: {x: 0.015164766, y: -0.20168117, z: -0.50966614, w: 0.836263}
+        enableRotation: 0
+        space: 1
       leftFoot:
         position: {x: -1.3122438, y: 0.11743134, z: 7.111384}
         rotation: {x: 0.106234804, y: -0.24419448, z: 0.044900686, w: 0.96284336}
+        enableRotation: 0
+        space: 1
       rightFoot:
         position: {x: -1.2511331, y: 0.8982955, z: 7.8962283}
         rotation: {x: -0.6818814, y: -0.05987372, z: -0.15478587, w: 0.7123865}
+        enableRotation: 0
+        space: 1
     rootOverride:
       position: {x: -1.2769835, y: 0.91162425, z: 7.1140113}
       rotation: {x: -0.16248953, y: -0.000786975, z: 0.102032274, w: 0.9814204}
-    carryEffectorsWithRoot: 0
+      enableRotation: 0
+      space: 1
     constraintMode: effector
     sampleTime: 19.08329963684082
   pathData:
@@ -3392,9 +3536,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_163136_037
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20261009_111335_065
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: 0b6e7c58205fdc74fa6f40211e9bb061, type: 2}
+  m_Clip: {fileID: 7400000, guid: c3df046d9532b124986e2d160a24b965, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -3412,12 +3556,25 @@ MonoBehaviour:
   randomSeed: 0
   seed: 1297364042
   generateLoop: 1
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
+  loopLockTargetFieldsEditorProxy: 0
+  loopWindowFrames60: 30
+  loopWindowSampleCount: 2
   overridePathAngle: 0
   pathBeginAngleDegrees: 0
   pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 0
   headingDegrees: 0
-  analysisOptionsJson: 
+  useRelativeOffset: 0
+  relativeOffset: {x: 0, y: 0, z: 0}
+  analyzeAfterGeneration: 1
   generatedAssetName: 
   generatedOutputFolder: 
   generationOutputMode: 0
@@ -3425,14 +3582,32 @@ MonoBehaviour:
   inOutConstraintMode: 0
   enableInConstraint: 1
   enableOutConstraint: 1
+  postApplyInConstraint: 0
+  postApplyOutConstraint: 0
+  inConstraintWindowFrames60: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames60: 1
+  outConstraintSampleCount: 1
+  longClipWindowFrames60: 60
+  longClipWindowSampleCount: 2
+  inConstraintSourceTrack: {fileID: 0}
+  inConstraintSourceAsset: {fileID: 0}
+  inConstraintSourceClipStart: -1
+  inConstraintSourceFrame: -1
+  outConstraintSourceTrack: {fileID: 0}
+  outConstraintSourceAsset: {fileID: 0}
+  outConstraintSourceClipStart: -1
+  outConstraintSourceFrame: -1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
-  ardyTargetMaxSpeed: 1.25
-  ardyTargetMaxAcceleration: 1.5
   showConstraint: 1
   autoBeginAnchor: 0
   isGenerated: 1
+  isDebugRawClip: 0
+  debugPassName: 
   lastGeneratedPrompt: turn left 90 walk loop
+  commandGenerationStatus: 
+  commandGenerationError: 
   autoRetargetOnBinding: 1
   curveFilterOptions:
     enabled: 1
@@ -3460,7 +3635,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 87e740c332e138f438368ba13793dbb7, type: 3}
   m_Name: Kimodo Constraint Marker
   m_EditorClassIdentifier: 
-  m_Time: 9.45
+  m_Time: 9.449999809265137
   frame: 0
   eventKind: 
   message: 
@@ -3545,48 +3720,42 @@ MonoBehaviour:
       - -0.42792046
       - 0.4216144
     enableMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
       rootHeading: 1
       leftFoot: 1
       rightFoot: 1
       leftHand: 1
       rightHand: 1
-    validMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
-      rootHeading: 1
-      leftFoot: 1
-      rightFoot: 1
-      leftHand: 1
-      rightHand: 1
+    sampleValid: 1
     enabled: 1
     creationOrder: 0
     effectors:
       leftHand:
-        position: {x: -0.17899041, y: 0.8725934, z: -0.064027354}
-        rotation: {x: 0.025055334, y: 0.25979275, z: 0.6254355, w: 0.7353308}
+        position: {x: -0.1430635, y: 0.92599446, z: -0.0059267515}
+        rotation: {x: 0.11163017, y: -0.4111588, z: -0.6168561, w: -0.66179734}
+        enableRotation: 0
+        space: 1
       rightHand:
         position: {x: 0.13629724, y: 0.8629855, z: -0.021459546}
         rotation: {x: 0.03370412, y: -0.36032003, z: -0.6349234, w: 0.6825739}
+        enableRotation: 0
+        space: 1
       leftFoot:
         position: {x: -0.10030468, y: 0.09022486, z: -0.14386374}
         rotation: {x: 0.004034315, y: -0.2253245, z: -0.0015572427, w: 0.9742743}
+        enableRotation: 0
+        space: 1
       rightFoot:
         position: {x: 0.08399394, y: 0.092341125, z: -0.14685509}
         rotation: {x: 0.00059404375, y: 0.14324145, z: -0.003646093, w: 0.98968095}
+        enableRotation: 0
+        space: 1
     rootOverride:
       position: {x: -0.0039952695, y: 0.87148184, z: -0.038191944}
       rotation: {x: 0.06985153, y: -0.012693187, z: -0.03038531, w: 0.9970138}
-    carryEffectorsWithRoot: 0
+      enableRotation: 0
+      space: 1
     constraintMode: fullbody
-    sampleTime: 9.45
+    sampleTime: 9.449999809265137
   pathData:
     type: forward
     length: 1
@@ -3793,9 +3962,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_163202_025
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20261009_111320_463
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: 26f69e6dfce874a4283c4f84784b6125, type: 2}
+  m_Clip: {fileID: 7400000, guid: 69882d6df3119d54db8f17590787c5a2, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -3813,12 +3982,25 @@ MonoBehaviour:
   randomSeed: 0
   seed: 1297364042
   generateLoop: 1
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
+  loopLockTargetFieldsEditorProxy: 0
+  loopWindowFrames60: 30
+  loopWindowSampleCount: 2
   overridePathAngle: 0
   pathBeginAngleDegrees: 0
   pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 0
   headingDegrees: 0
-  analysisOptionsJson: 
+  useRelativeOffset: 0
+  relativeOffset: {x: 0, y: 0, z: 0}
+  analyzeAfterGeneration: 1
   generatedAssetName: 
   generatedOutputFolder: 
   generationOutputMode: 0
@@ -3826,14 +4008,32 @@ MonoBehaviour:
   inOutConstraintMode: 0
   enableInConstraint: 1
   enableOutConstraint: 1
+  postApplyInConstraint: 0
+  postApplyOutConstraint: 0
+  inConstraintWindowFrames60: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames60: 1
+  outConstraintSampleCount: 1
+  longClipWindowFrames60: 60
+  longClipWindowSampleCount: 2
+  inConstraintSourceTrack: {fileID: 0}
+  inConstraintSourceAsset: {fileID: 0}
+  inConstraintSourceClipStart: -1
+  inConstraintSourceFrame: -1
+  outConstraintSourceTrack: {fileID: 0}
+  outConstraintSourceAsset: {fileID: 0}
+  outConstraintSourceClipStart: -1
+  outConstraintSourceFrame: -1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
-  ardyTargetMaxSpeed: 1.25
-  ardyTargetMaxAcceleration: 1.5
   showConstraint: 1
   autoBeginAnchor: 0
   isGenerated: 1
+  isDebugRawClip: 0
+  debugPassName: 
   lastGeneratedPrompt: turn left 90 walk loop
+  commandGenerationStatus: 
+  commandGenerationError: 
   autoRetargetOnBinding: 1
   curveFilterOptions:
     enabled: 1
@@ -3946,46 +4146,40 @@ MonoBehaviour:
       - -0.07143895
       - 0.62037826
     enableMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
       rootHeading: 1
       leftFoot: 1
       rightFoot: 1
       leftHand: 1
       rightHand: 1
-    validMask:
-      muscle: 1
-      rootTQ: 1
-      leftFootTQ: 1
-      rightFootTQ: 1
-      rootPosition: 1
-      rootHeading: 1
-      leftFoot: 1
-      rightFoot: 1
-      leftHand: 1
-      rightHand: 1
+    sampleValid: 1
     enabled: 1
     creationOrder: 0
     effectors:
       leftHand:
         position: {x: 1.8954961, y: 0.8585551, z: 1.0394306}
         rotation: {x: 0.07146008, y: 0.20558895, z: 0.65654224, w: 0.72220486}
+        enableRotation: 0
+        space: 1
       rightHand:
         position: {x: 2.1952584, y: 0.8690717, z: 1.0211638}
         rotation: {x: 0.08222911, y: -0.21696244, z: -0.6633296, w: 0.7114496}
+        enableRotation: 0
+        space: 1
       leftFoot:
         position: {x: 1.9751254, y: 0.09636861, z: 1.0844312}
         rotation: {x: 0.0028190028, y: 0.0046600075, z: 0.056036726, w: 0.9984141}
+        enableRotation: 0
+        space: 1
       rightFoot:
         position: {x: 2.1080155, y: 0.23807669, z: 0.77789915}
         rotation: {x: 0.5404144, y: 0.14492859, z: 0.005257705, w: 0.8288068}
+        enableRotation: 0
+        space: 1
     rootOverride:
       position: {x: 2.0404508, y: 0.8790941, z: 1.0408504}
       rotation: {x: 0.07197899, y: -0.0025152322, z: -0.03843368, w: 0.99666226}
-    carryEffectorsWithRoot: 0
+      enableRotation: 0
+      space: 1
     constraintMode: fullbody
     sampleTime: 19.899999618530273
   pathData:
@@ -4308,9 +4502,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e514424836ddf8b4e91fb29a04051381, type: 3}
-  m_Name: AnimationPlayableAsset of Kimodo_Playable_20260910_162455_533
+  m_Name: AnimationPlayableAsset of Kimodo_Playable_20261009_111341_937
   m_EditorClassIdentifier: 
-  m_Clip: {fileID: 7400000, guid: c52fb2ce2a9a45142bd07cf954423ef7, type: 2}
+  m_Clip: {fileID: 7400000, guid: 3defe8a1a0b506442a4b62726b0446a5, type: 2}
   m_Position: {x: 0, y: 0, z: 0}
   m_EulerAngles: {x: -0, y: 0, z: 0}
   m_UseTrackMatchFields: 1
@@ -4328,12 +4522,25 @@ MonoBehaviour:
   randomSeed: 0
   seed: 572103253
   generateLoop: 1
+  loopLockPositionX: 0
+  loopLockPositionY: 1
+  loopLockPositionZ: 0
+  loopLockRotationX: 1
+  loopLockRotationY: 0
+  loopLockRotationZ: 1
+  loopLockTargetFieldsEditorProxy: 0
+  loopWindowFrames60: 30
+  loopWindowSampleCount: 2
   overridePathAngle: 0
   pathBeginAngleDegrees: 0
   pathEndAngleDegrees: 0
+  overridePathDistance: 0
+  pathDistance: 0
   overrideHeading: 0
   headingDegrees: 0
-  analysisOptionsJson: 
+  useRelativeOffset: 0
+  relativeOffset: {x: 0, y: 0, z: 0}
+  analyzeAfterGeneration: 1
   generatedAssetName: 
   generatedOutputFolder: 
   generationOutputMode: 0
@@ -4341,14 +4548,32 @@ MonoBehaviour:
   inOutConstraintMode: 0
   enableInConstraint: 1
   enableOutConstraint: 1
+  postApplyInConstraint: 0
+  postApplyOutConstraint: 0
+  inConstraintWindowFrames60: 1
+  inConstraintSampleCount: 1
+  outConstraintWindowFrames60: 1
+  outConstraintSampleCount: 1
+  longClipWindowFrames60: 60
+  longClipWindowSampleCount: 2
+  inConstraintSourceTrack: {fileID: 0}
+  inConstraintSourceAsset: {fileID: 0}
+  inConstraintSourceClipStart: -1
+  inConstraintSourceFrame: -1
+  outConstraintSourceTrack: {fileID: 0}
+  outConstraintSourceAsset: {fileID: 0}
+  outConstraintSourceClipStart: -1
+  outConstraintSourceFrame: -1
   ardyAutoHistory: 1
   ardyHistoryWeight: 1
-  ardyTargetMaxSpeed: 1.25
-  ardyTargetMaxAcceleration: 1.5
   showConstraint: 1
   autoBeginAnchor: 1
   isGenerated: 1
+  isDebugRawClip: 0
+  debugPassName: 
   lastGeneratedPrompt: run forward loop
+  commandGenerationStatus: 
+  commandGenerationError: 
   autoRetargetOnBinding: 1
   curveFilterOptions:
     enabled: 1
