@@ -293,7 +293,8 @@ namespace KimodoBridge.Editor
             Action<KimodoEditorGenerationJobSession> finallyGenerate,
             Action<KimodoEditorGenerationJobSession> statusChanged,
             out KimodoEditorGenerationJobSession session,
-            out string error)
+            out string error,
+            string rawGenerateInstructionJson = null)
         {
             session = null;
             error = string.Empty;
@@ -320,7 +321,8 @@ namespace KimodoBridge.Editor
                                 stage,
                                 message),
                             token,
-                            timelineClipOverride);
+                            timelineClipOverride,
+                            rawGenerateInstructionJson: rawGenerateInstructionJson);
                         return afterGenerate != null
                             ? await afterGenerate(handle, result, token)
                             : result;
@@ -849,7 +851,9 @@ namespace KimodoBridge.Editor
                 throw new InvalidOperationException($"Build connected clip constraints failed: {error}");
             }
 
-            if (hasBegin)
+            if (hasBegin && KimodoTimelineClipConstraintBuilder.ShouldBuildArdyBeginBoundary(
+                    entry.Request.ModelName,
+                    clip.inOutConstraintMode))
             {
                 entry.Request.Constraints.clips.Insert(0, KimodoTimelineClipConstraintBuilder.BuildBegin(
                     clip,
@@ -951,7 +955,8 @@ namespace KimodoBridge.Editor
             Action<KimodoBridgeCommandStage, string> progress,
             CancellationToken token,
             TimelineClip timelineClipOverride = null,
-            bool muteDebugTracksBeforeStart = true)
+            bool muteDebugTracksBeforeStart = true,
+            string rawGenerateInstructionJson = null)
         {
             if (clip == null)
             {
@@ -967,6 +972,8 @@ namespace KimodoBridge.Editor
             string prompt = clip.motionPrompt ?? string.Empty;
             if (RequiresStage2Generation(clip, externalConstraint, timelineClipOverride))
             {
+                if (!string.IsNullOrWhiteSpace(rawGenerateInstructionJson))
+                    throw new InvalidOperationException("Raw generate replay does not support loop, path override, or deferred multi-stage generation.");
                 return await GenerateStagedAndFinalizeAsync(
                     clip,
                     prompt,
@@ -981,7 +988,8 @@ namespace KimodoBridge.Editor
                 externalConstraint,
                 token,
                 timelineClipOverride: timelineClipOverride,
-                requestEndpointSample: !KimodoMotionModelProfiles.TryGetArdy(clip.bridgeModelName, out _));
+                requestEndpointSample: !KimodoMotionModelProfiles.TryGetArdy(clip.bridgeModelName, out _),
+                rawGenerateInstructionJson: rawGenerateInstructionJson);
             string modelName = KimodoMotionModelProfiles.NormalizeName(clip.bridgeModelName);
 
             try
@@ -990,6 +998,8 @@ namespace KimodoBridge.Editor
                 KimodoEditorGenerationResult result;
                 if (request.EffectiveBackendRuntimeFrameCount > KimodoMotionModelProfiles.MaxGenerationFrames)
                 {
+                    if (!string.IsNullOrWhiteSpace(request.RawGenerateInstructionJson))
+                        throw new InvalidOperationException("Raw generate replay does not support long-clip window splitting.");
                     if (KimodoMotionModelProfiles.TryGetArdy(modelName, out _) ||
                         (request.Constraints?.clips?.Count ?? 0) > 0)
                     {
@@ -2049,6 +2059,60 @@ namespace KimodoBridge.Editor
                 KimodoEditorGenerationResult result = await KimodoEditorGeneratePipeline.ExecuteAsync(finalRequest);
                 token.ThrowIfCancellationRequested();
                 stage3.ResultMotion = ParseFirstPassMotion(finalRequest, result, "Stage 3");
+                if (generateLoop)
+                {
+                    int outputStartFrame = stage2BaseStartFrame - finalRequest.RuntimeTrimStartFrame;
+                    KimodoEditorGeneratePipeline.TrimGeneratedMotionForOutputRange(
+                        result,
+                        outputStartFrame,
+                        stage2Request.TargetFrameCount,
+                        modelName);
+                    if (!KimodoRawMotionUtility.TryParse(result.MotionJsonCompact, out KimodoRawMotionData outputMotion, out string outputMotionError))
+                    {
+                        throw new InvalidOperationException($"Trimmed loop output parsing failed: {outputMotionError}");
+                    }
+                    KimodoEditorGenerateOutputPlan outputPlan = finalRequest.ResolveOutputPlan(modelName);
+                    Avatar outputAvatar = KimodoRetargetCoreUtility.IsValidHumanoid(outputPlan?.TargetRetargetAvatar)
+                        ? outputPlan.TargetRetargetAvatar
+                        : outputPlan?.OriginRetargetAvatar;
+                    if (!KimodoEditorGeneratePipeline.TryTrimRetargetedClipForOutput(
+                            result.GeneratedClip,
+                            outputAvatar,
+                            outputPlan != null && outputPlan.ExportMuscleClip,
+                            outputStartFrame,
+                            stage2Request.TargetFrameCount,
+                            finalRequest.TargetFrameRate,
+                            out string outputTrimError,
+                            appendCoverageHoldFrame: true))
+                    {
+                        throw new InvalidOperationException($"Trim generated loop output failed: {outputTrimError}");
+                    }
+                    if (result.RawBoneClip != null && !ReferenceEquals(result.RawBoneClip, result.GeneratedClip))
+                    {
+                        Avatar rawBoneAvatar = KimodoRetargetCoreUtility.IsValidHumanoid(outputPlan?.OriginRetargetAvatar)
+                            ? outputPlan.OriginRetargetAvatar
+                            : outputAvatar;
+                        if (!KimodoEditorGeneratePipeline.TryTrimRetargetedClipForOutput(
+                                result.RawBoneClip,
+                                rawBoneAvatar,
+                                false,
+                                outputStartFrame,
+                                stage2Request.TargetFrameCount,
+                                finalRequest.TargetFrameRate,
+                                out string rawBoneTrimError,
+                                appendCoverageHoldFrame: true))
+                        {
+                            throw new InvalidOperationException($"Trim generated loop raw bone output failed: {rawBoneTrimError}");
+                        }
+                    }
+                    KimodoFootContactTrackUtility.Apply(result.GeneratedClip, outputMotion);
+                    if (result.RawBoneClip != null && !ReferenceEquals(result.RawBoneClip, result.GeneratedClip))
+                    {
+                        KimodoFootContactTrackUtility.Apply(result.RawBoneClip, outputMotion);
+                        EditorUtility.SetDirty(result.RawBoneClip);
+                    }
+                    EditorUtility.SetDirty(result.GeneratedClip);
+                }
                 if (debugConstraintPasses != null)
                 {
                     result.DebugConstraintPasses.Clear();

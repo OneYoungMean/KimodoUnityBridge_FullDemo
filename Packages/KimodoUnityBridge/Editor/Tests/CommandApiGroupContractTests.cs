@@ -19,6 +19,53 @@ namespace KimodoUnityBridge.Command.Tests
     public sealed class CommandApiGroupContractTests
     {
         [Test]
+        public void AnimationClipInspectorApi_UsesOneTypedFactSourceAndReadsBackSettings()
+        {
+            Assert.That(typeof(AnimationClipInspector).IsAbstract && typeof(AnimationClipInspector).IsSealed, Is.True);
+            Assert.That(typeof(AnimationClipInspector).GetFields(
+                BindingFlags.Static | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic), Is.Empty);
+            Assert.That(typeof(AnimationClipInspection).IsSerializable, Is.False,
+                "Inspector results must remain transient and must not become Unity asset data.");
+            AnimationClip clip = new AnimationClip { frameRate = 30f };
+            try
+            {
+                AnimationUtility.SetEditorCurve(
+                    clip,
+                    new EditorCurveBinding { path = string.Empty, type = typeof(Transform), propertyName = "RootT.x" },
+                    AnimationCurve.Linear(0f, 0f, 1f, 2f));
+
+                AnimationClipInspection before = AnimationClipInspector.Read(clip, includeConsumers: false);
+                Assert.That(before.FrameRate, Is.EqualTo(30f));
+                Assert.That(before.Curves.Count, Is.EqualTo(1));
+                Assert.That(before.RootMotionCurves.Count, Is.EqualTo(1));
+                Assert.That(before.RootDisplacementXZMeters, Is.EqualTo(2f).Within(0.001f));
+
+                AnimationClipSettingsSnapshot written = AnimationClipInspector.WriteSettings(
+                    clip,
+                    loopTime: true,
+                    rootMotionEnabled: true);
+                AnimationClipInspection after = AnimationClipInspector.Read(clip, includeConsumers: false);
+                Assert.That(written.LoopTime, Is.True);
+                Assert.That(after.Settings.LoopTime, Is.True);
+                Assert.That(after.Settings.RootMotionEnabled, Is.True);
+
+                Assert.Throws<InvalidOperationException>(() => AnimationClipInspector.WriteSettings(
+                    clip,
+                    keepOriginalPositionXZ: false,
+                    rootMotionEnabled: true));
+
+                JObject commandShape = AnimationClipInspector.InspectJson(clip, includeConsumers: false);
+                Assert.That(commandShape.Value<bool>("loop_time"), Is.True);
+                Assert.That(commandShape.Value<bool>("root_motion_enabled"), Is.True);
+                Assert.That(commandShape["consumers"], Is.Not.Null);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(clip);
+            }
+        }
+
+        [Test]
         public void Invoke_ValidatesInputSchemaAndPreservesDateFormattedStrings()
         {
             JObject malformedJson = JObject.Parse(command_dispatcher.Invoke("scene.context", "{"));
@@ -173,6 +220,8 @@ namespace KimodoUnityBridge.Command.Tests
             AssertPosePropertyUsesTrackIndex(point["properties"]?["pose"]);
             Assert.That(point["properties"]?["root"], Is.Not.Null);
             Assert.That(point["properties"]?["effector"], Is.Not.Null);
+            Assert.That(point["properties"]?["effector"]?["type"]?.Value<string>(), Is.EqualTo("array"));
+            Assert.That(point["properties"]?["effector"]?["items"]?["properties"]?["joint"]?["enum"], Is.Not.Null);
             Assert.That(point["properties"]?["type"], Is.Null);
         }
 
@@ -303,16 +352,16 @@ namespace KimodoUnityBridge.Command.Tests
             AssertPointShapeValid(new JObject { ["frame"] = 0, ["pose"] = new JObject { ["track"] = "P", ["index"] = 0 } });
             AssertPointShapeValid(new JObject { ["frame"] = 0, ["root"] = Position() });
             InvalidOperationException effectOnly = Assert.Throws<InvalidOperationException>(() =>
-                ValidatePointShape(new JObject { ["frame"] = 0, ["effector"] = new JObject { ["right_hand"] = Position() } }));
+                ValidatePointShape(new JObject { ["frame"] = 0, ["effector"] = new JArray(new JObject { ["joint"] = "right_hand", ["position"] = new JArray(1, 2, 3) }) }));
             Assert.That(effectOnly.Message, Does.Contain("explicit root context"));
-            AssertPointShapeValid(new JObject { ["frame"] = 0, ["root"] = Position(), ["effector"] = new JObject { ["right_hand"] = Position() } });
-            AssertPointShapeValid(new JObject { ["frame"] = 0, ["pose"] = new JObject(), ["effector"] = new JObject { ["right_hand"] = Position() } });
+            AssertPointShapeValid(new JObject { ["frame"] = 0, ["root"] = Position(), ["effector"] = new JArray(new JObject { ["joint"] = "right_hand", ["position"] = new JArray(1, 2, 3) }) });
+            AssertPointShapeValid(new JObject { ["frame"] = 0, ["pose"] = new JObject(), ["effector"] = new JArray(new JObject { ["joint"] = "right_hand", ["position"] = new JArray(1, 2, 3) }) });
             AssertPointShapeValid(new JObject
             {
                 ["frame"] = 0,
                 ["pose"] = new JObject { ["track"] = "P", ["index"] = 0 },
                 ["root"] = Position(),
-                ["effector"] = new JObject { ["right_hand"] = Position() }
+                ["effector"] = new JArray(new JObject { ["joint"] = "right_hand", ["position"] = new JArray(1, 2, 3) })
             });
 
             InvalidOperationException empty = Assert.Throws<InvalidOperationException>(
@@ -376,6 +425,17 @@ namespace KimodoUnityBridge.Command.Tests
         }
 
         [Test]
+        [Category("Generation")]
+        public void DirectApi_ExposesNamespaceOperationsWithoutCommandLookup()
+        {
+            Assert.That(typeof(KimodoUnityBridge.Api.Animation).GetMethod("Generate"), Is.Not.Null);
+            Assert.That(typeof(KimodoUnityBridge.Api.Animation).GetMethod("GenerateAsync"), Is.Not.Null);
+            Assert.That(typeof(KimodoUnityBridge.Api.Generation).GetMethod("Get"), Is.Not.Null);
+            Assert.That(typeof(KimodoUnityBridge.Api.Pose).GetMethod("Set"), Is.Not.Null);
+            Assert.That(typeof(KimodoUnityBridge.Api.Clip).GetMethod("Inspect"), Is.Not.Null);
+        }
+
+        [Test]
         [Category("Other")]
         public void EveryCommand_PublishesItsTopLevelOutputContract()
         {
@@ -420,6 +480,19 @@ namespace KimodoUnityBridge.Command.Tests
             Assert.That(analyze["outputSchema"]?["properties"]?["clip"]?["properties"]?["analysis_id"]?.Value<string>("type"), Is.EqualTo("string"));
             Assert.That(analyze["outputSchema"]?["properties"]?["clip"]?["properties"]?["session_id"]?.Value<string>("type"), Is.EqualTo("string"));
             Assert.That(analyze["outputSchema"]?["properties"]?["clip"]?["properties"]?["analysis_schema_version"], Is.Null);
+            JObject rootTrajectorySchema = analyze["outputSchema"]?["properties"]?["clip"]?["properties"]?["root_trajectory"] as JObject;
+            Assert.That(rootTrajectorySchema?["properties"]?["duration_frames_60"]?.Value<string>("type"), Is.EqualTo("integer"));
+            Assert.That(rootTrajectorySchema?["properties"]?["sample_span_frames_60"]?.Value<string>("type"), Is.EqualTo("integer"));
+            Assert.That(rootTrajectorySchema?["properties"]?["duration_frames"], Is.Null);
+            Assert.That(rootTrajectorySchema?["properties"]?["sample_span_frames"], Is.Null);
+            JObject phaseProperties = analyze["outputSchema"]?["properties"]?["clip"]?["properties"]?["phase_track"]?["items"]?["properties"] as JObject;
+            Assert.That(phaseProperties?["duration_frames_60"]?.Value<string>("type"), Is.EqualTo("integer"));
+            Assert.That(phaseProperties?["duration_frames"], Is.Null);
+            JObject footContactProperties = analyze["outputSchema"]?["properties"]?["clip"]?["properties"]?["foot_contacts"]?["items"]?["properties"] as JObject;
+            Assert.That(footContactProperties?["timeline_frame_60"], Is.Not.Null);
+            Assert.That(footContactProperties?["duration_frames_60"], Is.Not.Null);
+            Assert.That(footContactProperties?["frame"], Is.Null);
+            Assert.That(footContactProperties?["duration_frames"], Is.Null);
             Assert.That(analyze["outputSchema"]?["properties"]?["pictures"]?["properties"]?["title"], Is.Not.Null);
             Assert.That(analyze["outputSchema"]?["properties"]?["pictures"]?["properties"]?["header_height"], Is.Not.Null);
 
