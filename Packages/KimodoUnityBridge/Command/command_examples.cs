@@ -13,10 +13,14 @@ namespace KimodoUnityBridge.Command
             {
                 case HelpCommand: return Examples("Inspect generation parameters and examples.",
                     @"{'command':'animation.generate'}");
-                case SceneContextCommand: return new JArray(
-                    Example("Read the scene and current Session identity.", @"{}"),
-                    Example("Reload and open a historical Timeline, binding same-name scene characters when available.", @"{'timeline_path':'Assets/Timelines/WalkHistory.playable'}"));
-                case SessionHistoryCommand: return Examples("Read the compact generation and analysis history for the active Session.", @"{}");
+                case SessionContextCommand: return new JArray(
+                    Example("Read the compact current Session summary.", @"{}"),
+                    Example("Request only the character and Clip details.", @"{'details':['characters','clips']}"),
+                    Example("Open a Timeline asset and make it current.", @"{'timeline_path':'Assets/Timelines/WalkHistory.playable'}"));
+                case SessionHistoryCommand: return new JArray(
+                    Example("Read the 20 newest operations for the current Session.", @"{}"),
+                    Example("Read operations 10 through 20, inclusive.", @"{'historybegin':10,'historyend':20}"),
+                    Example("List all created Sessions, including empty histories.", @"{'scope':'global'}"));
                 case InstallServerCommand: return Examples("Install the local server, then poll the returned request_id.", @"{}");
                 case PoseFromVideoCommand: return Examples("Estimate SMPL-X poses from a video, then poll for the pose array.",
                     @"{'video_path':'C:/data/mocap.mp4','person':'left'}");
@@ -47,14 +51,14 @@ namespace KimodoUnityBridge.Command
                         @"{'character':'<character>','prompt':'<short action for one Clip>','duration_frames':120,'loop':{'enabled':false},'constraints':[{'inout':{'mode':'outside','in':{'source':{'clip':'<source clip>'},'window_frames':30,'sample_count':5}}}]}"),
                     Example("Use explicit previous/next Clips as context on both sides; crop context from the returned two-second output.",
                         @"{'character':'<character>','prompt':'<short action for one Clip>','duration_frames':120,'loop':{'enabled':false},'constraints':[{'inout':{'in':{'source':{'clip':'<previous clip>'},'window_frames':30,'sample_count':5},'out':{'source':{'clip':'<next clip>'},'window_frames':12,'sample_count':3}}}]}"),
-                    Example("Keep sampled opening and closing windows inside the returned Clip.",
-                        @"{'character':'<character>','prompt':'<short action for one Clip>','duration_frames':120,'loop':{'enabled':false},'constraints':[{'inout':{'mode':'inside','in':{'source':{'clip':'<reference clip>','frame':0},'window_frames':12,'sample_count':3},'out':{'source':{'clip':'<reference clip>'},'window_frames':12,'sample_count':3}}}]}"),
+                    Example("Use a source Clip's body poses inside the generated Clip, with optional trajectory post-application.",
+                        @"{'character':'<character>','prompt':'<short action for one Clip>','duration_frames':120,'constraints':[{'inside':{'source':{'clip':'<reference clip>'},'post_apply':true}}]}"),
                     Example("Create a Root2D constraint from a complete World root transform with Euler rotation in degrees.",
                         @"{'character':'<character>','prompt':'<short action for one Clip>','duration_frames':120,'constraints':[{'frame':60,'root':{'position':[2.4,0.95,5.0],'rotation':[0,0,0]}}]}"),
                     Example("Create an IK-solved FullBody constraint from a referenced pose, root override, and hand target.",
                         @"{'character':'<character>','prompt':'<short action for one Clip>','duration_frames':180,'loop':{'enabled':false},'constraints':[{'frame':90,'pose':{'track':'<pose track>','index':0},'root':{'position':[2.4,0.95,5.0],'rotation':[0,0,0]},'effector':[{'joint':'right_hand','position':[2.55,0.95,5.35]}]}]}"));
                 case PoseGetCommand: return new JArray(
-                    Example("Capture a pose at an absolute Timeline-global frame resolved from scene.context or existing analysis.",
+                    Example("Capture a pose at an absolute Timeline-global frame resolved from session.context or existing analysis.",
                         @"{'source':{'character':'<character>','timeline_frame_60':90}}"),
                     Example("Capture the original scene Animator's currently evaluated pose, independent of Timeline preview time.",
                         @"{'source':{'character':'<character>','mode':'scene_pose'},'full_data':true}"),
