@@ -135,7 +135,7 @@ namespace KimodoUnityBridge.Command
                         "Start or refresh the project-local QuickServer runtime when generation needs it. Returns a request handle and status for progress tracking.",
                         Properties(WaitSecondsProperty(10.0, allowAboveLimit: true))),
                     CommandDefinition(AnimationAnalysisCommand,
-                        "Analyze one scene character's loaded animation Clip and render structured motion measurements with a 20-tile SceneView image. An external Clip is added to that character's Kimodo Timeline for analysis; the source asset remains unchanged.",
+                        "Analyze one scene character's AnimationClip reference and render structured motion measurements with a 20-tile SceneView image. References may be a loaded Clip name, an Assets/Packages path, an AssetDatabase GUID, or a Unity GlobalObjectId. An external Clip is added to that character's Kimodo Timeline for analysis; the source asset remains unchanged.",
                         Properties(
                             RequiredAnalysisClips(),
                             new PropertyDefinition("resolution", new JObject
@@ -150,11 +150,11 @@ namespace KimodoUnityBridge.Command
                     CommandDefinition(ClipInspectCommand,
                         "Inspect one AnimationClip through the shared Clip Inspector mapping.",
                         Properties(
-                            Required("clip", "string", "AnimationClip name or an Assets/Packages asset path."))),
+                            Required("clip", "string", "AnimationClip name, an Assets/Packages asset path, an AssetDatabase GUID, or a Unity GlobalObjectId."))),
                     CommandDefinition(ClipSettingsSetCommand,
                         "Write supported AnimationClip settings and return the values read back from Unity.",
                         Properties(
-                            Required("clip", "string", "AnimationClip name or an Assets/Packages asset path."),
+                            Required("clip", "string", "AnimationClip name, an Assets/Packages asset path, an AssetDatabase GUID, or a Unity GlobalObjectId."),
                             new PropertyDefinition("settings", new JObject
                             {
                                 ["type"] = "object",
@@ -945,7 +945,7 @@ namespace KimodoUnityBridge.Command
                         ? "Generation preflight failed because the requested duration or root speed/acceleration exceeds a hard limit."
                         : blockingMessage);
                 }
-                TimelineGenerationTrace trace = PrepareGenerationTrace(arguments, character, duration);
+                TimelineGenerationTrace trace = PrepareGenerationTrace(session, character, duration);
                 bool hasInOut = (arguments["constraints"] as JArray)?.OfType<JObject>()
                     .Any(item => item.Property("inout") != null) == true;
                 bool hasInside = (arguments["constraints"] as JArray)?.OfType<JObject>()
@@ -961,6 +961,8 @@ namespace KimodoUnityBridge.Command
                         frameRate,
                         loopRequested,
                         poseConstraints);
+                    PrepareCommandOutsideEvidencePosition(trace);
+                    ValidateCommandTimelineRange(trace);
                 }
                 KimodoPlayableClip playableClip = CreateGenerationPlayableClip(trace, requestedAnimationName, false);
                 if (hasInOut)
@@ -974,6 +976,7 @@ namespace KimodoUnityBridge.Command
                         frameRate,
                         loopRequested,
                         poseConstraints);
+                    CreateCommandOutsideEvidenceClips(trace);
                 }
                 if (hasInside)
                     ConfigureCommandInsideClip(arguments, trace, playableClip);

@@ -197,16 +197,39 @@ namespace KimodoUnityBridge.Command.Tests
                 Assert.That(diagnostics["runtime_model_frame_count"], Is.Not.Null);
                 Assert.That(diagnostics["crop_start_model_frame"], Is.Not.Null);
 
+                var prepare = typeof(command_context).GetMethod("PrepareCommandOutsideEvidencePosition", PrivateStatic);
+                var validate = typeof(command_context).GetMethod("ValidateCommandTimelineRange", PrivateStatic);
+                var createEvidence = typeof(command_context).GetMethod("CreateCommandOutsideEvidenceClips", PrivateStatic);
+                Assert.That(prepare, Is.Not.Null);
+                Assert.That(validate, Is.Not.Null);
+                Assert.That(createEvidence, Is.Not.Null);
+                prepare.Invoke(null, new object[] { trace });
+                validate.Invoke(null, new object[] { trace });
+
                 var playable = (KimodoPlayableClip)typeof(command_context).GetMethod("CreateGenerationPlayableClip", PrivateStatic)
                     .Invoke(null, new object[] { trace, "CommandOutput", true });
                 var output = (TimelineClip)traceType.GetProperty("TimelineClip").GetValue(trace);
+                configure.Invoke(null,
+                    new object[] { arguments, trace, playable, model, 60, 30f, false, new List<KimodoMarkerSampleResult>() });
+                createEvidence.Invoke(null, new object[] { trace });
                 TimelineClip[] evidenceClips = track.GetClips()
                     .Where(clip => clip.asset is AnimationPlayableAsset && !(clip.asset is KimodoPlayableClip))
                     .Where(clip => (clip.displayName ?? string.Empty).StartsWith("InOut ", StringComparison.Ordinal))
                     .OrderBy(clip => clip.start)
                     .ToArray();
-                Assert.That(evidenceClips, Is.Empty);
-                Assert.That(output.start, Is.EqualTo(9.0 + command_context.ClipSafeZoneSeconds).Within(1e-8));
+                Assert.That(evidenceClips, Has.Length.EqualTo(2));
+                Assert.That(evidenceClips[0].displayName, Does.StartWith("InOut In "));
+                Assert.That(evidenceClips[1].displayName, Does.StartWith("InOut Out "));
+                Assert.That(evidenceClips[0].start, Is.EqualTo(9.0 + command_context.ClipSafeZoneSeconds).Within(1e-8));
+                Assert.That(output.start, Is.EqualTo(9.0 + command_context.ClipSafeZoneSeconds + 0.5).Within(1e-8));
+                Assert.That(evidenceClips[0].end, Is.EqualTo(output.start).Within(1e-8));
+                Assert.That(evidenceClips[1].start, Is.EqualTo(output.end).Within(1e-8));
+                Assert.That(evidenceClips[0].duration, Is.EqualTo(0.5).Within(1e-8));
+                Assert.That(evidenceClips[1].duration, Is.EqualTo(0.2).Within(1e-8));
+                Assert.That(evidenceClips[0].timeScale, Is.EqualTo(1.2).Within(1e-8));
+                Assert.That(evidenceClips[1].timeScale, Is.EqualTo(1.2).Within(1e-8));
+                Assert.That(evidenceClips[0].clipIn, Is.EqualTo(character.Animations[0].TimelineClip.ToLocalTime(1.5)).Within(1e-8));
+                Assert.That(evidenceClips[1].clipIn, Is.EqualTo(character.Animations[1].TimelineClip.ToLocalTime(4.0)).Within(1e-8));
                 Assert.That(character.Animations[0].TimelineClip.start, Is.EqualTo(0));
                 Assert.That(character.Animations[0].TimelineClip.duration, Is.EqualTo(2));
                 Assert.That(character.Animations[1].TimelineClip.start, Is.EqualTo(4));
@@ -215,17 +238,19 @@ namespace KimodoUnityBridge.Command.Tests
                     unindexedOccupant.end + command_context.ClipSafeZoneSeconds - 1e-8),
                     "The generated block must start after every actual Timeline clip.");
                 playable.bridgeModelName = model;
-                Assert.That(playable.enableInConstraint || playable.enableOutConstraint, Is.False,
-                    "Explicit sources must not mix with automatically inferred Session boundaries.");
+                Assert.That(playable.enableInConstraint && playable.enableOutConstraint, Is.True,
+                    "Explicit source windows must remain enabled for the shared constraint builder.");
                 Assert.That(playable.postApplyOutConstraint, Is.True,
                     "Command-created clips enable Postapply Out without exposing a command option.");
                 Assert.That(output.duration, Is.EqualTo(2));
 
-                configure.Invoke(null,
-                    new object[] { arguments, trace, playable, model, 60, 30f, false, new List<KimodoMarkerSampleResult>() });
                 Assert.That(playable.inOutConstraintMode, Is.EqualTo(KimodoInOutConstraintMode.Outside));
-                Assert.That(playable.inConstraintSourceAsset, Is.SameAs(character.Animations[0].TimelineClip.asset));
-                Assert.That(playable.outConstraintSourceAsset, Is.SameAs(character.Animations[1].TimelineClip.asset));
+                Assert.That(playable.inConstraintSourceAsset, Is.Not.SameAs(character.Animations[0].TimelineClip.asset));
+                Assert.That(playable.outConstraintSourceAsset, Is.Not.SameAs(character.Animations[1].TimelineClip.asset));
+                Assert.That(playable.inConstraintSourceAsset, Is.TypeOf<AnimationPlayableAsset>());
+                Assert.That(playable.outConstraintSourceAsset, Is.TypeOf<AnimationPlayableAsset>());
+                Assert.That(playable.inConstraintSourceFrame, Is.EqualTo(-1));
+                Assert.That(playable.outConstraintSourceFrame, Is.EqualTo(-1));
                 arguments["constraints"][0]["inout"]["in"]["post_apply"] = false;
                 configure.Invoke(null,
                     new object[] { arguments, trace, playable, model, 60, 30f, false, new List<KimodoMarkerSampleResult>() });
@@ -296,6 +321,80 @@ namespace KimodoUnityBridge.Command.Tests
             File.WriteAllText(Path.Combine(folder, "request.json"), payload.ToString());
             for (int index = 0; index < attachments.Count; index++)
                 File.WriteAllBytes(Path.Combine(folder, $"reference_{index}.kmb"), attachments[index]);
+        }
+
+        [Test]
+        public void PoseSampling_UsesFollowingClipAtSharedBoundaryAndKeepsFinalEndpoint()
+        {
+            Assert.That(KimodoRuntimeAvatarSkeletonBuilder.TryLoadAvatarByModelName(
+                KimodoMotionModelProfiles.DefaultModelName, out var avatar, out var error), Is.True, error);
+            Assert.That(KimodoRetargetAvatarUtility.TryBuildRetargetSkeleton(
+                avatar, "SharedBoundaryFixture", out var skeleton, out error), Is.True, error);
+            var directorObject = new GameObject("SharedBoundaryDirector");
+            var director = directorObject.AddComponent<PlayableDirector>();
+            var timeline = ScriptableObject.CreateInstance<TimelineAsset>();
+            AnimationClip sourceClip = null;
+            try
+            {
+                Assert.That(KimodoRetargetSamplingUtility.TryCaptureMuscleSample(skeleton, out var pose, out error), Is.True, error);
+                pose.GetRoot(out var position, out var rotation);
+                var frames = Enumerable.Range(0, 121).Select(i =>
+                {
+                    var frame = pose.Clone();
+                    frame.SetRoot(position + Vector3.forward * (i / 100f), rotation);
+                    return frame;
+                }).ToArray();
+                Assert.That(KimodoRetargetSamplingUtility.TryCreateTransientMuscleClip(
+                    frames, 30, out sourceClip, out error), Is.True, error);
+                sourceClip.SampleAnimation(skeleton.root, 0);
+                director.playableAsset = timeline;
+                skeleton.animator.applyRootMotion = false;
+                skeleton.animator.Rebind();
+                var track = timeline.CreateTrack<AnimationTrack>(null, "SharedBoundaryCharacter");
+                director.SetGenericBinding(track, skeleton.animator);
+                var clips = new TimelineClip[2];
+                for (int index = 0; index < clips.Length; index++)
+                {
+                    clips[index] = track.CreateClip<AnimationPlayableAsset>();
+                    var asset = (AnimationPlayableAsset)clips[index].asset;
+                    asset.clip = sourceClip;
+                    asset.removeStartOffset = false;
+                    clips[index].start = index;
+                    clips[index].duration = 1;
+                    clips[index].clipIn = index == 0 ? 1 : 0;
+                }
+                var character = new command_context.TimelineCharacterRecord(
+                    "boundary", skeleton.root, skeleton.animator, avatar, track, null, "");
+                var session = new command_context.TimelineSessionRecord(
+                    Guid.NewGuid(), "BoundaryTest", director, timeline, "", directorObject);
+                director.RebuildGraph();
+                director.Evaluate();
+                foreach (int frame in new[] { 59, 60, 61, 120 })
+                {
+                    double time = frame / 60d;
+                    var expected = (KimodoMarkerSampleResult[])typeof(command_context)
+                        .GetMethod("CaptureSampleResultsFromSourceClip", PrivateStatic)
+                        .Invoke(null, new object[] { character, clips[frame < 60 ? 0 : 1], sourceClip, new[] { time } });
+                    var single = (KimodoMarkerSampleResult)typeof(command_context)
+                        .GetMethod("CaptureSampleResult", PrivateStatic)
+                        .Invoke(null, new object[] { session, character, time });
+                    var batch = (KimodoMarkerSampleResult[])typeof(command_context)
+                        .GetMethod("CaptureSampleResults", PrivateStatic)
+                        .Invoke(null, new object[] { session, character, frame, 1 });
+                    Assert.That(Vector3.Distance(single.rootOverride.t, expected[0].rootOverride.t),
+                        Is.LessThan(1e-5f), $"pose.get frame {frame}");
+                    Assert.That(Vector3.Distance(batch[0].rootOverride.t, expected[0].rootOverride.t),
+                        Is.LessThan(1e-5f), $"animation.analysis frame {frame}");
+                }
+            }
+            finally
+            {
+                director.Stop();
+                Object.DestroyImmediate(directorObject);
+                Object.DestroyImmediate(timeline);
+                if (sourceClip != null) Object.DestroyImmediate(sourceClip);
+                skeleton.Dispose();
+            }
         }
 
         [Test]
