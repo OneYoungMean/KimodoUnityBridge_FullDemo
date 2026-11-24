@@ -1,3 +1,12 @@
+table CameraTrack {
+  fps:float;
+  num_frames:uint;
+  positions:[float];
+  rotations:[float];
+  fov_y:[float];
+  lens_shift:[float];
+}
+
 table MotionPacket {
   version:uint = 1;
   fps:float;
@@ -9,6 +18,9 @@ table MotionPacket {
   local_rot_quats:[float];
   model_name:string;
   foot_contacts:[ubyte];
+  camera_track:CameraTrack;
+  global_time_seconds:[float];
+  human_detection_01:[ubyte];
 }
 
 root_type MotionPacket;

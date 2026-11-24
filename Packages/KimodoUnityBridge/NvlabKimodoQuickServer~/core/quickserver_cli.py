@@ -77,14 +77,9 @@ def _build_protocol_help(kimodo_root: str = "") -> dict[str, Any]:
                 ],
             },
             {
-                "cmd": "pose.fromvideo",
-                "description": "Estimate SMPL-X pose arrays from a local video using the configured Mixamo LLM Mocap checkout.",
-                "fields": ["media_path", "person"],
-            },
-            {
-                "cmd": "pose.frompicture",
-                "description": "Estimate one SMPL-X pose from a local picture using the configured Mixamo LLM Mocap checkout.",
-                "fields": ["media_path"],
+                "cmd": "pose.frommedia",
+                "description": "Estimate FlowHMR SMPL-H motion from a video or one pose from an image and return a KMB1 attachment.",
+                "fields": ["media_path", "enable_camera", "simulate_free_vram_gb"],
             },
             {
                 "cmd": "cancel",
@@ -2232,14 +2227,18 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                                     close_session_locked(session, "Session closed.")
                                 reply({"status": "done", "session_id": bound_session_id})
                             return
-                        elif cmd in ("pose.fromvideo", "pose.frompicture"):
-                            kind = "video" if cmd == "pose.fromvideo" else "picture"
-                            result = mocap_analysis.analyze_media(
-                                kind,
+                        elif cmd == "pose.frommedia":
+                            result, binary_payload = mocap_analysis.analyze_media(
+                                "auto",
                                 request.get("media_path"),
                                 request.get("person"),
+                                enable_camera=bool(request.get("enable_camera", False)),
+                                simulate_free_vram_gb=request.get(
+                                    "simulate_free_vram_gb",
+                                    session["default_config"].get("simulate_free_vram_gb"),
+                                ),
                             )
-                            reply(result)
+                            reply(result, binary_payload)
                         elif cmd == "generate":
                             attachments = _read_kmb_attachments(file, request)
                             task_id = resolve_request_task_id(request)
@@ -2342,7 +2341,7 @@ def _run_supervisor(args: argparse.Namespace, root_dir: str, logger: SetupLogger
                     except Exception as exc:
                         logger.log(f"[ERROR] Command '{cmd}' failed: {exc}")
                         error = {"status": "error", "message": str(exc)}
-                        if cmd in ("pose.fromvideo", "pose.frompicture"):
+                        if cmd == "pose.frommedia":
                             error["error_code"] = mocap_analysis.error_code_for_exception(exc)
                         reply(error)
             finally:

@@ -1,6 +1,7 @@
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using TimelineInject;
 using UnityEngine;
 using Google.FlatBuffers;
@@ -15,6 +16,12 @@ namespace KimodoBridge
         internal readonly List<float> localRotQuats;
         internal readonly int rootJointIndex;
         internal byte[] footContacts;
+        internal Vector3[] cameraPositions;
+        internal List<float> cameraRotQuats;
+        internal float[] cameraFovY;
+        internal Vector2[] cameraLensShifts;
+        internal readonly float[] globalTimeSeconds;
+        internal readonly byte[] humanDetection01;
 
         internal KimodoRawMotionData(
             int frameCount,
@@ -25,7 +32,13 @@ namespace KimodoBridge
             Vector3[] rootPositions,
             List<float> localRotQuats,
             int rootJointIndex,
-            byte[] footContacts = null)
+            byte[] footContacts = null,
+            Vector3[] cameraPositions = null,
+            List<float> cameraRotQuats = null,
+            float[] cameraFovY = null,
+            Vector2[] cameraLensShifts = null,
+            float[] globalTimeSeconds = null,
+            byte[] humanDetection01 = null)
         {
             FrameCount = frameCount;
             JointCount = jointCount;
@@ -38,16 +51,100 @@ namespace KimodoBridge
             this.footContacts = footContacts != null && footContacts.Length == frameCount * KimodoFootContactTrackUtility.ChannelCount
                 ? footContacts
                 : Array.Empty<byte>();
+            this.cameraPositions = cameraPositions ?? Array.Empty<Vector3>();
+            this.cameraRotQuats = cameraRotQuats ?? new List<float>();
+            this.cameraFovY = cameraFovY ?? Array.Empty<float>();
+            this.cameraLensShifts = cameraLensShifts ?? Array.Empty<Vector2>();
+            this.globalTimeSeconds = globalTimeSeconds != null && globalTimeSeconds.Length == frameCount
+                ? globalTimeSeconds
+                : Array.Empty<float>();
+            this.humanDetection01 = humanDetection01 != null && humanDetection01.Length == frameCount
+                ? humanDetection01
+                : Array.Empty<byte>();
         }
 
         public int FrameCount { get; }
         public int JointCount { get; }
         public float FrameRate { get; }
-        public float DurationSeconds => FrameCount > 0 ? FrameCount / FrameRate : 0f;
-        public float LastFrameTimeSeconds => FrameCount > 1 ? (FrameCount - 1) / FrameRate : 0f;
+        public float DurationSeconds => HasGlobalTimeTrack
+            ? globalTimeSeconds[FrameCount - 1] + (FrameCount > 1 ? globalTimeSeconds[FrameCount - 1] - globalTimeSeconds[FrameCount - 2] : 1f / FrameRate)
+            : FrameCount > 0 ? FrameCount / FrameRate : 0f;
+        public float LastFrameTimeSeconds => HasGlobalTimeTrack
+            ? globalTimeSeconds[FrameCount - 1]
+            : FrameCount > 1 ? (FrameCount - 1) / FrameRate : 0f;
         public int RootJointIndex => rootJointIndex;
         public IReadOnlyList<string> JointNames => jointNames;
         public bool HasFootContacts => footContacts.Length >= FrameCount * KimodoFootContactTrackUtility.ChannelCount;
+        public bool HasGlobalTimeTrack => globalTimeSeconds.Length == FrameCount;
+        public bool HasHumanDetectionTrack => humanDetection01.Length == FrameCount;
+        public bool HasAnyHumanDetection => HasHumanDetectionTrack && Array.IndexOf(humanDetection01, (byte)1) >= 0;
+        public bool HasCameraTrack => cameraPositions.Length == FrameCount && cameraRotQuats.Count >= FrameCount * 4;
+        public bool HasCameraParameters => cameraFovY.Length == FrameCount && cameraLensShifts.Length == FrameCount;
+
+        internal bool TryResolveHumanDetectionFrame(int sampleIndex, out int validFrame)
+        {
+            validFrame = -1;
+            if (!HasHumanDetectionTrack || FrameCount <= 0)
+                return false;
+            int sample = Mathf.Clamp(sampleIndex, 0, FrameCount - 1);
+            for (int frame = sample; frame >= 0; frame--)
+            {
+                if (humanDetection01[frame] == 1)
+                {
+                    validFrame = frame;
+                    return true;
+                }
+            }
+            for (int frame = sample + 1; frame < FrameCount; frame++)
+            {
+                if (humanDetection01[frame] == 1)
+                {
+                    validFrame = frame;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        internal bool TryReadCamera(int frameIndex, out Vector3 position, out Quaternion rotation)
+        {
+            position = default;
+            rotation = Quaternion.identity;
+            if (!HasCameraTrack || frameIndex < 0 || frameIndex >= FrameCount) return false;
+            position = cameraPositions[frameIndex];
+            int i = frameIndex * 4;
+            rotation = new Quaternion(cameraRotQuats[i + 1], cameraRotQuats[i + 2], cameraRotQuats[i + 3], cameraRotQuats[i]).normalized;
+            return IsFinite(position.x) && IsFinite(position.y) && IsFinite(position.z);
+        }
+
+        internal bool TryReadCameraParameters(int frameIndex, out float fieldOfView, out Vector2 lensShift)
+        {
+            fieldOfView = 0f;
+            lensShift = Vector2.zero;
+            if (!HasCameraParameters || frameIndex < 0 || frameIndex >= FrameCount)
+                return false;
+            fieldOfView = cameraFovY[frameIndex];
+            lensShift = cameraLensShifts[frameIndex];
+            return IsFinite(fieldOfView) && fieldOfView > 0f && IsFinite(lensShift.x) && IsFinite(lensShift.y);
+        }
+
+        internal bool TryReadGlobalTime(int frameIndex, out float timeSeconds)
+        {
+            timeSeconds = 0f;
+            if (!HasGlobalTimeTrack || frameIndex < 0 || frameIndex >= FrameCount)
+                return false;
+            timeSeconds = globalTimeSeconds[frameIndex];
+            return IsFinite(timeSeconds) && timeSeconds >= 0f;
+        }
+
+        internal bool TryReadHumanDetection(int frameIndex, out bool valid)
+        {
+            valid = false;
+            if (!HasHumanDetectionTrack || frameIndex < 0 || frameIndex >= FrameCount)
+                return false;
+            valid = humanDetection01[frameIndex] == 1;
+            return true;
+        }
 
         internal bool TryReadUnityRootPosition(int frameIndex, out Vector3 value)
         {
@@ -325,6 +422,14 @@ namespace KimodoBridge
             VectorOffset contactsOffset = contacts.Length > 0
                 ? MotionPacket.CreateFootContactsVector(builder, contacts)
                 : default;
+            float[] globalTimes = motion.HasGlobalTimeTrack ? (float[])motion.globalTimeSeconds.Clone() : Array.Empty<float>();
+            VectorOffset globalTimesOffset = globalTimes.Length > 0
+                ? MotionPacket.CreateGlobalTimeSecondsVector(builder, globalTimes)
+                : default;
+            byte[] humanDetection = motion.HasHumanDetectionTrack ? (byte[])motion.humanDetection01.Clone() : Array.Empty<byte>();
+            VectorOffset humanDetectionOffset = humanDetection.Length > 0
+                ? MotionPacket.CreateHumanDetection01Vector(builder, humanDetection)
+                : default;
             Offset<MotionPacket> packet = MotionPacket.CreateMotionPacket(
                 builder,
                 version: 1,
@@ -336,7 +441,9 @@ namespace KimodoBridge
                 root_positionsOffset: rootsOffset,
                 local_rot_quatsOffset: rotationsOffset,
                 model_nameOffset: modelOffset,
-                foot_contactsOffset: contactsOffset);
+                foot_contactsOffset: contactsOffset,
+                global_time_secondsOffset: globalTimesOffset,
+                human_detection_01Offset: humanDetectionOffset);
             MotionPacket.FinishMotionPacketBuffer(builder, packet);
             return builder.SizedByteArray();
         }
@@ -646,6 +753,35 @@ namespace KimodoBridge
                 return false;
             }
 
+            float[] globalTimeSeconds = packet.GetGlobalTimeSecondsArray();
+            if (packet.HasGlobalTimeSeconds)
+            {
+                if (globalTimeSeconds == null || globalTimeSeconds.Length != frameCount)
+                {
+                    error = $"FlatBuffer global_time_seconds is invalid. Expected {frameCount} values, got {globalTimeSeconds?.Length ?? 0}.";
+                    return false;
+                }
+                for (int frame = 0; frame < globalTimeSeconds.Length; frame++)
+                {
+                    if (!IsFinite(globalTimeSeconds[frame]) || globalTimeSeconds[frame] < 0f ||
+                        (frame > 0 && globalTimeSeconds[frame] <= globalTimeSeconds[frame - 1]))
+                    {
+                        error = $"FlatBuffer global_time_seconds is invalid at frame {frame}.";
+                        return false;
+                    }
+                }
+            }
+
+            byte[] humanDetection01 = packet.GetHumanDetection01Array();
+            if (packet.HasHumanDetection01)
+            {
+                if (humanDetection01 == null || humanDetection01.Length != frameCount || humanDetection01.Any(value => value > 1))
+                {
+                    error = $"FlatBuffer human_detection_01 is invalid. Expected {frameCount} binary values, got {humanDetection01?.Length ?? 0}.";
+                    return false;
+                }
+            }
+
             int rootJoint = 0;
             for (int i = 0; i < jointParents.Length; i++)
             {
@@ -653,6 +789,63 @@ namespace KimodoBridge
                 {
                     rootJoint = i;
                     break;
+                }
+            }
+
+            Vector3[] cameraPositions = Array.Empty<Vector3>();
+            List<float> cameraRotations = new List<float>();
+            float[] cameraFovY = Array.Empty<float>();
+            Vector2[] cameraLensShifts = Array.Empty<Vector2>();
+            CameraTrack cameraTrack = packet.CameraTrack;
+            if (packet.HasCameraTrack && cameraTrack.NumFrames > 0)
+            {
+                if (cameraTrack.NumFrames != packet.NumFrames || cameraTrack.PositionsLength < frameCount * 3 || cameraTrack.RotationsLength < frameCount * 4)
+                {
+                    error = "FlatBuffer camera_track lengths do not match the motion frame count.";
+                    return false;
+                }
+                float[] positions = cameraTrack.GetPositionsArray();
+                float[] rotations = cameraTrack.GetRotationsArray();
+                float[] fovY = cameraTrack.GetFovYArray();
+                float[] lensShift = cameraTrack.GetLensShiftArray();
+                if ((fovY != null && fovY.Length > 0 && fovY.Length != frameCount) ||
+                    (lensShift != null && lensShift.Length > 0 && lensShift.Length != frameCount * 2))
+                {
+                    error = "FlatBuffer camera parameters do not match the motion frame count.";
+                    return false;
+                }
+                cameraPositions = new Vector3[frameCount];
+                for (int frame = 0; frame < frameCount; frame++)
+                {
+                    int p = frame * 3;
+                    cameraPositions[frame] = new Vector3(positions[p], positions[p + 1], positions[p + 2]);
+                    if (!IsFinite(cameraPositions[frame].x) || !IsFinite(cameraPositions[frame].y) || !IsFinite(cameraPositions[frame].z))
+                    {
+                        error = $"FlatBuffer camera_track contains a non-finite position at frame {frame}.";
+                        return false;
+                    }
+                }
+                for (int i = 0; i < frameCount * 4; i++)
+                    if (!IsFinite(rotations[i]))
+                    {
+                        error = $"FlatBuffer camera_track contains a non-finite rotation scalar at index {i}.";
+                        return false;
+                    }
+                cameraRotations.AddRange(rotations.Take(frameCount * 4));
+                if (fovY != null && fovY.Length == frameCount && lensShift != null && lensShift.Length == frameCount * 2)
+                {
+                    cameraFovY = fovY.Take(frameCount).ToArray();
+                    cameraLensShifts = new Vector2[frameCount];
+                    for (int frame = 0; frame < frameCount; frame++)
+                    {
+                        cameraLensShifts[frame] = new Vector2(lensShift[frame * 2], lensShift[frame * 2 + 1]);
+                        if (!IsFinite(cameraFovY[frame]) || cameraFovY[frame] <= 0f ||
+                            !IsFinite(cameraLensShifts[frame].x) || !IsFinite(cameraLensShifts[frame].y))
+                        {
+                            error = $"FlatBuffer camera parameters contain invalid values at frame {frame}.";
+                            return false;
+                        }
+                    }
                 }
             }
 
@@ -665,7 +858,13 @@ namespace KimodoBridge
                 rootPositions,
                 new List<float>(localRotQuatArray),
                 rootJoint,
-                footContacts);
+                footContacts,
+                cameraPositions,
+                cameraRotations,
+                cameraFovY,
+                cameraLensShifts,
+                globalTimeSeconds,
+                humanDetection01);
             return true;
         }
 

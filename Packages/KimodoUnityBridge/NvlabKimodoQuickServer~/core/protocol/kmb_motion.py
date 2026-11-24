@@ -26,6 +26,19 @@ def _seconds_to_protocol_frame_index(seconds: float, fps: float) -> int:
 
 
 @dataclass(frozen=True)
+class KmbCameraTrack:
+    fps: float
+    positions: np.ndarray
+    rotations: np.ndarray
+    fov_y: np.ndarray | None = None
+    lens_shift: np.ndarray | None = None
+
+    @property
+    def num_frames(self) -> int:
+        return int(self.positions.shape[0])
+
+
+@dataclass(frozen=True)
 class KmbMotion:
     payload: bytes
     model_name: str
@@ -35,6 +48,9 @@ class KmbMotion:
     root_positions: np.ndarray
     local_rot_quats: np.ndarray
     foot_contacts: np.ndarray | None
+    camera_track: KmbCameraTrack | None = None
+    global_time_seconds: np.ndarray | None = None
+    human_detection_01: np.ndarray | None = None
 
     @property
     def num_frames(self) -> int:
@@ -93,12 +109,52 @@ def parse_kmb1(payload: bytes, error_type: type[ValueError] = ValueError) -> Kmb
         if raw_contacts.size != num_frames * 4:
             raise error_type("KMB1 foot-contact length does not match its frame count.")
         contacts = raw_contacts.reshape(num_frames, 4).astype(np.float32)
+    global_time_seconds = None
+    global_times = np.asarray(packet.GlobalTimeSecondsAsNumpy(), dtype=np.float32).copy()
+    if not packet.GlobalTimeSecondsIsNone():
+        if global_times.size != num_frames or not np.isfinite(global_times).all() or np.any(global_times < 0) or (
+                global_times.size > 1 and np.any(np.diff(global_times) <= 0)):
+            raise error_type("KMB global_time_seconds must contain one finite, strictly increasing value per frame.")
+        global_time_seconds = global_times
+    human_detection_01 = None
+    detection = np.asarray(packet.HumanDetection01AsNumpy(), dtype=np.uint8).copy()
+    if not packet.HumanDetection01IsNone():
+        if detection.size != num_frames or np.any(detection > 1):
+            raise error_type("KMB human_detection_01 must contain one binary value per frame.")
+        human_detection_01 = detection
     if len(joint_names) != num_joints or len(joint_parents) != num_joints:
         raise error_type("KMB1 joint metadata does not match num_joints.")
     if roots.size != num_frames * 3 or quats.size != num_frames * num_joints * 4:
         raise error_type("KMB1 motion vector lengths do not match its header.")
     if not np.isfinite(roots).all() or not np.isfinite(quats).all():
         raise error_type("KMB1 contains non-finite motion values.")
+    camera_track = None
+    camera = packet.CameraTrack()
+    if camera is not None and int(camera.NumFrames()) > 0:
+        camera_frames = int(camera.NumFrames())
+        camera_positions = np.asarray(camera.PositionsAsNumpy(), dtype=np.float32).copy()
+        camera_rotations = np.asarray(camera.RotationsAsNumpy(), dtype=np.float32).copy()
+        if camera_frames != num_frames or camera_positions.size != camera_frames * 3 or camera_rotations.size != camera_frames * 4:
+            raise error_type("KMB1 camera track lengths do not match its frame count.")
+        if not np.isfinite(camera_positions).all() or not np.isfinite(camera_rotations).all():
+            raise error_type("KMB1 camera track contains non-finite values.")
+        fov_y = np.asarray(camera.FovYAsNumpy(), dtype=np.float32).copy()
+        lens_shift = np.asarray(camera.LensShiftAsNumpy(), dtype=np.float32).copy()
+        if fov_y.size not in (0, camera_frames):
+            raise error_type("KMB1 camera fov_y length does not match its frame count.")
+        if lens_shift.size not in (0, camera_frames * 2):
+            raise error_type("KMB1 camera lens_shift length does not match its frame count.")
+        if fov_y.size and (not np.isfinite(fov_y).all() or np.any(fov_y <= 0)):
+            raise error_type("KMB1 camera fov_y contains invalid values.")
+        if lens_shift.size and not np.isfinite(lens_shift).all():
+            raise error_type("KMB1 camera lens_shift contains non-finite values.")
+        camera_track = KmbCameraTrack(
+            fps=float(camera.Fps()) if float(camera.Fps()) > 0 else float(packet.Fps()),
+            positions=camera_positions.reshape(camera_frames, 3),
+            rotations=camera_rotations.reshape(camera_frames, 4),
+            fov_y=fov_y.reshape(camera_frames) if fov_y.size else None,
+            lens_shift=lens_shift.reshape(camera_frames, 2) if lens_shift.size else None,
+        )
     return KmbMotion(
         payload=bytes(payload),
         model_name=(packet.ModelName() or b"").decode("utf-8", errors="strict"),
@@ -108,6 +164,9 @@ def parse_kmb1(payload: bytes, error_type: type[ValueError] = ValueError) -> Kmb
         root_positions=roots.reshape(num_frames, 3),
         local_rot_quats=quats.reshape(num_frames, num_joints, 4),
         foot_contacts=contacts,
+        camera_track=camera_track,
+        global_time_seconds=global_time_seconds,
+        human_detection_01=human_detection_01,
     )
 
 
@@ -123,14 +182,34 @@ def encode_kmb1(motion: KmbMotion, start_frame: int = 0, end_frame_exclusive: in
     end = motion.num_frames if end_frame_exclusive is None else int(end_frame_exclusive)
     if not 0 <= start < end <= motion.num_frames:
         raise ValueError(f"Invalid KMB1 slice [{start},{end}) for {motion.num_frames} frames.")
+    for name, values in (("global_time_seconds", motion.global_time_seconds),
+                         ("human_detection_01", motion.human_detection_01)):
+        if values is not None and len(values) != motion.num_frames:
+            raise ValueError(f"KMB {name} must contain one value per motion frame.")
 
     roots = np.ascontiguousarray(motion.root_positions[start:end], dtype=np.float32).reshape(-1)
     quats = np.ascontiguousarray(motion.local_rot_quats[start:end], dtype=np.float32).reshape(-1)
     contacts = np.asarray(motion.foot_contacts[start:end], dtype=np.uint8).reshape(-1) if motion.foot_contacts is not None else np.empty(0, dtype=np.uint8)
+    global_times = np.asarray(motion.global_time_seconds[start:end], dtype=np.float32).reshape(-1) if motion.global_time_seconds is not None else np.empty(0, dtype=np.float32)
+    raw_detection = np.asarray(motion.human_detection_01[start:end]).reshape(-1) if motion.human_detection_01 is not None else np.empty(0, dtype=np.uint8)
+    detection = raw_detection.astype(np.uint8, copy=False)
     frame_count = end - start
     joint_count = len(motion.joint_names)
     if roots.size != frame_count * 3 or quats.size != frame_count * joint_count * 4:
         raise ValueError("KMB1 motion data does not match its metadata.")
+    if global_times.size and (global_times.size != frame_count or not np.isfinite(global_times).all() or np.any(global_times < 0) or (global_times.size > 1 and np.any(np.diff(global_times) <= 0))):
+        raise ValueError("KMB global_time_seconds must contain one finite, strictly increasing value per frame.")
+    if raw_detection.size:
+        try:
+            detection_is_binary = (
+                raw_detection.size == frame_count
+                and np.isfinite(raw_detection).all()
+                and np.isin(raw_detection, (0, 1)).all()
+            )
+        except TypeError:
+            detection_is_binary = False
+        if not detection_is_binary:
+            raise ValueError("KMB human_detection_01 must contain one binary value per frame.")
 
     builder = flatbuffers.Builder(max(1024, int(roots.nbytes + quats.nbytes + contacts.nbytes + 512)))
     model_name = builder.CreateString(motion.model_name or "")
@@ -143,6 +222,41 @@ def encode_kmb1(motion: KmbMotion, start_frame: int = 0, end_frame_exclusive: in
     root_positions = builder.CreateNumpyVector(roots)
     rotations = builder.CreateNumpyVector(quats)
     foot_contacts = builder.CreateNumpyVector(contacts) if contacts.size else None
+    global_time_seconds = builder.CreateNumpyVector(global_times) if global_times.size else None
+    human_detection_01 = builder.CreateNumpyVector(detection) if detection.size else None
+    camera_track_offset = None
+    if motion.camera_track is not None:
+        camera = motion.camera_track
+        if camera.num_frames != motion.num_frames:
+            raise ValueError("KMB camera track frame count must match the source motion.")
+        positions = np.ascontiguousarray(camera.positions[start:end], dtype=np.float32).reshape(-1)
+        camera_rotation_values = np.ascontiguousarray(camera.rotations[start:end], dtype=np.float32).reshape(-1)
+        if positions.size != frame_count * 3 or camera_rotation_values.size != frame_count * 4:
+            raise ValueError("KMB camera track vectors do not match the motion slice.")
+        camera_positions = builder.CreateNumpyVector(positions)
+        camera_rotations = builder.CreateNumpyVector(camera_rotation_values)
+        camera_fov_y = None
+        camera_lens_shift = None
+        if camera.fov_y is not None:
+            fov_y = np.ascontiguousarray(camera.fov_y[start:end], dtype=np.float32).reshape(-1)
+            if fov_y.size != frame_count or not np.isfinite(fov_y).all() or np.any(fov_y <= 0):
+                raise ValueError("KMB camera fov_y must contain one positive finite value per frame.")
+            camera_fov_y = builder.CreateNumpyVector(fov_y)
+        if camera.lens_shift is not None:
+            lens_shift = np.ascontiguousarray(camera.lens_shift[start:end], dtype=np.float32).reshape(-1)
+            if lens_shift.size != frame_count * 2 or not np.isfinite(lens_shift).all():
+                raise ValueError("KMB camera lens_shift must contain two finite values per frame.")
+            camera_lens_shift = builder.CreateNumpyVector(lens_shift)
+        MotionPacket.CameraTrackStart(builder)
+        if camera_lens_shift is not None:
+            MotionPacket.CameraTrackAddLensShift(builder, camera_lens_shift)
+        if camera_fov_y is not None:
+            MotionPacket.CameraTrackAddFovY(builder, camera_fov_y)
+        MotionPacket.CameraTrackAddRotations(builder, camera_rotations)
+        MotionPacket.CameraTrackAddPositions(builder, camera_positions)
+        MotionPacket.CameraTrackAddNumFrames(builder, frame_count)
+        MotionPacket.CameraTrackAddFps(builder, float(camera.fps))
+        camera_track_offset = MotionPacket.CameraTrackEnd(builder)
 
     MotionPacket.Start(builder)
     MotionPacket.AddVersion(builder, 1)
@@ -156,6 +270,12 @@ def encode_kmb1(motion: KmbMotion, start_frame: int = 0, end_frame_exclusive: in
     MotionPacket.AddModelName(builder, model_name)
     if foot_contacts is not None:
         MotionPacket.AddFootContacts(builder, foot_contacts)
+    if global_time_seconds is not None:
+        MotionPacket.AddGlobalTimeSeconds(builder, global_time_seconds)
+    if human_detection_01 is not None:
+        MotionPacket.AddHumanDetection01(builder, human_detection_01)
+    if camera_track_offset is not None:
+        MotionPacket.AddCameraTrack(builder, camera_track_offset)
     packet = MotionPacket.End(builder)
     builder.Finish(packet, file_identifier=b"KMB1")
     return bytes(builder.Output())

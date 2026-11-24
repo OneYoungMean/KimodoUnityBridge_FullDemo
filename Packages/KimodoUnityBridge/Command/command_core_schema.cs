@@ -29,8 +29,7 @@ namespace KimodoUnityBridge.Command
                 [SessionContextCommand] = SessionContextGet,
                 [SessionHistoryCommand] = SessionHistoryGet,
                 [InstallServerCommand] = InstallServer,
-                [PoseFromVideoCommand] = arguments => StartMocapAnalysis(arguments, "video"),
-                [PoseFromPictureCommand] = arguments => StartMocapAnalysis(arguments, "picture"),
+                [PoseFromMediaCommand] = StartMocapAnalysis,
                 [AnimationAnalysisCommand] = AnimationAnalysis,
                 [ClipInspectCommand] = ClipInspect,
                 [ClipSettingsSetCommand] = ClipSettingsSet,
@@ -186,20 +185,13 @@ namespace KimodoUnityBridge.Command
                     new[] { "The command reads task state and results." },
                     new[] { "Recent task records are retained up to the configured job limit." },
                     InstallServerCommand, GenerateAnimationCommand, CancelGenerationCommand),
-                PoseFromVideoCommand => CommandDocumentation(
-                    "Use when a video file should be converted into a time-ordered SMPL-X pose array for downstream retargeting or analysis.",
-                    new[] { "Pass an absolute video_path readable by QuickServer. Supported formats are MP4, MOV, M4V, AVI, and MKV; maximum file size is 2 GiB.", "The command returns status=accepted and a request_id for continued progress tracking through generation.get.", "For two people, set person to left or right to select the performer by screen position." },
-                    new[] { "A completed request returns poses in source-video order plus one top-level constraints array, fps, frame_count, source_frame_count, joint_names, betas, and rest_joints_m.", "Each pose contains raw global_orient_axis_angle, body_pose_axis_angle, and translation_m values. The top-level constraints array uses the same merged raw FullBody constraint format accepted by animation generation.", "Rotations are axis-angle radians; translation and rest joints are in meters. The global coordinate space is gravity-aligned Y-up. Optional incam_* fields use OpenCV camera coordinates: X-right, Y-down, Z-forward.", "The result is pose data for downstream retargeting and constraint use." },
-                    new[] { "The result is data for downstream commands and leaves Unity scene objects and animation assets unchanged." },
-                    new[] { "The top-level constraints array groups the sequence in the raw FullBody format for animation.generate.", "The request requires QuickServer's GVHMR runtime, checkpoints, and SMPL-X Avatar asset." },
-                    PoseFromPictureCommand, GetGenerationCommand, RetargetAnimationCommand),
-                PoseFromPictureCommand => CommandDocumentation(
-                    "Use when a still image should be converted into a single SMPL-X pose sample for downstream retargeting or analysis.",
-                    new[] { "Pass an absolute image_path for a PNG, JPG, or JPEG file readable by QuickServer; maximum file size is 2 GiB.", "The command returns status=accepted and a request_id for continued progress tracking through generation.get.", "The estimator treats the still image as a one-second clip and returns one pose sample." },
-                    new[] { "A completed request returns one raw SMPL-X pose plus a top-level constraints array containing the matching raw FullBody constraint, along with joint_names, betas, and rest_joints_m.", "The pose contains raw global_orient_axis_angle, body_pose_axis_angle, and translation_m values. The constraints array uses the same format accepted by animation generation.", "Rotations are axis-angle radians; translation and rest joints are in meters. The global coordinate space is gravity-aligned Y-up. Optional incam_* fields use OpenCV camera coordinates: X-right, Y-down, Z-forward.", "The result is pose data for downstream retargeting and constraint use." },
-                    new[] { "The result is data for downstream commands and leaves Unity scene objects and animation assets unchanged." },
-                    new[] { "The constraints array contains one raw FullBody frame for animation.generate.", "The request requires QuickServer's GVHMR runtime, checkpoints, and SMPL-X Avatar asset." },
-                    PoseFromVideoCommand, GetGenerationCommand, RetargetAnimationCommand),
+                PoseFromMediaCommand => CommandDocumentation(
+                    "Use when a local video or still image should be converted by FlowHMR into SMPL-H KMB motion.",
+                    new[] { "Pass an absolute media_path readable by QuickServer and a Timeline character name or object_ref. Supported video formats are MP4, MOV, M4V, AVI, MKV, and WEBM; supported image formats are PNG, JPG, and JPEG; maximum file size is 2 GiB.", "The media type is inferred from the extension. A still image produces a one-frame pose; a video produces a full motion sequence.", "Set enable_camera=true for video only to run the dynamic VGGT camera path; this requires exactly one enabled scene Camera tagged MainCamera. The default false path uses the lighter static-camera route.", "The command returns status=accepted and a request_id for continued progress tracking through generation.get. FlowHMR automatically selects the tracked performer." },
+                    new[] { "A completed request returns a new-format KMB with FlowHMR's 30 FPS pose samples; source_frame_count reports the original media frame count. global_time_seconds is required and supplies each sample's source-timeline time; Unity uses it for non-uniform AnimationClip key times and full source-duration playback. frame_timestamps_seconds remains diagnostic metadata.", "Video KMBs require human_detection_01, which records actual detector hits per FlowHMR sample. Unity holds the nearest valid pose for samples without a hit and rejects tracks with no detector hits. generation.get reports the time-track length, detection-track length and hit count, selected track id, and detected range when available.", "For video with enable_camera=true, the KMB includes a CameraTrack and Unity creates a separate FlowHMR Camera track bound to MainCamera; the camera curves use the same source-timeline times." },
+                    new[] { "The target Avatar always comes from the Timeline binding Animator; the source SMPL-H conversion Avatar is internal." },
+                    new[] { "FlowHMR code is in vendor/FlowHMR; downloadable and licensed model files are stored under models/FlowHMR. The dedicated FlowHMR Python environment remains separate from QuickServer's environment." },
+                    GetGenerationCommand),
                 CancelGenerationCommand => CommandDocumentation(
                     "Request cancellation of an active animation generation.",
                     new[] { "Pass the exact generation request_id, then poll with generation.get to confirm its terminal state." },
@@ -232,7 +224,7 @@ namespace KimodoUnityBridge.Command
                 RetargetAnimationCommand or PoseSetCommand => new[] { "scene_references", "operation_scope" },
                 GenerateAnimationCommand => new[] { "scene_references", "job_lifecycle", "frame_coordinates", "evidence", "operation_scope" },
                 PoseGetCommand => new[] { "scene_references", "frame_coordinates", "operation_scope" },
-                PoseFromVideoCommand or PoseFromPictureCommand => new[] { "job_lifecycle", "operation_scope" },
+                PoseFromMediaCommand => new[] { "job_lifecycle", "operation_scope" },
                 _ => Array.Empty<string>()
             };
         }
@@ -297,7 +289,7 @@ namespace KimodoUnityBridge.Command
                 SessionContextCommand => new[] { "session", "scene", "timeline", "details", "opened_timeline" },
                 SessionHistoryCommand => new[] { "session", "history" },
                 InstallServerCommand => new[] { "request_id", "status" },
-                PoseFromVideoCommand or PoseFromPictureCommand => new[] { "request_id", "status" },
+                PoseFromMediaCommand => new[] { "request_id", "status" },
                 AnimationAnalysisCommand => new[] { "analysis_schema_version", "clip", "pictures" },
                 ClipInspectCommand or ClipSettingsSetCommand => new[] { "clip", "path", "duration_seconds", "clip_frame_rate", "loop_time", "keep_original_position_xz", "keep_original_position_y", "keep_original_orientation", "root_motion_enabled", "root_motion_curves", "root_displacement_xz_m", "root_displacement_xz", "derived_speed_mps", "rig_type", "curve_count", "consumers" },
                 PoseAnalysisCommand => new[] { "image_path", "width", "height", "combine", "constraints" },
@@ -305,7 +297,7 @@ namespace KimodoUnityBridge.Command
                 GenerateAnimationCommand => new[] { "request_id", "status", "check", "warnings", "wait_seconds" },
                 PoseGetCommand => new[] { "pose", "source", "character_root", "data" },
                 PoseSetCommand => new[] { "pose", "data" },
-                GetGenerationCommand => new[] { "request_id", "status", "stage", "message", "started_at_utc", "estimated_completion_utc", "eta_seconds", "progress_current", "progress_total", "progress_rate", "backend_progress", "waited_seconds", "poll_after_seconds", "runtime_root", "runtime_version", "install_mode", "server_connected", "clip", "clip_settings", "animation_id", "seed", "analysis", "post_analysis", "source_type", "skeleton", "person", "fps", "source_frame_count", "frame_count", "joint_names", "pose_parameterization", "coordinate_spaces", "betas", "rest_joints_m", "poses", "constraints", "constraint_loss", "inout_sampling", "target_alive", "backend_request_json" },
+                GetGenerationCommand => new[] { "request_id", "status", "stage", "message", "started_at_utc", "estimated_completion_utc", "eta_seconds", "progress_current", "progress_total", "progress_rate", "backend_progress", "waited_seconds", "poll_after_seconds", "runtime_root", "runtime_version", "install_mode", "server_connected", "clip", "clip_settings", "animation_id", "seed", "analysis", "post_analysis", "source_type", "skeleton", "fps", "source_fps", "source_frame_count", "frame_count", "source_duration_seconds", "frame_timestamps_seconds", "global_time_seconds_length", "tracking_frame_range", "human_detection_01_count", "human_detection_01_length", "human_detection_track_id", "human_detection_frame_range", "output_format", "kmb", "kmb_attachments", "kmb_payload_base64", "kmb_frame_count", "byte_length", "constraint_loss", "inout_sampling", "target_alive", "backend_request_json" },
                 CancelGenerationCommand => new[] { "request_id", "status", "stage", "message", "canceled", "clip" },
                 SessionClearCommand => new[] { "cleared", "name", "destroyed_context_count", "recreated_on_next_command" },
                 _ => Array.Empty<string>()
@@ -343,22 +335,35 @@ namespace KimodoUnityBridge.Command
                 case "runtime_version": case "install_mode": case "image_path": case "source_character": case "character":
                 case "name": case "asset_path": case "stage": case "started_at_utc": case "estimated_completion_utc":
                 case "backend_progress": case "analysis_schema_version":
-                case "source_type": case "skeleton": case "person": case "path": case "rig_type":
+                case "source_type": case "skeleton": case "person": case "path": case "rig_type": case "output_format": case "kmb_payload_base64":
                     return new JObject { ["type"] = "string" };
                 case "width": case "height": case "tile_count": case "completed_tiles": case "duration_frames_60": case "current_frame_60":
                 case "destroyed_context_count": case "duration_frames": case "progress_current": case "progress_total": case "count": case "seed":
-                case "source_frame_count": case "frame_count": case "source_frame":
+                case "source_frame_count": case "frame_count": case "source_frame": case "kmb_frame_count": case "byte_length":
+                case "global_time_seconds_length": case "human_detection_01_length":
                     return new JObject { ["type"] = "integer" };
-                case "frame_rate": case "fps":
+                case "frame_rate": case "fps": case "source_fps":
                     return new JObject { ["type"] = "number" };
-                case "duration_seconds": case "clip_frame_rate": case "root_displacement_xz_m": case "derived_speed_mps":
+                case "duration_seconds": case "source_duration_seconds": case "clip_frame_rate": case "root_displacement_xz_m": case "derived_speed_mps":
                     return new JObject { ["type"] = "number" };
                 case "loop_time": case "keep_original_position_xz": case "keep_original_position_y": case "keep_original_orientation": case "root_motion_enabled":
                     return new JObject { ["type"] = "boolean" };
                 case "eta_seconds": case "progress_rate": case "waited_seconds": case "poll_after_seconds":
                     return NullableSchema(new JObject { ["type"] = "number" });
+                case "human_detection_01_count": case "human_detection_track_id":
+                    return NullableSchema(new JObject { ["type"] = "integer" });
                 case "wait_seconds":
                     return new JObject { ["type"] = "number" };
+                case "kmb":
+                    return new JObject { ["type"] = "object" };
+                case "kmb_attachments":
+                    return ArraySchema("object");
+                case "frame_timestamps_seconds":
+                    return ArraySchema("number");
+                case "tracking_frame_range":
+                    return ArraySchema("integer");
+                case "human_detection_frame_range":
+                    return NullableSchema(ArraySchema("integer"));
                 case "ok": case "retargeted": case "cleared": case "server_connected": case "canceled": case "target_alive":
                 case "recreated_on_next_command": case "scene_lighting": case "show_skybox": case "show_gizmos":
                     return new JObject { ["type"] = "boolean" };

@@ -2135,62 +2135,60 @@
       ]
     },
     {
-      "name": "pose.fromvideo",
-      "description": "Estimate an ordered SMPL-X pose sequence from a local video. Returns raw poses and matching FullBody constraints for downstream commands.",
+      "name": "pose.frommedia",
+      "description": "Estimate a video motion or still-image pose with FlowHMR and return it as an SMPL-H KMB1 attachment.",
       "documentation": {
-        "when_to_use": "Use when a video file should be converted into a time-ordered SMPL-X pose array for downstream retargeting or analysis.",
+        "when_to_use": "Use when a local video or still image should be converted by FlowHMR into SMPL-H KMB motion.",
         "behavior": [
-          "Pass an absolute video_path readable by QuickServer. Supported formats are MP4, MOV, M4V, AVI, and MKV; maximum file size is 2 GiB.",
-          "The command returns status=accepted and a request_id for continued progress tracking through generation.get.",
-          "For two people, set person to left or right to select the performer by screen position."
+          "Pass an absolute media_path readable by QuickServer and a Timeline character name or object_ref. Supported video formats are MP4, MOV, M4V, AVI, MKV, and WEBM; supported image formats are PNG, JPG, and JPEG; maximum file size is 2 GiB.",
+          "The media type is inferred from the extension. A still image produces a one-frame pose; a video produces a full motion sequence.",
+          "Set enable_camera=true for video only to run the dynamic VGGT camera path; this requires exactly one enabled scene Camera tagged MainCamera. The default false path uses the lighter static-camera route.",
+          "The command returns status=accepted and a request_id for continued progress tracking through generation.get. FlowHMR automatically selects the tracked performer."
         ],
-        "result_notes": [
-          "A completed request returns poses in source-video order plus one top-level constraints array, fps, frame_count, source_frame_count, joint_names, betas, and rest_joints_m.",
-          "Each pose contains raw global_orient_axis_angle, body_pose_axis_angle, and translation_m values. The top-level constraints array uses the same merged raw FullBody constraint format accepted by animation generation.",
-          "Rotations are axis-angle radians; translation and rest joints are in meters. The global coordinate space is gravity-aligned Y-up. Optional incam_* fields use OpenCV camera coordinates: X-right, Y-down, Z-forward.",
-          "The result is pose data for downstream retargeting and constraint use."
-        ],
+          "result_notes": [
+            "A completed request returns a new-format KMB with FlowHMR's 30 FPS pose samples; source_frame_count reports the original media frame count. global_time_seconds is required and supplies each sample's source-timeline time; Unity uses it for non-uniform AnimationClip key times and full source-duration playback. frame_timestamps_seconds remains diagnostic metadata.",
+            "Video KMBs require human_detection_01, which records actual detector hits per FlowHMR sample. Unity holds the nearest valid pose for samples without a hit and rejects tracks with no detector hits. generation.get reports the time-track length, detection-track length and hit count, selected track id, and detected range when available.",
+            "For video with enable_camera=true, the KMB includes a CameraTrack and Unity creates a separate FlowHMR Camera track bound to MainCamera; the camera curves use the same source-timeline times."
+          ],
         "scene_effects": [
-          "The result is data for downstream commands and leaves Unity scene objects and animation assets unchanged."
+          "The target Avatar always comes from the Timeline binding Animator; the source SMPL-H conversion Avatar is internal."
         ],
         "limits": [
-          "The top-level constraints array groups the sequence in the raw FullBody format for animation.generate.",
-          "The request requires QuickServer's GVHMR runtime, checkpoints, and SMPL-X Avatar asset."
+          "FlowHMR code is in vendor/FlowHMR; downloadable and licensed model files are stored under models/FlowHMR. The dedicated FlowHMR Python environment remains separate from QuickServer's environment."
         ],
         "shared_rule_refs": [
           "job_lifecycle",
           "operation_scope"
         ],
         "related_commands": [
-          "pose.frompicture",
-          "generation.get",
-          "animation.retarget"
+          "generation.get"
         ]
       },
       "inputSchema": {
         "type": "object",
         "properties": {
-          "video_path": {
-            "type": "string",
-            "description": "Absolute path to a local video readable by QuickServer."
-          },
           "wait_seconds": {
             "type": "number",
             "minimum": 0,
             "default": 10.0,
             "description": "Editor-side cooperative wait window in seconds. Values above 10 seconds are allowed; if the task is still running, return its request_id."
           },
-          "person": {
+          "character": {
             "type": "string",
-            "enum": [
-              "left",
-              "right"
-            ],
-            "description": "Select one performer by screen side in a two-person video."
+            "description": "Timeline character name or object_ref whose bound Avatar receives the muscle clip."
+          },
+          "media_path": {
+            "type": "string",
+            "description": "Absolute path to a local video or PNG/JPG/JPEG image readable by QuickServer; file type is inferred from its extension."
+          },
+          "enable_camera": {
+            "type": "boolean",
+            "description": "For video only, estimate and import the FlowHMR dynamic camera track onto the scene Main Camera. Defaults to false."
           }
         },
         "required": [
-          "video_path"
+          "media_path",
+          "character"
         ],
         "additionalProperties": false
       },
@@ -2242,117 +2240,18 @@
       },
       "examples": [
         {
-          "description": "Estimate SMPL-X poses from a video, then poll for the pose array.",
+          "description": "Estimate FlowHMR SMPL-H motion from a video and poll for its KMB attachment.",
           "arguments": {
-            "video_path": "C:/data/mocap.mp4",
-            "person": "left"
-          }
-        }
-      ]
-    },
-    {
-      "name": "pose.frompicture",
-      "description": "Estimate one SMPL-X pose from a local still image. Returns raw pose data and a matching FullBody constraint for downstream commands.",
-      "documentation": {
-        "when_to_use": "Use when a still image should be converted into a single SMPL-X pose sample for downstream retargeting or analysis.",
-        "behavior": [
-          "Pass an absolute image_path for a PNG, JPG, or JPEG file readable by QuickServer; maximum file size is 2 GiB.",
-          "The command returns status=accepted and a request_id for continued progress tracking through generation.get.",
-          "The estimator treats the still image as a one-second clip and returns one pose sample."
-        ],
-        "result_notes": [
-          "A completed request returns one raw SMPL-X pose plus a top-level constraints array containing the matching raw FullBody constraint, along with joint_names, betas, and rest_joints_m.",
-          "The pose contains raw global_orient_axis_angle, body_pose_axis_angle, and translation_m values. The constraints array uses the same format accepted by animation generation.",
-          "Rotations are axis-angle radians; translation and rest joints are in meters. The global coordinate space is gravity-aligned Y-up. Optional incam_* fields use OpenCV camera coordinates: X-right, Y-down, Z-forward.",
-          "The result is pose data for downstream retargeting and constraint use."
-        ],
-        "scene_effects": [
-          "The result is data for downstream commands and leaves Unity scene objects and animation assets unchanged."
-        ],
-        "limits": [
-          "The constraints array contains one raw FullBody frame for animation.generate.",
-          "The request requires QuickServer's GVHMR runtime, checkpoints, and SMPL-X Avatar asset."
-        ],
-        "shared_rule_refs": [
-          "job_lifecycle",
-          "operation_scope"
-        ],
-        "related_commands": [
-          "pose.fromvideo",
-          "generation.get",
-          "animation.retarget"
-        ]
-      },
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "image_path": {
-            "type": "string",
-            "description": "Absolute path to a local PNG or JPEG readable by QuickServer."
-          },
-          "wait_seconds": {
-            "type": "number",
-            "minimum": 0,
-            "default": 10.0,
-            "description": "Editor-side cooperative wait window in seconds. Values above 10 seconds are allowed; if the task is still running, return its request_id."
+            "media_path": "C:/data/mocap.mp4",
+            "character": "<character>",
+            "enable_camera": true
           }
         },
-        "required": [
-          "image_path"
-        ],
-        "additionalProperties": false
-      },
-      "outputSchema": {
-        "type": "object",
-        "description": "Command responses keep domain fields at the top level. Success uses ok=true; command errors use ok=false and an error object. Async job failures are reported by status with an error object.",
-        "properties": {
-          "ok": {
-            "type": "boolean"
-          },
-          "error": {
-            "description": "Optional command error. Command errors use {code, message, details?}; asynchronous job failures include this object while the poll command itself succeeds.",
-            "type": "object",
-            "properties": {
-              "code": {
-                "type": "string"
-              },
-              "message": {
-                "type": "string"
-              },
-              "details": {
-                "type": "object"
-              }
-            },
-            "required": [
-              "code",
-              "message"
-            ],
-            "additionalProperties": true
-          },
-          "request_id": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "accepted",
-              "running",
-              "completed",
-              "failed",
-              "canceled"
-            ]
-          }
-        },
-        "required": [
-          "ok"
-        ],
-        "additionalProperties": true
-      },
-      "examples": [
         {
-          "description": "Estimate one SMPL-X pose from a still image, then poll for the pose array.",
+          "description": "Estimate one FlowHMR SMPL-H pose from a still image and poll for its KMB attachment.",
           "arguments": {
-            "image_path": "C:/data/pose.jpg"
+            "media_path": "C:/data/pose.jpg",
+            "character": "<character>"
           }
         }
       ]
@@ -3856,7 +3755,7 @@
         "properties": {
           "request_id": {
             "type": "string",
-            "description": "Request id returned by server.install, animation.generate, pose.fromvideo, or pose.frompicture."
+            "description": "Request id returned by server.install, animation.generate, pose.frommedia."
           },
           "include_request_json": {
             "type": "boolean",
@@ -4121,11 +4020,68 @@
           "fps": {
             "type": "number"
           },
+          "source_fps": {
+            "type": "number"
+          },
           "source_frame_count": {
             "type": "integer"
           },
           "frame_count": {
             "type": "integer"
+          },
+          "source_duration_seconds": {
+            "type": "number"
+          },
+          "frame_timestamps_seconds": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "global_time_seconds_length": {
+            "type": "integer"
+          },
+          "tracking_frame_range": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "human_detection_01_count": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "human_detection_01_length": {
+            "type": "integer"
+          },
+          "human_detection_track_id": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "human_detection_frame_range": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "joint_names": {
             "type": "array",
